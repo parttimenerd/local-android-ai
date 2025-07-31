@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: android-phone-server
+  labels:
+    app: android-phone-server
+spec:
+  type: ExternalName
+  externalName: host.docker.internal  # For Docker Desktop
+  ports:
+  - port: 8005
+    targetPort: 8005
+    protocol: TCP
+    name: phone-api
+---
+# Alternative: NodePort service for direct host access
+apiVersion: v1
+kind: Service
+metadata:
+  name: android-phone-server-nodeport
+  labels:
+    app: android-phone-server
+spec:
+  type: NodePort
+  ports:
+  - port: 8005
+    targetPort: 8005
+    nodePort: 30005  # Access via any node IP on port 30005
+    protocol: TCP
+    name: phone-api
+  # This service has no selector - it's for external services
+---
+# ConfigMap for phone server connection details
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phone-server-config
+data:
+  # Configuration for connecting to Android K3s Phone Server
+  phone.server.host: "localhost"
+  phone.server.port: "8005"
+  phone.server.enabled: "true"
+  phone.server.timeout: "3000"
+  # Documentation
+  README: |
+    Android K3s Phone Server Configuration
+    =====================================
+    
+    This ConfigMap contains configuration for connecting the Java sample app 
+    to the Android K3s Phone Server running on the host device.
+    
+    The Android app runs on port 8005 and provides:
+    - GET /status      - Server health and info
+    - GET /location    - GPS coordinates with accuracy  
+    - GET /orientation - Device compass/orientation data
+    - POST /ai/capture - Camera capture for photos
+    
+    Port Forwarding Setup:
+    1. Android app listens on localhost:8005
+    2. Kubernetes pods access via phone-server-nodeport service on port 30005
+    3. Java app connects to localhost:8005 (assumes same host networking)
+    
+    For production deployments, consider using:
+    - Headless service with Endpoints pointing to host IP
+    - Ambassador/proxy pattern for external service access
+    - Service mesh integration for advanced networking

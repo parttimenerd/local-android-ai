@@ -1,0 +1,57 @@
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.pid
+
+# Build artifacts
+target/
+build/
+dist/
+*.jar
+*.war
+*.ear
+
+# Android specific (for android/ subdirectory)
+android/build/
+android/.gradle/
+android/local.properties
+android/app/build/
+*.apk
+*.aab
+
+# Java/Maven
+.mvn/
+mvnw
+mvnw.cmd
+
+# Docker
+.dockerignore
+
+# Local environment files
+.env
+.env.local
+.env.*.local
+
+# Backup files
+*.bak
+*.backup
+
+# Runtime files
+*.attach_pid*

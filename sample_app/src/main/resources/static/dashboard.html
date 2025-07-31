@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>K3s on Phone - System Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SAP UI5 -->
+    <script id="sap-ui-bootstrap"
+        src="https://ui5.sap.com/resources/sap-ui-core.js"
+        data-sap-ui-theme="sap_horizon"
+        data-sap-ui-libs="sap.m,sap.ui.core,sap.ui.layout"
+        data-sap-ui-compatVersion="edge"
+        data-sap-ui-async="true"
+        data-sap-ui-frameOptions="trusted"
+        data-sap-ui-language="en"
+        data-sap-ui-resourceroots='{"k3s.dashboard": "./"}'>
+    </script>
+    
+    <!-- Leaflet -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+    <!-- Maplibre GL -->
+    <link href="https://unpkg.com/maplibre-gl/dist/maplibre-gl.css" rel="stylesheet" />
+    <script src="https://unpkg.com/maplibre-gl/dist/maplibre-gl.js"></script>
+
+    <!-- Maplibre GL Leaflet  -->
+    <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js"></script>
+    
+    <style>
+        .system-tile {
+            margin: 1rem;
+            border-radius: 8px;
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #0070f3;
+        }
+        .metric-label {
+            color: #666;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+        }
+        .status-good { color: #107e3e; }
+        .status-warning { color: #df6e0c; }
+        .status-error { color: #bb0000; }
+        
+        body { 
+            margin: 0; 
+            font-family: '72', 'SAP-icons', Arial, sans-serif; 
+            background-color: #f7f7f7;
+        }
+        
+        .main-table {
+            width: 100%;
+            margin: 0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            font-size: 1.2rem;
+            color: #0070f3;
+        }
+        
+        .error {
+            text-align: center;
+            padding: 2rem;
+            color: #bb0000;
+        }
+        
+        .map-container {
+            height: 400px;
+            width: 100%;
+            border-radius: 8px;
+            border: 2px solid #0070f3;
+        }
+        
+        .phone-status {
+            padding: 1rem;
+            background: #f0f8ff;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+
+<body class="sapUiBody">
+    <div id="content"></div>
+    
+    <!-- XML View Definition -->
+    <script id="viewXml" type="text/xml">
+        <mvc:View xmlns="sap.m"
+            xmlns:mvc="sap.ui.core.mvc"
+            xmlns:core="sap.ui.core"
+            xmlns:html="http://www.w3.org/1999/xhtml"
+            controllerName="k3s.dashboard.controller.Main"
+            height="100%">
+            
+            <Shell>
+                <App>
+                    <Page title="System Health Dashboard">
+                        <!-- Prototype Warning -->
+                        <Panel headerText="⚠️ EXPERIMENTAL PROTOTYPE WARNING" class="system-tile">
+                            <MessageStrip text="This is experimental prototype software. Features may not work as expected, may fail unpredictably, or may not function at all. Use entirely at your own risk. Only intended for exploration." type="Warning" class="sapUiMediumMarginBottom" />
+                        </Panel>
+                        
+                        <Panel headerText="Loading System Information..." class="system-tile" id="loadingPanel">
+                            <VBox alignItems="Center" class="loading">
+                                <BusyIndicator size="2rem" />
+                                <Text text="Fetching system health data..." />
+                            </VBox>
+                        </Panel>
+                        
+                        <Panel headerText="System Overview" class="system-tile" id="mainTablePanel" visible="false">
+                            <Table id="systemTable" mode="None">
+                                <columns>
+                                    <Column><Label text="Property" /></Column>
+                                    <Column><Label text="Value" /></Column>
+                                </columns>
+                            </Table>
+                        </Panel>
+                        
+                        <Panel headerText="Memory Usage" class="system-tile" id="memoryPanel" visible="false">
+                            <VBox>
+                                <ProgressIndicator id="memoryProgress" width="100%" />
+                                <HBox justifyContent="SpaceBetween" class="sapUiMediumMarginTop">
+                                    <VBox>
+                                        <Label text="Used Memory" class="metric-label" />
+                                        <Text id="usedMemoryText" class="metric-value" />
+                                    </VBox>
+                                    <VBox>
+                                        <Label text="Total Memory" class="metric-label" />
+                                        <Text id="totalMemoryText" class="metric-value" />
+                                    </VBox>
+                                    <VBox>
+                                        <Label text="Max Memory" class="metric-label" />
+                                        <Text id="maxMemoryText" class="metric-value" />
+                                    </VBox>
+                                </HBox>
+                            </VBox>
+                        </Panel>
+                        
+                        <Panel headerText="Dashboard Controls" class="system-tile">
+                            <VBox>
+                                <HBox justifyContent="Center" class="sapUiMediumMargin">
+                                    <Button id="refreshButton" text="Refresh Data" type="Emphasized" icon="sap-icon://refresh" press="onRefreshPress" />
+                                    <Button id="autoRefreshButton" text="Auto-refresh: ON" type="Default" icon="sap-icon://media-pause" class="sapUiMediumMarginBegin" press="onAutoRefreshPress" />
+                                </HBox>
+                                <Text id="statusText" text="Last updated: Never" textAlign="Center" class="metric-label" />
+                            </VBox>
+                        </Panel>
+                        
+                        <!-- Android Phone Location Panel -->
+                        <Panel id="phonePanel" headerText="📱 Android K3s Phone Server (Port 8005)" class="system-tile" visible="false">
+                            <VBox>
+                                <MessageStrip id="phoneStatus" text="Checking Android phone server..." type="Information" class="sapUiMediumMarginBottom" />
+                                <MessageStrip text="Note: If using Android Linux Terminal, ensure port 8005 is forwarded using the Linux Terminal app UI" type="Information" class="sapUiMediumMarginBottom" visible="false" id="portForwardingNote" />
+                                
+                                <VBox id="phoneDataSection" visible="false">
+                                    <HBox justifyContent="SpaceBetween" class="sapUiMediumMargin">
+                                        <VBox width="45%">
+                                            <Label text="📍 GPS Location" class="metric-label" />
+                                            <Text id="locationText" class="metric-value" text="No data" />
+                                            <Text id="accuracyText" class="metric-label" text="" />
+                                        </VBox>
+                                        <VBox width="45%">
+                                            <Label text="🧭 Device Orientation" class="metric-label" />
+                                            <Text id="orientationText" class="metric-value" text="No data" />
+                                            <Text id="compassText" class="metric-label" text="" />
+                                        </VBox>
+                                    </HBox>
+                                    
+                                    <!-- Live Map -->
+                                    <VBox id="mapSection" class="sapUiMediumMargin">
+                                        <Label text="🗺️ Live Location Map" class="metric-label" />
+                                        <html:div id="map" class="map-container"></html:div>
+                                    </VBox>
+                                    
+                                    <!-- Camera Feed -->
+                                    <VBox id="cameraSection" class="sapUiMediumMargin" visible="false">
+                                        <Label text="📷 Live Camera Feed" class="metric-label" />
+                                        <VBox class="sapUiSmallMargin" style="border-radius: 8px; border: 2px solid #0070f3; overflow: hidden; max-width: 600px; background: #f8f9fa;">
+                                            <html:img id="cameraImage" style="width: 100%; height: auto; display: block; max-height: 400px; object-fit: contain;" alt="Camera feed not available" />
+                                            <Text id="cameraStatus" text="Loading camera..." textAlign="Center" class="metric-label" style="padding: 8px;" />
+                                        </VBox>
+                                    </VBox>
+                                    
+                                    <!-- AI Description -->
+                                    <VBox id="aiSection" class="sapUiMediumMargin" visible="false">
+                                        <Label text="🤖 AI Description of Surroundings" class="metric-label" />
+                                        <Panel class="sapUiSmallMargin" style="border-radius: 8px; border: 2px solid #28a745; background: #f8fff8; padding: 12px;">
+                                            <Text id="aiDescriptionText" text="AI description will appear here..." style="white-space: pre-wrap;" />
+                                            <Text id="aiTimestampText" text="" textAlign="End" class="metric-label" style="margin-top: 8px; font-style: italic;" />
+                                        </Panel>
+                                    </VBox>
+                                </VBox>
+                            </VBox>
+                        </Panel>
+                    </Page>
+                </App>
+            </Shell>
+        </mvc:View>
+    </script>
+    
+    <script>
+        sap.ui.define("k3s.dashboard.controller.Main", [
+            "sap/ui/core/mvc/Controller",
+            "sap/m/MessageToast",
+            "sap/ui/model/json/JSONModel"
+        ], function(Controller, MessageToast, JSONModel) {
+            "use strict";
+            
+            return Controller.extend("k3s.dashboard.controller.Main", {
+                systemData: null,
+                autoRefreshEnabled: true,
+                autoRefreshInterval: null,
+                aiRefreshInterval: null,
+                lastUpdateTime: null,
+                lastAiUpdate: 0,
+                
+                onInit: function() {
+                    // Create device model for responsive features
+                    const oDeviceModel = new JSONModel(sap.ui.Device);
+                    oDeviceModel.setDefaultBindingMode("OneWay");
+                    this.getView().setModel(oDeviceModel, "device");
+                    
+                    // Load initial data
+                    this.loadSystemData();
+                    
+                    // Start auto-refresh
+                    this.startAutoRefresh();
+                    
+                    // Start AI auto-refresh (every minute)
+                    this.startAiAutoRefresh();
+                },
+                
+                loadSystemData: function() {
+                    this.updateStatus("Loading...");
+                    
+                    fetch('/health')
+                        .then(response => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                            }
+                            return response.json();
+                        })
+                        .then(data => {
+                            this.systemData = data;
+                            // Store the update time consistently
+                            this.lastUpdateTime = new Date().toLocaleTimeString();
+                            this.updateUI();
+                            this.updateStatus("Last updated: " + this.lastUpdateTime);
+                        })
+                        .catch(error => {
+                            console.error('Error loading system data:', error);
+                            MessageToast.show("Error: " + error.message);
+                        });
+                    
+                    // Load phone data
+                    this.loadPhoneData();
+                },
+                
+                updateUI: function() {
+                    if (!this.systemData) return;
+                    
+                    try {
+                        // Hide loading panel
+                        this.byId("loadingPanel").setVisible(false);
+                        
+                        // Show data panels
+                        this.byId("mainTablePanel").setVisible(true);
+                        this.byId("memoryPanel").setVisible(true);
+                        
+                        // Update main table
+                        this.updateMainTable();
+                        
+                        // Update memory panel
+                        this.updateMemoryPanel();
+                    } catch (error) {
+                        console.error("Error updating UI:", error);
+                        MessageToast.show("UI update error: " + error.message);
+                    }
+                },
+                
+                loadPhoneData: function(refreshAI = false) {
+                    const phonePanel = this.byId("phonePanel");
+                    const phoneStatus = this.byId("phoneStatus");
+                    const phoneDataSection = this.byId("phoneDataSection");
+                    const portForwardingNote = this.byId("portForwardingNote");
+                    
+                    // Always show the panel to indicate we're checking for phone server
+                    phonePanel.setVisible(true);
+                    phoneStatus.setText("Checking Android phone server on port 8005...");
+                    phoneStatus.setType("Information");
+                    portForwardingNote.setVisible(false);
+                    
+                    const apiUrl = refreshAI ? '/api/phone?refreshAI=true' : '/api/phone';
+                    
+                    fetch(apiUrl)
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.available && data.location) {
+                                phoneStatus.setText("✅ Connected to Android K3s Phone Server");
+                                phoneStatus.setType("Success");
+                                phoneDataSection.setVisible(true);
+                                portForwardingNote.setVisible(false);
+                                this.updatePhoneUI(data);
+                            } else {
+                                phoneStatus.setText("📱 Android phone server not available (requires port 8005)");
+                                phoneStatus.setType("Warning");
+                                phoneDataSection.setVisible(false);
+                                portForwardingNote.setVisible(true);
+                            }
+                        })
+                        .catch(error => {
+                            console.log('Phone server not available:', error);
+                            phoneStatus.setText("📱 Android phone server not available (requires port 8005)");
+                            phoneStatus.setType("Warning");
+                            phoneDataSection.setVisible(false);
+                            portForwardingNote.setVisible(true);
+                        });
+                },
+                
+                updatePhoneUI: function(phoneData) {
+                    const locationText = this.byId("locationText");
+                    const accuracyText = this.byId("accuracyText");
+                    const orientationText = this.byId("orientationText");
+                    const compassText = this.byId("compassText");
+                    const cameraSection = this.byId("cameraSection");
+                    const cameraImage = document.getElementById('cameraImage');
+                    const cameraStatus = this.byId("cameraStatus");
+                    const aiSection = this.byId("aiSection");
+                    const aiDescriptionText = this.byId("aiDescriptionText");
+                    const aiTimestampText = this.byId("aiTimestampText");
+                    
+                    // Update location data
+                    if (phoneData.location) {
+                        const loc = phoneData.location;
+                        locationText.setText(`${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`);
+                        accuracyText.setText(`Accuracy: ±${loc.accuracy.toFixed(1)}m | Alt: ${loc.altitude.toFixed(1)}m`);
+                        
+                        // Initialize and update map with orientation
+                        const orientation = phoneData.orientation ? phoneData.orientation.azimuth : null;
+                        this.initializeMap(loc.latitude, loc.longitude, orientation);
+                    } else {
+                        locationText.setText("No GPS data");
+                        accuracyText.setText("");
+                    }
+                    
+                    // Update orientation data
+                    if (phoneData.orientation) {
+                        const orient = phoneData.orientation;
+                        const compassDirection = this.getCompassDirection(orient.azimuth);
+                        orientationText.setText(`${orient.azimuth.toFixed(1)}° ${compassDirection}`);
+                        compassText.setText(`Pitch: ${orient.pitch.toFixed(1)}° | Roll: ${orient.roll.toFixed(1)}° | Accuracy: ${orient.accuracy}`);
+                    } else {
+                        orientationText.setText("No orientation data");
+                        compassText.setText("");
+                    }
+                    
+                    // Update camera feed
+                    if (phoneData.camera && phoneData.camera.image) {
+                        cameraSection.setVisible(true);
+                        if (cameraImage) {
+                            cameraImage.src = phoneData.camera.image;
+                            const timestamp = new Date(phoneData.camera.timestamp).toLocaleTimeString();
+                            cameraStatus.setText(`Last updated: ${timestamp}`);
+                        }
+                    } else {
+                        cameraSection.setVisible(false);
+                    }
+                    
+                    // Update AI description
+                    if (phoneData.aiDescription && phoneData.aiDescription.description) {
+                        aiSection.setVisible(true);
+                        aiDescriptionText.setText(phoneData.aiDescription.description);
+                        const timestamp = new Date(phoneData.aiDescription.timestamp).toLocaleTimeString();
+                        aiTimestampText.setText(`Generated: ${timestamp}`);
+                    } else {
+                        aiSection.setVisible(false);
+                    }
+                },
+                
+                initializeMap: function(lat, lng, orientation) {
+                    const mapElement = document.getElementById('map');
+                    if (!mapElement) {
+                        console.error('Map element not found');
+                        return;
+                    }
+                    
+                    // Initialize map only once
+                    if (!this.map) {
+                        try {
+                            this.map = L.map('map').setView([lat, lng], 15);
+                            
+                            // Add OpenStreetMap tiles
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                attribution: '© OpenStreetMap contributors'
+                            }).addTo(this.map);
+                            
+                            console.log('Map initialized successfully');
+                        } catch (error) {
+                            console.error('Error initializing map:', error);
+                            return;
+                        }
+                    }
+                    
+                    // Update map location
+                    this.map.setView([lat, lng], 15);
+                    
+                    // Remove existing marker
+                    if (this.phoneMarker) {
+                        this.map.removeLayer(this.phoneMarker);
+                    }
+                    
+                    // Create directional marker based on orientation
+                    if (orientation !== null && orientation !== undefined) {
+                        // Create custom icon with directional arrow
+                        const phoneIcon = L.divIcon({
+                            className: 'custom-phone-marker',
+                            html: `
+                                <div style="position: relative; width: 30px; height: 30px;">
+                                    <!-- Phone base circle -->
+                                    <div style="
+                                        width: 20px; 
+                                        height: 20px; 
+                                        background: #0070f3; 
+                                        border-radius: 50%; 
+                                        border: 3px solid white; 
+                                        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+                                        position: absolute;
+                                        top: 5px;
+                                        left: 5px;
+                                    "></div>
+                                    <!-- Direction arrow -->
+                                    <div style="
+                                        width: 0; 
+                                        height: 0; 
+                                        border-left: 6px solid transparent; 
+                                        border-right: 6px solid transparent; 
+                                        border-bottom: 20px solid #ff4444; 
+                                        position: absolute; 
+                                        top: -5px; 
+                                        left: 9px; 
+                                        transform-origin: center bottom; 
+                                        transform: rotate(${orientation}deg);
+                                        transition: transform 0.3s ease;
+                                    "></div>
+                                </div>
+                            `,
+                            iconSize: [30, 30],
+                            iconAnchor: [15, 15]
+                        });
+                        
+                        // Add marker with orientation
+                        this.phoneMarker = L.marker([lat, lng], { icon: phoneIcon })
+                            .addTo(this.map)
+                            .bindPopup(`
+                                <strong>📱 Phone Location</strong><br/>
+                                <strong>Coordinates:</strong><br/>
+                                Lat: ${lat.toFixed(6)}<br/>
+                                Lng: ${lng.toFixed(6)}<br/>
+                                <strong>Orientation:</strong><br/>
+                                ${orientation.toFixed(1)}° ${this.getCompassDirection(orientation)}
+                            `);
+                    } else {
+                        // Standard marker without orientation
+                        this.phoneMarker = L.marker([lat, lng])
+                            .addTo(this.map)
+                            .bindPopup(`
+                                <strong>📱 Phone Location</strong><br/>
+                                <strong>Coordinates:</strong><br/>
+                                Lat: ${lat.toFixed(6)}<br/>
+                                Lng: ${lng.toFixed(6)}<br/>
+                                <em>No orientation data</em>
+                            `);
+                    }
+                },
+                
+                getCompassDirection: function(azimuth) {
+                    const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+                    const index = Math.round(azimuth / 22.5) % 16;
+                    return directions[index];
+                },
+                
+                updateMainTable: function() {
+                    const table = this.byId("systemTable");
+                    
+                    // Clear existing items
+                    table.destroyItems();
+                    
+                    // Add system information rows
+                    const tableData = [
+                        ["Hostname", this.systemData.hostname || "N/A"],
+                        ["Status", (this.systemData.status || "unknown").toUpperCase()],
+                        ["Uptime", this.formatUptime(this.systemData.uptime_ms || 0)],
+                        ["CPU Load Average", this.systemData.system?.cpu_load_avg || "N/A"],
+                        ["Operating System", (this.systemData.system?.os_name || "Unknown") + " " + (this.systemData.system?.os_version || "")],
+                        ["OS Description", this.systemData.system?.os_description || "N/A"],
+                        ["Architecture", this.systemData.system?.os_arch || "N/A"],
+                        ["JVM", this.systemData.system?.jvm_name || "N/A"],
+                        ["JVM Version", this.systemData.system?.jvm_version || "N/A"],
+                        ["JVM Vendor", this.systemData.system?.jvm_vendor || "N/A"],
+                        ["Last Updated", this.lastUpdateTime || "Never"]
+                    ];
+                    
+                    tableData.forEach(([property, value]) => {
+                        const item = new sap.m.ColumnListItem({
+                            cells: [
+                                new sap.m.Label({text: property, design: sap.m.LabelDesign.Bold}),
+                                new sap.m.Text({text: value})
+                            ]
+                        });
+                        table.addItem(item);
+                    });
+                },
+                
+                updateMemoryPanel: function() {
+                    const memory = this.systemData.memory || {};
+                    const usagePercent = memory.usage_percent || 0;
+                    
+                    // Update progress indicator
+                    const progressIndicator = this.byId("memoryProgress");
+                    progressIndicator.setPercentValue(usagePercent);
+                    progressIndicator.setDisplayValue(usagePercent.toFixed(1) + "%");
+                    
+                    // Set color based on usage
+                    if (usagePercent > 80) {
+                        progressIndicator.setState(sap.ui.core.ValueState.Error);
+                    } else if (usagePercent > 60) {
+                        progressIndicator.setState(sap.ui.core.ValueState.Warning);
+                    } else {
+                        progressIndicator.setState(sap.ui.core.ValueState.Success);
+                    }
+                    
+                    // Update memory text values
+                    this.byId("usedMemoryText").setText((memory.used_mb || 0).toFixed(1) + " MB");
+                    this.byId("totalMemoryText").setText((memory.total_mb || 0).toFixed(1) + " MB");
+                    this.byId("maxMemoryText").setText((memory.max_mb || 0).toFixed(1) + " MB");
+                },
+                
+                formatUptime: function(uptimeMs) {
+                    const uptimeSeconds = Math.floor(uptimeMs / 1000);
+                    const hours = Math.floor(uptimeSeconds / 3600);
+                    const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+                    const seconds = uptimeSeconds % 60;
+                    
+                    return String(hours).padStart(2, '0') + ':' + 
+                           String(minutes).padStart(2, '0') + ':' + 
+                           String(seconds).padStart(2, '0');
+                },
+                
+                updateStatus: function(message) {
+                    this.byId("statusText").setText(message);
+                },
+                
+                startAutoRefresh: function() {
+                    if (this.autoRefreshInterval) {
+                        clearInterval(this.autoRefreshInterval);
+                    }
+                    
+                    if (this.autoRefreshEnabled) {
+                        this.autoRefreshInterval = setInterval(() => {
+                            this.loadSystemData();
+                        }, 10000); // Refresh every 10 seconds
+                    }
+                },
+                
+                startAiAutoRefresh: function() {
+                    if (this.aiRefreshInterval) {
+                        clearInterval(this.aiRefreshInterval);
+                    }
+                    
+                    this.aiRefreshInterval = setInterval(() => {
+                        console.log("Auto-refreshing AI description and camera...");
+                        this.loadPhoneData(true); // Force fresh AI via refreshAI=true
+                    }, 60000); // Refresh AI every 60 seconds (1 minute)
+                },
+                
+                onRefreshPress: function() {
+                    this.loadSystemData();
+                },
+                
+                onAutoRefreshPress: function() {
+                    this.autoRefreshEnabled = !this.autoRefreshEnabled;
+                    const button = this.byId("autoRefreshButton");
+                    
+                    if (this.autoRefreshEnabled) {
+                        button.setText("Auto-refresh: ON");
+                        button.setIcon("sap-icon://media-pause");
+                        this.startAutoRefresh();
+                    } else {
+                        button.setText("Auto-refresh: OFF");
+                        button.setIcon("sap-icon://media-play");
+                        if (this.autoRefreshInterval) {
+                            clearInterval(this.autoRefreshInterval);
+                        }
+                    }
+                }
+            });
+        });
+        
+        sap.ui.getCore().attachInit(function() {
+            "use strict";
+            
+            // Create XML view
+            sap.ui.require([
+                "sap/ui/core/mvc/XMLView",
+                "sap/ui/core/Core"
+            ], function(XMLView, Core) {
+                XMLView.create({
+                    definition: document.getElementById("viewXml").textContent,
+                    controllerName: "k3s.dashboard.controller.Main"
+                }).then(function(oView) {
+                    oView.placeAt("content");
+                    Core.getMessageManager().registerObject(oView, true);
+                }).catch(function(error) {
+                    console.error("Error creating view:", error);
+                    document.getElementById("content").innerHTML = 
+                        '<div style="text-align: center; padding: 2rem; color: #bb0000;">'+
+                        '<h2>View Creation Error</h2>'+
+                        '<p>Failed to create view: ' + error.message + '</p>'+
+                        '<p>Please check the browser console for more details.</p>'+
+                        '</div>';
+                });
+            });
+        });
+    </script>
+</body>
+</html>

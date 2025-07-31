@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Phone icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,30h24c2.2,0 4,1.8 4,4v40c0,2.2 -1.8,4 -4,4H42c-2.2,0 -4,-1.8 -4,-4V34c0,-2.2 1.8,-4 4,-4zM42,34v32h24V34H42z" />
+    
+    <!-- K3s symbol -->
+    <path
+        android:fillColor="#FF5722"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1"
+        android:pathData="M46,45h6v2h-6zM46,49h8v2h-8zM46,53h6v2h-6z" />
+    
+    <!-- Server/Network dots -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M58,44c1.1,0 2,0.9 2,2s-0.9,2 -2,2s-2,-0.9 -2,-2S56.9,44 58,44z" />
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M58,50c1.1,0 2,0.9 2,2s-0.9,2 -2,2s-2,-0.9 -2,-2S56.9,50 58,50z" />
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M58,56c1.1,0 2,0.9 2,2s-0.9,2 -2,2s-2,-0.9 -2,-2S56.9,56 58,56z" />
+        
+</vector>

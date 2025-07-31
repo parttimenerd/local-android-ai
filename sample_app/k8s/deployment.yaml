@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server-info-server
+  labels:
+    app: server-info-server
+spec:
+  # Will be dynamically set to match number of nodes
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server-info-server
+  template:
+    metadata:
+      labels:
+        app: server-info-server
+    spec:
+      # Enable host networking to access Android app on localhost:8005
+      hostNetwork: true
+      # Spread pods across different nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - server-info-server
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: server-info-server
+        image: server-info-server:latest
+        imagePullPolicy: Never  # Use local image built by build.sh
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name  # Use pod name as hostname
+        # Phone server configuration
+        - name: PHONE_SERVER_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: phone-server-config
+              key: phone.server.host
+        - name: PHONE_SERVER_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: phone-server-config
+              key: phone.server.port
+        - name: PHONE_SERVER_ENABLED
+          valueFrom:
+            configMapKeyRef:
+              name: phone-server-config
+              key: phone.server.enabled
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        # Graceful shutdown
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 5"]
+      # Restart policy
+      restartPolicy: Always
+      # Tolerate node problems (useful for unstable phone environments)
+      tolerations:
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 30
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 30

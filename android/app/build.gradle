@@ -1,0 +1,112 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.k3s.phoneserver'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.k3s.phoneserver"
+        minSdk 30
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    
+    buildFeatures {
+        viewBinding false
+    }
+    
+    packagingOptions {
+        pickFirst '**/libc++_shared.so'
+        pickFirst '**/libjsc.so'
+        pickFirst '**/META-INF/INDEX.LIST'
+        pickFirst '**/META-INF/DEPENDENCIES'
+        pickFirst '**/META-INF/LICENSE'
+        pickFirst '**/META-INF/LICENSE.txt'
+        pickFirst '**/META-INF/NOTICE'
+        pickFirst '**/META-INF/NOTICE.txt'
+        pickFirst '**/META-INF/io.netty.versions.properties'
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.12.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.11.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+    implementation 'androidx.activity:activity-ktx:1.8.2'
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    
+    // HTTP Server
+    implementation 'io.ktor:ktor-server-core:2.3.7'
+    implementation 'io.ktor:ktor-server-netty:2.3.7'
+    implementation 'io.ktor:ktor-server-content-negotiation:2.3.7'
+    implementation 'io.ktor:ktor-serialization-gson:2.3.7'
+    implementation 'io.ktor:ktor-server-cors:2.3.7'
+    implementation 'io.ktor:ktor-server-status-pages:2.3.7'
+    
+    // Location services
+    implementation 'com.google.android.gms:play-services-location:21.0.1'
+    
+    // Camera and MediaPipe with Gemma AI
+    implementation 'androidx.camera:camera-core:1.3.1'
+    implementation 'androidx.camera:camera-camera2:1.3.1'
+    implementation 'androidx.camera:camera-lifecycle:1.3.1'
+    implementation 'androidx.camera:camera-view:1.3.1'
+    
+    // MediaPipe Tasks for AI vision and language
+    implementation 'com.google.mediapipe:tasks-vision:0.10.26'    
+    implementation 'com.google.mediapipe:tasks-text:0.10.26'
+    implementation 'com.google.mediapipe:tasks-genai:0.10.25'
+    
+    // TensorFlow Lite for AI models (including Gemma-compatible inference)
+    implementation 'org.tensorflow:tensorflow-lite:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-gpu:2.14.0'
+    implementation 'org.tensorflow:tensorflow-lite-support:0.4.4'
+    
+    // Permissions
+    implementation 'pub.devrel:easypermissions:3.0.0'
+    
+    // JSON processing
+    implementation 'com.google.code.gson:gson:2.10.1'
+    
+    // Coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    
+    // Logging
+    implementation 'com.jakewharton.timber:timber:5.0.1'
+    
+    // Background processing
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
+    
+    // LiveData and ViewModel for UI updates
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
+    
+    // Testing
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
+}
