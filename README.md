@@ -25,6 +25,10 @@ Deploy a multi-node K3s cluster across Android phones using:
 - 4GB+ RAM, 64GB+ storage per device
 - Stable network connectivity
 
+**Known Issues:**
+- If network connectivity fails during setup, restarting and reinstalling Debian on your phone is often needed
+- This is a known limitation of the experimental Android Linux Terminal app
+
 ## Quick Start
 
 ### Master Node Setup
@@ -42,6 +46,35 @@ curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup
 cd sample_app
 ./build.sh && ./deploy.sh && ./test.sh
 ```
+
+### Reset Cluster to Clean State
+```bash
+# Interactive reset with confirmation
+./reset.sh
+
+# Force reset without confirmation
+./reset.sh --force
+
+# Reset and remove nodes from Tailscale
+./reset.sh --remove-from-tailscale --force
+```
+
+### Clean Dead Nodes and Devices
+```bash
+# Remove NotReady K3s nodes only
+./clean.sh
+
+# Remove NotReady nodes + unreachable "phone-..." from Tailscale VPN
+./clean.sh -t tskey-api-xxxxx
+
+# Dry run to preview cleanup
+./clean.sh -t tskey-api-xxxxx --dry-run
+```
+
+**Script Comparison:**
+- `reset.sh`: Removes ALL nodes and apps, resets to server-only cluster
+- `clean.sh`: Removes only NotReady/unreachable nodes, keeps working cluster
+- `setup.sh cleanup`: Legacy cleanup for NotReady nodes only
 
 ### Android Phone Server App
 
@@ -180,6 +213,11 @@ journalctl -u tailscaled -f
 
 ## Troubleshooting
 
+### Network Connectivity Issues
+- **Debian Network Problems**: If setup fails with network connectivity errors (unable to reach github.com or download packages), restart and reinstall Debian in the Android Linux Terminal app
+- **This is a known issue**: The Android Linux Terminal app's Debian environment can lose network connectivity and requires a fresh installation to resolve
+- **Check Basic Connectivity**: `ping github.com` and `ping google.com` should work before running setup
+
 ### Node Join Issues
 - **Check Tailscale**: `tailscale status` shows all nodes
 - **Verify Token**: K3s token matches server
@@ -214,13 +252,22 @@ sudo tailscale down && sudo tailscale up
 # Remove applications
 ./sample_app/undeploy.sh
 
-# Clean cluster setup
-./setup.sh cleanup --remove-tailscale
+# Clean dead/unreachable nodes only
+./clean.sh -t tskey-api-xxxxx --force
 
-# Uninstall K3s
+# Reset cluster to clean state (removes all agent nodes and apps)
+./reset.sh --force
+
+# Uninstall K3s completely
 sudo /usr/local/bin/k3s-uninstall.sh      # Server
 sudo /usr/local/bin/k3s-agent-uninstall.sh # Agent nodes
 ```
+
+**Cleanup Script Comparison:**
+- `./clean.sh`: Removes NotReady K3s nodes and unreachable phone devices from Tailscale
+- `./reset.sh`: Removes ALL agent nodes and applications, resets to server-only state
+- `./setup.sh cleanup`: Legacy method, removes only NotReady K3s nodes
+- K3s uninstall scripts: Completely removes K3s from the system
 
 **Remove Multiple Devices from Tailscale:**
 ```bash
@@ -255,7 +302,7 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 
 # Roadmap
 
-- [ ] test it with one phone as the basic k3s client
+- [x] test it with one phone as the basic k3s client
     - the computer being the host
 - [ ] deploy the application to the cluster with replication
 - [ ] add another phone and improve deploy scripts

@@ -133,7 +133,11 @@ NOTES:
     - Root SSH password will be set to 'root' for simplicity
     - The Android Linux Terminal app is experimental and may be unstable
     - Ensure you have developer mode enabled on your Android device
+    - If network connectivity issues occur, restarting and reinstalling 
+      Debian on your phone may be needed (known issue with Android Linux Terminal)
     - Cleanup mode must be run from the K3s server (master) node
+    - For dead node cleanup, use ./clean.sh
+    - For complete cluster reset, use ./reset.sh
 
 EOF
 }
@@ -170,6 +174,16 @@ check_internet() {
     log_verbose "Checking internet connectivity..."
     if ! ping -c 1 8.8.8.8 &> /dev/null; then
         log_error "Internet connection required but not available"
+        log_error "If connectivity issues persist, try restarting and reinstalling Debian on your phone"
+        log_error "This is a known issue with the Android Linux Terminal app"
+        exit $EXIT_MISSING_DEPS
+    fi
+    
+    log_verbose "Checking GitHub connectivity..."
+    if ! ping -c 1 github.com &> /dev/null; then
+        log_error "Cannot reach github.com - this may prevent package downloads"
+        log_error "If connectivity issues persist, try restarting and reinstalling Debian on your phone"
+        log_error "This is a known issue with the Android Linux Terminal app"
         exit $EXIT_MISSING_DEPS
     fi
 }
@@ -434,9 +448,18 @@ install_k3s_server() {
         fi
     fi
     
+    log_verbose "Checking GitHub connectivity for K3s download..."
+    if ! ping -c 1 github.com &> /dev/null; then
+        log_error "Cannot reach github.com - network connectivity issue detected"
+        log_error "If connectivity issues persist, try restarting and reinstalling Debian on your phone"
+        log_error "This is a known issue with the Android Linux Terminal app"
+        exit $EXIT_INSTALL_FAILED
+    fi
+    
     log_verbose "Downloading and installing K3s server"
     curl -sfL https://get.k3s.io | sh - || {
         log_error "Failed to install K3s server"
+        log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
         exit $EXIT_INSTALL_FAILED
     }
     
@@ -469,6 +492,7 @@ install_k3s_agent() {
         # Check if this is running as an agent
         if sudo systemctl is-active --quiet k3s-agent 2>/dev/null; then
             log "K3s agent service is already running"
+            show_agent_completion_info
             return 0
         elif sudo systemctl is-active --quiet k3s 2>/dev/null; then
             log_error "K3s is already installed and running as a server (master node)"
@@ -480,14 +504,103 @@ install_k3s_agent() {
         fi
     fi
     
+    log_verbose "Checking GitHub connectivity for K3s download..."
+    if ! ping -c 1 github.com &> /dev/null; then
+        log_error "Cannot reach github.com - network connectivity issue detected"
+        log_error "If connectivity issues persist, try restarting and reinstalling Debian on your phone"
+        log_error "This is a known issue with the Android Linux Terminal app"
+        exit $EXIT_INSTALL_FAILED
+    fi
+    
     log_verbose "Downloading and installing K3s agent with server URL: $K3S_URL"
     curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
         log_error "Failed to install K3s agent"
+        log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
         exit $EXIT_INSTALL_FAILED
     }
     
-    log "K3s agent installed successfully!"
-    log "This node should now be connected to the cluster at: $K3S_URL"
+    # Wait a moment for the agent to start and connect
+    log_verbose "Waiting for K3s agent to connect to cluster..."
+    sleep 5
+    
+    # Show agent setup completion information
+    show_agent_completion_info
+}
+
+show_agent_completion_info() {
+    echo ""
+    log "=============================================="
+    log "K3s Agent Setup Complete!"
+    log "=============================================="
+    echo ""
+    
+    # Basic node information
+    log "Node Information:"
+    log "  Hostname: $HOSTNAME"
+    log "  Connected to: $K3S_URL"
+    echo ""
+    
+    # Check if we can get node status from the cluster
+    if command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1; then
+        log "Cluster Connection: ✅ Connected"
+        
+        # Try to get this node's status
+        local node_status
+        node_status=$(kubectl get node "$HOSTNAME" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
+        if [ "$node_status" = "True" ]; then
+            log "Node Status: ✅ Ready"
+        else
+            log "Node Status: ⏳ Joining cluster..."
+        fi
+        
+        # Show node info if available
+        if kubectl get node "$HOSTNAME" &> /dev/null; then
+            echo ""
+            log "Node Details:"
+            kubectl get node "$HOSTNAME" -o wide 2>/dev/null || log_warn "Could not retrieve detailed node information"
+        fi
+        
+        # Show cluster nodes count
+        local node_count
+        node_count=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "unknown")
+        echo ""
+        log "Cluster Summary:"
+        log "  Total nodes in cluster: $node_count"
+        
+        # Show running pods on this node
+        local pod_count
+        pod_count=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$HOSTNAME" --no-headers 2>/dev/null | wc -l || echo "unknown")
+        log "  Pods running on this node: $pod_count"
+        
+    else
+        log "Cluster Connection: ⏳ Agent connecting to cluster..."
+        log_warn "kubectl not available or cluster not accessible from agent node"
+        log "The agent should be connecting to the cluster. Check status from the server node."
+    fi
+    
+    # Network information
+    echo ""
+    log "Network Information:"
+    local node_ip
+    node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")
+    log "  Node IP: $node_ip"
+    
+    # Tailscale information if available
+    if command -v tailscale &> /dev/null && tailscale status &> /dev/null; then
+        local tailscale_ip
+        local tailscale_name
+        tailscale_ip=$(tailscale ip -4 2>/dev/null || echo "unknown")
+        tailscale_name=$(tailscale status --json 2>/dev/null | grep -o '"Name":"[^"]*"' | head -1 | cut -d'"' -f4 2>/dev/null || echo "unknown")
+        log "  Tailscale IP: $tailscale_ip"
+        log "  Tailscale Name: $tailscale_name"
+    fi
+    
+    echo ""
+    log "Next Steps:"
+    log "  • Check cluster status from server node: kubectl get nodes"
+    log "  • View pods on this node: kubectl get pods --all-namespaces --field-selector spec.nodeName=$HOSTNAME"
+    log "  • Monitor node logs: sudo journalctl -u k3s-agent -f"
+    echo ""
 }
 
 show_agent_setup_info() {
@@ -518,6 +631,13 @@ show_agent_setup_info() {
         tailscale_flag=" -t $tailscale_key_param"
     fi
     
+    # Create the commands for display and file
+    local cmd_auto="curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- phone-%d$tailscale_flag -k $token -u $server_url"
+    local cmd_manual="curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
+    local cmd_download1="curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh > setup.sh"
+    local cmd_download2="chmod +x setup.sh"
+    local cmd_download3="./setup.sh AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
+    
     echo ""
     log "=============================================="
     log "K3s Server Setup Complete!"
@@ -533,22 +653,95 @@ show_agent_setup_info() {
     echo ""
     echo "Option 1 - One-line setup with auto-generated hostname:"
     echo ""
-    echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- phone-%d$tailscale_flag -k $token -u $server_url"
+    echo "$cmd_auto"
     echo ""
     echo "Option 2 - One-line setup with manual hostname:"
     echo ""
-    echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
+    echo "$cmd_manual"
     echo ""
     echo "Option 3 - Download and run manually:"
     echo ""
-    echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh > setup.sh"
-    echo "chmod +x setup.sh"
-    echo "./setup.sh AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
+    echo "$cmd_download1"
+    echo "$cmd_download2"
+    echo "$cmd_download3"
     echo ""
     log "Option 1 auto-generates unique hostnames. For manual setup (Options 2-3), replace AGENT_HOSTNAME with the desired hostname for each agent node"
     if [ "$LOCAL_MODE" = false ] && [ -z "$TAILSCALE_AUTH_KEY" ]; then
         log "Replace YOUR_TAILSCALE_AUTH_KEY with your actual Tailscale auth key"
     fi
+    echo ""
+    
+    # Save commands to add_nodes.md file
+    local add_nodes_file="add_nodes.md"
+    log "Saving setup commands to: $add_nodes_file"
+    
+    cat > "$add_nodes_file" << EOF
+# K3s Agent Node Setup Commands
+
+Generated on: $(date)
+Server: $HOSTNAME ($server_url)
+
+## Quick Reference
+
+### K3s Token
+\`\`\`
+$token
+\`\`\`
+
+### Server URL
+\`\`\`
+$server_url
+\`\`\`
+
+## Setup Methods
+
+### Option 1 - One-line setup with auto-generated hostname
+\`\`\`bash
+$cmd_auto
+\`\`\`
+
+### Option 2 - One-line setup with manual hostname
+\`\`\`bash
+$cmd_manual
+\`\`\`
+
+### Option 3 - Download and run manually
+\`\`\`bash
+$cmd_download1
+$cmd_download2
+$cmd_download3
+\`\`\`
+
+## Notes
+- Option 1 auto-generates unique hostnames using timestamp-based naming
+- For manual setup (Options 2-3), replace \`AGENT_HOSTNAME\` with your desired hostname
+EOF
+
+    if [ "$LOCAL_MODE" = false ] && [ -z "$TAILSCALE_AUTH_KEY" ]; then
+        cat >> "$add_nodes_file" << EOF
+- Replace \`YOUR_TAILSCALE_AUTH_KEY\` with your actual Tailscale auth key
+- Get Tailscale auth keys at: https://login.tailscale.com/admin/machines/new-linux
+EOF
+    fi
+
+    cat >> "$add_nodes_file" << EOF
+
+## Manual Token Retrieval
+If you need to get the token again later:
+\`\`\`bash
+sudo cat /var/lib/rancher/k3s/server/node-token
+\`\`\`
+
+## Cluster Status
+Check cluster status from the server node:
+\`\`\`bash
+kubectl get nodes
+kubectl get pods --all-namespaces
+\`\`\`
+
+EOF
+    
+    log "✅ Setup commands saved to $add_nodes_file"
     echo ""
 }
 
@@ -977,6 +1170,9 @@ main() {
     log "=============================================="
     log "Setup completed successfully!"
     log "=============================================="
+    if [ -z "$K3S_TOKEN" ] && [ -z "$K3S_URL" ]; then
+        log "📄 Agent setup commands saved to: add_nodes.md"
+    fi
     log "You may need to reboot for all changes to take effect."
     log "Docker group membership requires logout/login or reboot to take effect."
     echo ""

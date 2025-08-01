@@ -18,6 +18,9 @@ Thumbs.db
 *.tmp
 *.temp
 *.log
+
+# Generated files with sensitive information
+add_nodes.md
 *.pid
 
 # Build artifacts
@@ -55,3 +58,4 @@ mvnw.cmd
 
 # Runtime files
 *.attach_pid*
+add_nodes.md
