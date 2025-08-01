@@ -103,14 +103,6 @@ show_version() {
     echo "K3s Cluster Reset Script v${VERSION}"
 }
 
-# Utility functions
-check_root() {
-    if [ "$EUID" -eq 0 ]; then
-        log_error "Please run this script as a regular user with sudo privileges, not as root"
-        exit $EXIT_INVALID_ARGS
-    fi
-}
-
 check_server_node() {
     log_step "Verifying this is the K3s server node..."
     
@@ -484,7 +476,6 @@ main() {
     echo ""
     
     # Pre-flight checks
-    check_root
     check_server_node
     
     # Get cluster information

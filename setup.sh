@@ -77,8 +77,9 @@ ARGUMENTS:
     cleanup                     Remove not-ready nodes from cluster
 
 OPTIONS:
-    -t, --tailscale-key KEY     Tailscale authentication key
-                                Get one at: https://login.tailscale.com/admin/machines/new-linux
+    -t, --tailscale-key KEY     Tailscale authentication key (validated before use)
+                                Get one at: https://login.tailscale.com/admin/settings/keys
+                                Ensure key is set to 'Reusable' for multiple uses
     -k, --k3s-token TOKEN       K3s node token (must be used with -u)
     -u, --k3s-url URL           K3s server URL (must be used with -k)
     --local                     Local mode: skip hostname, password, Tailscale, Docker setup (but checks Tailscale is running)
@@ -139,19 +140,24 @@ NOTES:
     - For dead node cleanup, use ./clean.sh
     - For complete cluster reset, use ./reset.sh
 
+TROUBLESHOOTING:
+    Common issues and solutions:
+    - Network connectivity: Check internet and DNS resolution
+    - Permissions: Ensure user has sudo access but don't run as root
+    - SSH service: Script handles both 'ssh' and 'sshd' service names automatically
+    - Tailscale auth: Keys are validated automatically before use
+      • Ensure key format starts with 'tskey-auth-'
+      • Check that key hasn't expired or been revoked
+      • Set keys to 'Reusable' for multiple node setups
+      • Get new keys at: https://login.tailscale.com/admin/settings/keys
+    - Firewall: May block Tailscale or K3s traffic
+    - Manual Tailscale setup: curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --auth-key=YOUR_KEY
+
 EOF
 }
 
 show_version() {
     echo "K3s on Phone Setup Script v${VERSION}"
-}
-
-# Utility functions
-check_root() {
-    if [ "$EUID" -eq 0 ]; then
-        log_error "Please run this script as a regular user with sudo privileges, not as root"
-        exit $EXIT_INVALID_ARGS
-    fi
 }
 
 check_sudo() {
@@ -189,6 +195,26 @@ check_internet() {
 }
 
 # Installation functions
+detect_ssh_service_name() {
+    local ssh_service=""
+    
+    # Check for available SSH service names
+    if systemctl list-unit-files 2>/dev/null | grep -q "^ssh\.service"; then
+        ssh_service="ssh"
+    elif systemctl list-unit-files 2>/dev/null | grep -q "^sshd\.service"; then
+        ssh_service="sshd"
+    else
+        # Try to detect by checking if service files exist
+        if [ -f "/lib/systemd/system/ssh.service" ] || [ -f "/etc/systemd/system/ssh.service" ]; then
+            ssh_service="ssh"
+        elif [ -f "/lib/systemd/system/sshd.service" ] || [ -f "/etc/systemd/system/sshd.service" ]; then
+            ssh_service="sshd"
+        fi
+    fi
+    
+    echo "$ssh_service"
+}
+
 install_docker() {
     log_step "Installing Docker..."
     
@@ -251,6 +277,116 @@ install_docker() {
     sudo usermod -aG docker "$USER" || log_warn "Failed to add user to docker group"
 }
 
+# Function to setup insecure registry for Docker daemon
+setup_docker_insecure_registry() {
+    log_step "Configuring Docker for insecure registry..."
+    
+    local master_ip="$1"
+    local registry_port="${2:-5000}"
+    local registry_address="${master_ip}:${registry_port}"
+    
+    log "Configuring Docker daemon for insecure registry: $registry_address"
+    
+    # Create or update Docker daemon configuration
+    local daemon_config="/etc/docker/daemon.json"
+    local temp_config="/tmp/docker-daemon-setup.json"
+    
+    # Check if daemon.json exists
+    if [ -f "$daemon_config" ]; then
+        # Parse existing configuration and add insecure registry
+        if command -v jq &>/dev/null; then
+            # Use jq if available for proper JSON manipulation
+            sudo jq --arg registry "$registry_address" \
+                '.["insecure-registries"] += [$registry] | .["insecure-registries"] |= unique' \
+                "$daemon_config" | sudo tee "$temp_config" >/dev/null
+        else
+            # Fallback: simple text manipulation (less robust)
+            if grep -q "insecure-registries" "$daemon_config"; then
+                # Add to existing insecure-registries array
+                sudo sed "s/\"insecure-registries\"[[:space:]]*:[[:space:]]*\[\([^]]*\)\]/\"insecure-registries\": [\1, \"$registry_address\"]/g" \
+                    "$daemon_config" | sudo tee "$temp_config" >/dev/null
+            else
+                # Add insecure-registries to existing config
+                sudo sed 's/{/{\n  "insecure-registries": ["'"$registry_address"'"],/' \
+                    "$daemon_config" | sudo tee "$temp_config" >/dev/null
+            fi
+        fi
+    else
+        # Create new daemon.json
+        sudo tee "$temp_config" >/dev/null << EOF
+{
+  "insecure-registries": ["$registry_address"]
+}
+EOF
+    fi
+    
+    # Validate JSON and apply
+    if command -v jq &>/dev/null && jq . "$temp_config" >/dev/null 2>&1; then
+        sudo cp "$temp_config" "$daemon_config"
+        sudo chmod 644 "$daemon_config"
+        log "✅ Docker daemon configuration updated"
+        
+        # Restart Docker daemon
+        log "Restarting Docker daemon..."
+        if sudo systemctl restart docker; then
+            log "✅ Docker daemon restarted successfully"
+            
+            # Wait for Docker to be ready
+            for i in {1..30}; do
+                if docker info >/dev/null 2>&1; then
+                    log "✅ Docker daemon is ready"
+                    break
+                fi
+                if [ $i -eq 30 ]; then
+                    log_error "Docker daemon failed to restart properly"
+                    return 1
+                fi
+                sleep 1
+            done
+        else
+            log_error "Failed to restart Docker daemon"
+            return 1
+        fi
+    else
+        log_error "Failed to create valid Docker daemon configuration"
+        return 1
+    fi
+    
+    # Cleanup
+    sudo rm -f "$temp_config" 2>/dev/null || true
+}
+
+# Function to setup local Docker registry
+setup_local_registry() {
+    log_step "Setting up local Docker registry..."
+    
+    # Check if registry.sh exists
+    if [ ! -f "./registry.sh" ]; then
+        log_error "Registry management script not found: ./registry.sh"
+        log_error "Please ensure registry.sh is in the same directory as setup.sh"
+        return 1
+    fi
+    
+    # Make sure it's executable
+    chmod +x ./registry.sh
+    
+    # Setup the registry
+    log "Running registry setup..."
+    if ./registry.sh setup; then
+        log "✅ Local Docker registry setup completed"
+        
+        # Get registry address for reference
+        local registry_address
+        registry_address=$(./registry.sh address 2>/dev/null || echo "localhost:5000")
+        log "Registry available at: $registry_address"
+        
+        return 0
+    else
+        log_error "Failed to setup local Docker registry"
+        return 1
+    fi
+}
+
 setup_ssh() {
     log_step "Setting up SSH server..."
     
@@ -282,11 +418,51 @@ setup_ssh() {
     }
     
     log_verbose "Starting and enabling SSH service"
-    sudo systemctl restart sshd || {
-        log_error "Failed to restart SSH service"
-        exit $EXIT_CONFIG_FAILED
-    }
-    sudo systemctl enable sshd || log_warn "Failed to enable SSH service"
+    
+    # Detect the correct SSH service name
+    local ssh_service
+    ssh_service=$(detect_ssh_service_name)
+    
+    if [ -z "$ssh_service" ]; then
+        log_warn "Could not determine SSH service name, trying common names"
+        
+        # Try to restart using common service names
+        local restart_success=false
+        for service in ssh sshd; do
+            log_verbose "Trying to restart $service service..."
+            if sudo systemctl restart "$service" 2>/dev/null; then
+                ssh_service="$service"
+                restart_success=true
+                log_verbose "Successfully restarted $service service"
+                break
+            fi
+        done
+        
+        if [ "$restart_success" = false ]; then
+            log_error "Failed to restart SSH service (tried ssh and sshd)"
+            exit $EXIT_CONFIG_FAILED
+        fi
+    else
+        log_verbose "Using SSH service name: $ssh_service"
+        if ! sudo systemctl restart "$ssh_service"; then
+            log_error "Failed to restart $ssh_service service"
+            exit $EXIT_CONFIG_FAILED
+        fi
+    fi
+    
+    # Enable the SSH service
+    log_verbose "Enabling SSH service: $ssh_service"
+    if ! sudo systemctl enable "$ssh_service" 2>/dev/null; then
+        log_warn "Failed to enable $ssh_service service - SSH may not start on boot"
+    fi
+    
+    # Verify SSH service is running
+    if sudo systemctl is-active "$ssh_service" &>/dev/null; then
+        log_verbose "SSH service '$ssh_service' is running"
+    else
+        log_warn "SSH service may not be running properly"
+        log_warn "Check with: sudo systemctl status $ssh_service"
+    fi
     
     log "SSH server configured successfully"
     log_warn "Root SSH login enabled with password 'root' - consider changing for security"
@@ -295,35 +471,116 @@ setup_ssh() {
 setup_tailscale() {
     log_step "Installing and configuring Tailscale..."
     
+    # Check network connectivity first
+    if ! ping -c 1 8.8.8.8 &>/dev/null; then
+        log_error "No internet connectivity - cannot install Tailscale"
+        echo "Please check your network connection and try again"
+        exit $EXIT_INSTALL_FAILED
+    fi
+    
     # Install Tailscale if not already installed
     if ! command -v tailscale &> /dev/null; then
         log_verbose "Installing Tailscale"
-        curl -fsSL https://tailscale.com/install.sh | sh || {
-            log_error "Failed to install Tailscale"
+        
+        # Try the official installer with better error handling
+        if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+            log_error "Failed to install Tailscale via official installer"
+            echo ""
+            echo "Troubleshooting options:"
+            echo "1. Check internet connectivity: ping tailscale.com"
+            echo "2. Check firewall/proxy settings"
+            echo "3. Try manual installation from https://tailscale.com/download"
+            echo "4. Check the manual installation guide at: https://tailscale.com/kb/"
+            echo ""
             exit $EXIT_INSTALL_FAILED
-        }
+        fi
+        
+        # Verify installation
+        if ! command -v tailscale &> /dev/null; then
+            log_error "Tailscale installation completed but command not found"
+            echo "Try: sudo apt-get install tailscale"
+            exit $EXIT_INSTALL_FAILED
+        fi
+        
+        log "Tailscale installed successfully"
     else
         log "Tailscale is already installed"
+        log_verbose "Version: $(tailscale version --short 2>/dev/null || echo 'unknown')"
+    fi
+    
+    # Ensure Tailscale daemon is running
+    log_verbose "Starting Tailscale daemon..."
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl enable tailscaled 2>/dev/null || log_warn "Failed to enable Tailscale service"
+        sudo systemctl start tailscaled 2>/dev/null || log_warn "Failed to start Tailscale service"
+        
+        # Wait for daemon to initialize
+        sleep 2
+        
+        # Check if daemon is running
+        if ! sudo systemctl is-active tailscaled &>/dev/null; then
+            log_error "Tailscale daemon failed to start"
+            echo "Check status with: sudo systemctl status tailscaled"
+            echo "Check logs with: sudo journalctl -u tailscaled"
+            exit $EXIT_CONFIG_FAILED
+        fi
     fi
     
     # Check if already configured and running
     if sudo tailscale status --json &> /dev/null; then
         log "Tailscale is already configured and running"
+        log_verbose "Status: $(sudo tailscale status --peers=false 2>/dev/null | head -1 || echo 'Connected')"
         return 0
     fi
     
     if [ -n "$TAILSCALE_AUTH_KEY" ]; then
-        log_verbose "Connecting to Tailscale with auth key"
-        sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME" || {
-            log_error "Failed to connect to Tailscale"
+        log_verbose "Connecting to Tailscale with validated auth key"
+        log_verbose "Auth key starts with: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
+        log_verbose "Hostname for auth: $HOSTNAME"
+        
+        # Attempt authentication with detailed error handling
+        log "Authenticating with Tailscale using provided auth key..."
+        if sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME"; then
+            log "Successfully connected to Tailscale"
+            
+            # Show connection status
+            sleep 2
+            if sudo tailscale status &>/dev/null; then
+                log_verbose "Tailscale IP: $(tailscale ip -4 2>/dev/null || echo 'unknown')"
+            fi
+        else
+            local exit_code=$?
+            log_error "Failed to connect to Tailscale (exit code: $exit_code)"
+            echo ""
+            echo "Debug information:"
+            echo "• Auth key length: ${#TAILSCALE_AUTH_KEY}"
+            echo "• Auth key prefix: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
+            echo "• Hostname: $HOSTNAME"
+            echo ""
+            echo "Common issues:"
+            echo "• Auth key expired or invalid"
+            echo "• Auth key already used (single-use keys)"
+            echo "• Network connectivity problems"
+            echo "• Firewall blocking Tailscale"
+            echo "• Hostname already in use"
+            echo ""
+            echo "Troubleshooting:"
+            echo "• Check auth key at: https://login.tailscale.com/admin/settings/keys"
+            echo "• Try manual authentication: sudo tailscale up"
+            echo "• Check Tailscale documentation: https://tailscale.com/kb/"
+            echo ""
+            echo "Working manual command that you reported:"
+            echo "curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --auth-key=$TAILSCALE_AUTH_KEY"
+            echo ""
             exit $EXIT_CONFIG_FAILED
-        }
+        fi
     else
         log "Tailscale installed. Run 'sudo tailscale up --auth-key=YOUR_KEY' to connect manually"
+        echo ""
+        echo "Get an auth key from: https://login.tailscale.com/admin/settings/keys"
+        echo "Or authenticate interactively: sudo tailscale up"
+        echo ""
     fi
-    
-    log_verbose "Enabling Tailscale service"
-    sudo systemctl enable tailscaled || log_warn "Failed to enable Tailscale service"
     
     log "Tailscale setup completed"
 }
@@ -479,6 +736,14 @@ install_k3s_server() {
     fi
     
     log "K3s server installed successfully!"
+    
+    # Setup local Docker registry for the server
+    if setup_local_registry; then
+        log "✅ Registry setup completed"
+    else
+        log_warn "Registry setup failed - continuing without registry"
+    fi
+    
     show_agent_setup_info
 }
 
@@ -502,6 +767,21 @@ install_k3s_agent() {
         else
             log "K3s is installed but not running, will start as agent"
         fi
+    fi
+    
+    # Extract master IP from K3S_URL for registry configuration
+    log_verbose "Configuring Docker for insecure registry access..."
+    if [ -n "$K3S_URL" ]; then
+        # Extract IP from URL like https://192.168.1.100:6443 -> 192.168.1.100
+        MASTER_IP=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|')
+        if [ -n "$MASTER_IP" ] && [[ "$MASTER_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            log_verbose "Configuring Docker for insecure registry at $MASTER_IP:5000"
+            setup_docker_insecure_registry "$MASTER_IP:5000"
+        else
+            log_warn "Could not extract valid IP from K3S_URL: $K3S_URL, skipping registry configuration"
+        fi
+    else
+        log_warn "K3S_URL not set, skipping registry configuration"
     fi
     
     log_verbose "Checking GitHub connectivity for K3s download..."
@@ -584,6 +864,13 @@ show_agent_completion_info() {
     local node_ip
     node_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")
     log "  Node IP: $node_ip"
+    
+    # Docker registry configuration status
+    if [ -f /etc/docker/daemon.json ]; then
+        log "  Docker Registry: ✅ Configured for local registry access"
+    else
+        log "  Docker Registry: ⚠️  No insecure registry configuration"
+    fi
     
     # Tailscale information if available
     if command -v tailscale &> /dev/null && tailscale status &> /dev/null; then
@@ -903,14 +1190,37 @@ validate_k3s_params() {
 }
 
 validate_tailscale_key() {
-    # Validate Tailscale auth key format if provided
-    if [ -n "$TAILSCALE_AUTH_KEY" ]; then
-        if ! echo "$TAILSCALE_AUTH_KEY" | grep -qE '^tskey-auth-'; then
-            log_error "Invalid Tailscale auth key format. Tailscale keys must start with 'tskey-auth-'"
-            log_error "Get a valid key at: https://login.tailscale.com/admin/machines/new-linux"
-            return 1
-        fi
+    # Skip validation if no key provided
+    if [ -z "$TAILSCALE_AUTH_KEY" ]; then
+        return 0
     fi
+    
+    log_verbose "Validating Tailscale auth key format..."
+    
+    # Basic format validation
+    if ! echo "$TAILSCALE_AUTH_KEY" | grep -qE '^tskey-auth-'; then
+        log_error "Invalid Tailscale auth key format. Tailscale keys must start with 'tskey-auth-'"
+        log_error "Get a valid key at: https://login.tailscale.com/admin/settings/keys"
+        return 1
+    fi
+    
+    # Check key length (Tailscale auth keys are typically around 48+ characters)
+    local key_length=${#TAILSCALE_AUTH_KEY}
+    if [ $key_length -lt 20 ]; then
+        log_error "Tailscale auth key appears too short (length: $key_length)"
+        log_error "Valid auth keys are typically much longer"
+        return 1
+    fi
+    
+    # Check for common invalid characters that might indicate copy/paste errors
+    if echo "$TAILSCALE_AUTH_KEY" | grep -qE '[[:space:]]'; then
+        log_error "Tailscale auth key contains whitespace characters"
+        log_error "Please check for copy/paste errors"
+        return 1
+    fi
+    
+    log_verbose "✓ Tailscale auth key format appears valid"
+    return 0
 }
 
 validate_local_params() {
@@ -1095,7 +1405,6 @@ main() {
         echo ""
         
         # Pre-flight checks for cleanup
-        check_root
         check_sudo
         
         # Run cleanup
@@ -1110,15 +1419,33 @@ main() {
     fi
     
     # Regular setup mode - validate arguments
+    log_verbose "Validating configuration parameters..."
+    
     validate_hostname || exit $EXIT_INVALID_ARGS
     validate_k3s_params || exit $EXIT_INVALID_ARGS
-    validate_tailscale_key || exit $EXIT_INVALID_ARGS
     validate_local_params || exit $EXIT_INVALID_ARGS
     
-    # Pre-flight checks
-    check_root
+    # Validate Tailscale key (requires internet connectivity, so do pre-flight checks first)
     check_sudo
-    check_internet
+    
+    # Tailscale key validation requires network connectivity
+    if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+        log_step "Validating Tailscale authentication key..."
+        check_internet  # Ensure we have connectivity for validation
+        validate_tailscale_key || {
+            log_error "Tailscale auth key validation failed"
+            echo ""
+            echo "Please:"
+            echo "1. Verify your auth key at: https://login.tailscale.com/admin/settings/keys"
+            echo "2. Generate a new key if the current one is expired or invalid"
+            echo "3. Ensure the key is set to 'Reusable' if you plan to use it multiple times"
+            echo "4. Run './tailscale-troubleshoot.sh' for additional help"
+            echo ""
+            exit $EXIT_INVALID_ARGS
+        }
+    else
+        check_internet
+    fi
     
     # Show configuration
     log "=============================================="

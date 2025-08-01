@@ -1,9 +1,13 @@
 #!/bin/bash
 
-# Scale script for the hostname server application
+# Scale script for the server-info-server application
 # This script scales the deployment to a specified number of replicas
 
 set -e
+
+# Determine script directory and change to it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -17,14 +21,17 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 
+# Deployment name
+DEPLOYMENT_NAME="server-info-server"
+
 # Show usage information
 show_usage() {
     echo "Usage: $0 <replicas> [options]"
     echo ""
-    echo "Scale the hostname server deployment to the specified number of replicas."
+    echo "Scale the server-info-server deployment to the specified number of replicas."
     echo ""
     echo "Arguments:"
-    echo "  <replicas>    Number of replicas to scale to (1-20)"
+    echo "  <replicas>    Number of replicas to scale to (1-50)"
     echo ""
     echo "Options:"
     echo "  -w, --wait    Wait for scaling to complete before exiting"
@@ -35,6 +42,11 @@ show_usage() {
     echo "  $0 3              # Scale to 3 replicas"
     echo "  $0 5 --wait       # Scale to 5 replicas and wait for completion"
     echo "  $0 2 --wait --test # Scale to 2 replicas, wait, and test"
+    echo ""
+    echo "Notes:"
+    echo "  • Multiple pods can run on the same agent node"
+    echo "  • Pods will only be scheduled on agent nodes (not master/control-plane)"
+    echo "  • Use 'kubectl get nodes' to see available nodes"
     echo ""
 }
 
@@ -93,7 +105,7 @@ if [ "$REPLICAS" -lt 1 ] || [ "$REPLICAS" -gt 20 ]; then
     exit 1
 fi
 
-log_info "Scaling hostname server to $REPLICAS replicas..."
+log_info "Scaling server-info-server to $REPLICAS replicas..."
 
 # Check if kubectl is available
 if ! command -v kubectl &> /dev/null; then
@@ -109,15 +121,24 @@ if ! kubectl cluster-info &> /dev/null; then
     exit 1
 fi
 
+# Get agent node information
+AGENT_NODE_COUNT=$(kubectl get nodes --no-headers | grep -v "control-plane\|master" | wc -l)
+log_info "Found $AGENT_NODE_COUNT agent nodes in the cluster"
+
+if [ "$AGENT_NODE_COUNT" -eq 0 ]; then
+    log_warn "No agent nodes found. Pods may be scheduled on master nodes."
+    log_info "Check node labels with: kubectl get nodes --show-labels"
+fi
+
 # Check if the deployment exists
-if ! kubectl get deployment hostname-server &> /dev/null; then
-    log_error "hostname-server deployment not found"
+if ! kubectl get deployment "$DEPLOYMENT_NAME" &> /dev/null; then
+    log_error "$DEPLOYMENT_NAME deployment not found"
     log_info "Run './deploy.sh' first to deploy the application"
     exit 1
 fi
 
 # Get current replica count
-CURRENT_REPLICAS=$(kubectl get deployment hostname-server -o jsonpath='{.spec.replicas}')
+CURRENT_REPLICAS=$(kubectl get deployment "$DEPLOYMENT_NAME" -o jsonpath='{.spec.replicas}')
 log_info "Current replicas: $CURRENT_REPLICAS"
 
 if [ "$CURRENT_REPLICAS" -eq "$REPLICAS" ]; then
@@ -125,9 +146,24 @@ if [ "$CURRENT_REPLICAS" -eq "$REPLICAS" ]; then
     exit 0
 fi
 
+# Show scaling information
+if [ "$AGENT_NODE_COUNT" -gt 0 ]; then
+    PODS_PER_NODE=$((REPLICAS / AGENT_NODE_COUNT))
+    REMAINDER=$((REPLICAS % AGENT_NODE_COUNT))
+    
+    if [ "$PODS_PER_NODE" -gt 0 ]; then
+        log_info "This will result in approximately $PODS_PER_NODE pods per agent node"
+        if [ "$REMAINDER" -gt 0 ]; then
+            log_info "With $REMAINDER additional pods on some nodes"
+        fi
+    else
+        log_info "This will result in $REPLICAS pods distributed across $AGENT_NODE_COUNT agent nodes"
+    fi
+fi
+
 # Scale the deployment
 log_info "Scaling deployment from $CURRENT_REPLICAS to $REPLICAS replicas..."
-kubectl scale deployment hostname-server --replicas="$REPLICAS" || {
+kubectl scale deployment "$DEPLOYMENT_NAME" --replicas="$REPLICAS" || {
     log_error "Failed to scale deployment"
     exit 1
 }
@@ -143,8 +179,8 @@ if [ "$WAIT_FOR_SCALING" = true ]; then
     INTERVAL=5
     
     while [ $ELAPSED -lt $TIMEOUT ]; do
-        READY_REPLICAS=$(kubectl get deployment hostname-server -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-        AVAILABLE_REPLICAS=$(kubectl get deployment hostname-server -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
+        READY_REPLICAS=$(kubectl get deployment "$DEPLOYMENT_NAME" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        AVAILABLE_REPLICAS=$(kubectl get deployment "$DEPLOYMENT_NAME" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || echo "0")
         
         if [ "$READY_REPLICAS" -eq "$REPLICAS" ] && [ "$AVAILABLE_REPLICAS" -eq "$REPLICAS" ]; then
             log_success "Scaling completed successfully!"
@@ -152,10 +188,10 @@ if [ "$WAIT_FOR_SCALING" = true ]; then
         fi
         
         log_info "Still scaling... ($READY_REPLICAS/$REPLICAS ready, ${ELAPSED}s elapsed)"
-        kubectl get pods -l app=hostname-server --no-headers 2>/dev/null || true
+        kubectl get pods -l app="$DEPLOYMENT_NAME" --no-headers 2>/dev/null || true
         
         # Check for problematic pods
-        PROBLEM_PODS=$(kubectl get pods -l app=hostname-server --no-headers 2>/dev/null | grep -E "(Error|CrashLoopBackOff|ImagePullBackOff|ErrImagePull)" || echo "")
+        PROBLEM_PODS=$(kubectl get pods -l app="$DEPLOYMENT_NAME" --no-headers 2>/dev/null | grep -E "(Error|CrashLoopBackOff|ImagePullBackOff|ErrImagePull)" || echo "")
         if [ -n "$PROBLEM_PODS" ]; then
             log_warn "Found problematic pods during scaling:"
             echo "$PROBLEM_PODS"
@@ -167,19 +203,19 @@ if [ "$WAIT_FOR_SCALING" = true ]; then
     
     # Final check after timeout
     if [ $ELAPSED -ge $TIMEOUT ]; then
-        READY_REPLICAS=$(kubectl get deployment hostname-server -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        READY_REPLICAS=$(kubectl get deployment "$DEPLOYMENT_NAME" -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
         if [ "$READY_REPLICAS" -ne "$REPLICAS" ]; then
             log_warn "Scaling did not complete within timeout"
             log_info "Current status: $READY_REPLICAS/$REPLICAS replicas ready"
-            kubectl get pods -l app=hostname-server
+            kubectl get pods -l app="$DEPLOYMENT_NAME"
         fi
     fi
 fi
 
 # Show final status
 log_info "Final deployment status:"
-kubectl get deployment hostname-server
-kubectl get pods -l app=hostname-server -o wide
+kubectl get deployment "$DEPLOYMENT_NAME"
+kubectl get pods -l app="$DEPLOYMENT_NAME" -o wide
 
 # Run test if requested
 if [ "$RUN_TEST" = true ]; then
@@ -196,8 +232,8 @@ echo ""
 log_success "Scaling operation completed!"
 echo ""
 log_info "Useful commands:"
-echo "  Check status:   kubectl get deployment hostname-server"
-echo "  View pods:      kubectl get pods -l app=hostname-server"
-echo "  View logs:      kubectl logs -l app=hostname-server"
+echo "  Check status:   kubectl get deployment $DEPLOYMENT_NAME"
+echo "  View pods:      kubectl get pods -l app=$DEPLOYMENT_NAME"
+echo "  View logs:      kubectl logs -l app=$DEPLOYMENT_NAME"
 echo "  Test app:       ./test.sh"
 echo ""

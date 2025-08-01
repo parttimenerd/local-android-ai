@@ -5,6 +5,10 @@
 
 set -e
 
+# Determine script directory and change to it
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -18,6 +22,60 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 
 log_info "Deploying server info application to Kubernetes..."
+log_info "Working directory: $SCRIPT_DIR"
+
+# Function to check and setup registry if needed
+check_and_setup_registry() {
+    log_info "Checking if local registry is available..."
+    
+    local registry_script="../registry.sh"
+    if [ ! -f "$registry_script" ]; then
+        log_error "Registry management script not found: $registry_script"
+        return 1
+    fi
+    
+    # Check if registry is running
+    if ! "$registry_script" status | grep -q "Registry is running"; then
+        log_warn "Local registry not running. Setting up registry..."
+        
+        if "$registry_script" setup; then
+            log_success "Registry setup completed"
+        else
+            log_error "Failed to setup registry"
+            return 1
+        fi
+    else
+        log_info "✅ Local registry is already running"
+    fi
+    
+    # Ensure image is in registry
+    log_info "Checking if server-info-server image is in registry..."
+    if ! "$registry_script" list | grep -q "server-info-server"; then
+        log_warn "server-info-server image not found in registry"
+        log_info "Building and pushing image to registry..."
+        
+        # Build the image if it doesn't exist locally
+        if ! docker images server-info-server:latest --format "table {{.Repository}}:{{.Tag}}" | grep -q "server-info-server:latest"; then
+            log_info "Building local image first..."
+            if [ -f "./build.sh" ]; then
+                ./build.sh
+            else
+                log_error "build.sh not found. Please build the image first."
+                return 1
+            fi
+        fi
+        
+        # Push to registry
+        if "$registry_script" push server-info-server:latest; then
+            log_success "Image pushed to registry"
+        else
+            log_error "Failed to push image to registry"
+            return 1
+        fi
+    else
+        log_info "✅ server-info-server image found in registry"
+    fi
+}
 
 # Function to cleanup previous deployment
 cleanup_previous_deployment() {
@@ -71,38 +129,46 @@ fi
 # Cleanup previous deployment if it exists
 cleanup_previous_deployment
 
-# Check if the Docker image exists
-if ! docker images server-info-server:latest | grep -q latest; then
-    log_warn "Docker image not found locally. Building..."
-    ./build.sh || {
-        log_error "Failed to build image"
-        exit 1
-    }
-fi
+# Check and setup registry if needed
+check_and_setup_registry
 
-# Import Docker image into K3s containerd (required for imagePullPolicy: Never)
-log_info "Importing Docker image into K3s containerd..."
-if command -v k3s &> /dev/null; then
-    # We're on the K3s server node
-    docker save server-info-server:latest | sudo k3s ctr images import - || {
-        log_error "Failed to import image into K3s containerd"
-        exit 1
-    }
-    log_success "Image imported successfully into K3s"
+# Get registry address early for consistent use
+REGISTRY_ADDRESS=""
+if [ -f "../registry.sh" ]; then
+    REGISTRY_ADDRESS=$(../registry.sh address 2>/dev/null || echo "localhost:5000")
+    log_info "Using registry address: $REGISTRY_ADDRESS"
 else
-    log_warn "k3s command not found. Make sure to run this on the K3s server node"
-    log_info "Or manually import the image: docker save server-info-server:latest | sudo k3s ctr images import -"
+    REGISTRY_ADDRESS="localhost:5000"
+    log_warn "Registry script not found, using default: $REGISTRY_ADDRESS"
 fi
 
-# Get number of nodes for replica scaling
-NODE_COUNT=$(kubectl get nodes --no-headers | wc -l)
-log_info "Found $NODE_COUNT nodes in the cluster"
+# Get number of agent nodes for replica scaling (exclude master/control-plane nodes)
+AGENT_NODE_COUNT=$(kubectl get nodes --no-headers | grep -v "control-plane\|master" | wc -l)
+log_info "Found $AGENT_NODE_COUNT agent nodes in the cluster"
 
-# Update deployment replicas to match node count
+if [ "$AGENT_NODE_COUNT" -eq 0 ]; then
+    log_warn "No agent nodes found. Apps will only deploy to nodes without master role."
+    log_info "If you have agent nodes, check node labels with: kubectl get nodes --show-labels"
+    # Fall back to total node count but with warning
+    AGENT_NODE_COUNT=$(kubectl get nodes --no-headers | wc -l)
+    log_warn "Using total node count ($AGENT_NODE_COUNT) as fallback"
+fi
+
+# Default to 1 replica per agent node, but allow override via environment variable
+DEFAULT_REPLICAS="$AGENT_NODE_COUNT"
+DESIRED_REPLICAS="${REPLICAS:-$DEFAULT_REPLICAS}"
+
+log_info "Scaling deployment to $DESIRED_REPLICAS replicas (default: 1 per agent node)"
+log_info "To override replica count, set REPLICAS environment variable: REPLICAS=5 ./deploy.sh"
+
+# Update deployment replicas to match desired count
 if [ -f "k8s/deployment.yaml" ]; then
-    # Create a temporary deployment file with the correct replica count
-    sed "s/replicas: 1/replicas: $NODE_COUNT/" k8s/deployment.yaml > /tmp/deployment-scaled.yaml
-    log_info "Scaling deployment to $NODE_COUNT replicas (one per node)"
+    # Create a temporary deployment file with the correct replica count and registry address
+    sed -e "s/replicas: 1/replicas: $DESIRED_REPLICAS/" \
+        -e "s|image: [^/]*:[0-9]*/server-info-server:latest|image: $REGISTRY_ADDRESS/server-info-server:latest|g" \
+        k8s/deployment.yaml > /tmp/deployment-scaled.yaml
+    log_info "Deploying $DESIRED_REPLICAS replicas across $AGENT_NODE_COUNT agent nodes"
+    log_info "Using image: $REGISTRY_ADDRESS/server-info-server:latest"
 else
     log_error "Deployment manifest not found at k8s/deployment.yaml"
     exit 1

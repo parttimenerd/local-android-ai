@@ -17,8 +17,18 @@ spec:
     spec:
       # Enable host networking to access Android app on localhost:8005
       hostNetwork: true
-      # Spread pods across different nodes
+      # Only schedule on agent nodes (not master/control-plane)
+      nodeSelector:
+        node-role.kubernetes.io/master: "false"
+      # Alternative: use node affinity to prefer agent nodes
       affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: DoesNotExist
+        # Spread pods across different nodes
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
           - weight: 100
@@ -32,8 +42,8 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: server-info-server
-        image: server-info-server:latest
-        imagePullPolicy: Never  # Use local image built by build.sh
+        image: localhost:5000/server-info-server:latest
+        imagePullPolicy: Always  # Always pull from registry
         ports:
         - containerPort: 8080
           name: http

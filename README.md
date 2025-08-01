@@ -42,9 +42,101 @@ curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup
 ```
 
 ### Deploy Sample Application
+
+#### Option 1: Using Local Registry (Recommended for Multi-Node)
 ```bash
+# Set up local Docker registry
+./setup-registry.sh setup
+
+# Build and push application image
 cd sample_app
-./build.sh && ./deploy.sh && ./test.sh
+./build.sh
+../setup-registry.sh push server-info-server:latest
+
+# Deploy application
+./deploy.sh && ./test.sh
+```
+
+#### Option 2: SSH Image Distribution
+```bash
+# Set up SSH keys for image distribution
+ssh-copy-id root@<agent-node-ip>  # password: root
+
+# Build and distribute images (will prompt for distribution method)
+cd sample_app
+./build.sh
+
+# Deploy application
+./deploy.sh && ./test.sh
+```
+
+#### Option 3: Manual Build on Each Node
+```bash
+# On each node, build the image locally
+cd sample_app
+./build.sh
+
+# Deploy from master node
+./deploy.sh && ./test.sh
+```
+
+## Registry Management
+
+The project includes a comprehensive Docker registry management system for easy image distribution across K3s nodes.
+
+### Registry Setup
+```bash
+# Set up local Docker registry
+./setup-registry.sh setup
+
+# Check registry status
+./setup-registry.sh status
+
+# View registry information
+./setup-registry.sh info
+```
+
+### Image Management
+```bash
+# List all images in registry
+./setup-registry.sh list
+
+# Push a local image to registry
+./setup-registry.sh push my-app:latest
+
+# Pull an image from registry
+./setup-registry.sh pull my-app:latest
+
+# Delete an image from registry
+./setup-registry.sh delete my-app:latest
+```
+
+### Registry Operations
+```bash
+# Start/stop registry
+./setup-registry.sh start
+./setup-registry.sh stop
+./setup-registry.sh restart
+
+# View registry logs
+./setup-registry.sh logs
+
+# Clean up unused data
+./setup-registry.sh cleanup
+
+# Completely remove registry
+./setup-registry.sh remove
+```
+
+### K3s Integration
+```bash
+# Configure K3s nodes to use registry
+./setup-registry.sh configure-k3s
+
+# Registry automatically configures:
+# - Master node with registries.yaml
+# - Agent nodes via SSH (if accessible)
+# - Insecure registry settings for local development
 ```
 
 ### Reset Cluster to Clean State

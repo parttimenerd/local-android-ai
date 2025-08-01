@@ -27,6 +27,35 @@ Lightweight Java application providing:
 
 ## Quick Start
 
+### Build and Deploy
+```bash
+# Build Docker image
+./build.sh
+
+# Deploy to cluster
+./deploy.sh
+
+# Check status
+kubectl get pods,svc -l app=server-info-server
+```
+
+### Multi-Node Image Distribution
+For clusters with multiple nodes, the build script can automatically distribute images via SSH:
+
+```bash
+# Setup SSH access to agent nodes first
+ssh-copy-id root@<agent-ip>  # Password: root
+
+# Build will offer to distribute to agent nodes automatically
+./build.sh
+
+# Or distribute manually after building
+./distribute-image.sh
+
+# Or distribute a specific image
+./distribute-image.sh my-app:v1.0.0
+```
+
 ### Deployment
 ```bash
 # Deploy and check status
@@ -151,6 +180,61 @@ sudo tailscale status
 kubectl describe pods -l app=server-info-server | grep -A 5 Events
 sudo docker pull ghcr.io/gardenlinux/gardenlinux/bare-sapmachine:1877.1
 ```
+
+## Automated Troubleshooting
+
+### Quick Fix Script
+For common deployment issues, use the automated troubleshooting script:
+```bash
+./fix-deployment.sh
+```
+
+This script automatically detects and fixes:
+- ✅ LoadBalancer + hostNetwork port conflicts
+- ✅ Pod scheduling failures  
+- ✅ Image availability issues across nodes
+- ✅ Service configuration problems
+
+### Common Issues and Solutions
+
+#### 1. Pods Stuck in Pending State
+**Symptom:** `0/N nodes are available: N node(s) didn't have free ports`
+**Cause:** LoadBalancer service conflicts with hostNetwork deployment
+**Auto-fix:** Run `./fix-deployment.sh` or manually delete LoadBalancer service
+```bash
+sudo k3s kubectl delete service server-info-server
+```
+
+#### 2. Image Pull Errors  
+**Symptom:** `ErrImageNeverPull` on some nodes
+**Cause:** Image only built on one node
+**Solution:** Use automatic SSH distribution or build on each node:
+```bash
+# Option 1: Setup SSH and let build script distribute automatically
+ssh-copy-id root@<agent-ip>  # Password: root
+./build.sh  # Will offer to distribute
+
+# Option 2: Use standalone distribution script
+./distribute-image.sh
+
+# Option 3: Manual distribution
+scp /tmp/image.tar root@<agent-ip>:/tmp/
+ssh root@<agent-ip> 'sudo k3s ctr images import /tmp/image.tar'
+
+# Option 4: Build on each node separately
+# On each K3s node:
+./build.sh
+```
+
+#### 3. Port Conflicts
+**Symptom:** Service binding failures
+**Check:** `sudo k3s kubectl get svc -A | grep 8080`
+**Fix:** Delete conflicting services or change ports
+
+#### 4. hostNetwork vs LoadBalancer
+- **hostNetwork: true** → App accessible on `<node-ip>:8080` directly
+- **LoadBalancer service** → Creates proxy pods that also bind to ports
+- **Don't mix both** → Causes port conflicts and scheduling failures
 
 ## Customization
 
