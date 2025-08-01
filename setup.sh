@@ -69,17 +69,19 @@ in KVM hypervisor via the Android Linux Terminal app.
 
 USAGE:
     ./setup.sh HOSTNAME [OPTIONS]
+    ./setup.sh --local [OPTIONS]
     ./setup.sh cleanup [OPTIONS]
 
 ARGUMENTS:
-    HOSTNAME                    Set the hostname for this node
+    HOSTNAME                    Set the hostname for this node (not allowed with --local)
     cleanup                     Remove not-ready nodes from cluster
 
 OPTIONS:
     -t, --tailscale-key KEY     Tailscale authentication key
+                                Get one at: https://login.tailscale.com/admin/machines/new-linux
     -k, --k3s-token TOKEN       K3s node token (must be used with -u)
     -u, --k3s-url URL           K3s server URL (must be used with -k)
-    --local                     Local mode: skip hostname, password, Tailscale, Docker setup
+    --local                     Local mode: skip hostname, password, Tailscale, Docker setup (but checks Tailscale is running)
     -v, --verbose               Enable verbose output
     -h, --help                  Show this help message
     --version                   Show version information
@@ -92,8 +94,14 @@ EXAMPLES:
     # Setup as K3s agent (worker node)
     ./setup.sh my-phone-02 -t tskey-auth-xxxxx -k mynodetoken -u https://my-phone-01:6443
 
-    # Local mode: minimal setup (only K3s)
-    ./setup.sh my-server --local -k mynodetoken -u https://existing-server:6443
+    # Setup agent with auto-generated hostname
+    ./setup.sh phone-%d -t tskey-auth-xxxxx -k mynodetoken -u https://my-phone-01:6443
+
+    # Local server setup: computer/server as K3s master
+    ./setup.sh --local
+
+    # Local mode: join existing cluster
+    ./setup.sh --local -k mynodetoken -u https://existing-server:6443
 
     # Clean up not-ready nodes
     ./setup.sh cleanup -v
@@ -118,6 +126,7 @@ DESCRIPTION:
     1. Skip hostname, password, Tailscale, and Docker setup
     2. Only install and configure K3s
     3. Suitable for existing systems with prerequisites already installed
+    4. If -t flag is provided, it will be included in generated agent commands
 
 NOTES:
     - This script requires sudo privileges
@@ -272,35 +281,74 @@ setup_ssh() {
 setup_tailscale() {
     log_step "Installing and configuring Tailscale..."
     
-    # Check if Tailscale is already installed
-    if command -v tailscale &> /dev/null; then
-        log "Tailscale is already installed, checking status..."
-        if sudo tailscale status --json &> /dev/null; then
-            log "Tailscale is already configured and running"
-            return 0
-        fi
-    else
+    # Install Tailscale if not already installed
+    if ! command -v tailscale &> /dev/null; then
         log_verbose "Installing Tailscale"
         curl -fsSL https://tailscale.com/install.sh | sh || {
             log_error "Failed to install Tailscale"
             exit $EXIT_INSTALL_FAILED
         }
+    else
+        log "Tailscale is already installed"
+    fi
+    
+    # Check if already configured and running
+    if sudo tailscale status --json &> /dev/null; then
+        log "Tailscale is already configured and running"
+        return 0
     fi
     
     if [ -n "$TAILSCALE_AUTH_KEY" ]; then
         log_verbose "Connecting to Tailscale with auth key"
-        sudo tailscale up --authkey="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME" || {
+        sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME" || {
             log_error "Failed to connect to Tailscale"
             exit $EXIT_CONFIG_FAILED
         }
     else
-        log "Tailscale installed. Run 'sudo tailscale up' to connect manually"
+        log "Tailscale installed. Run 'sudo tailscale up --auth-key=YOUR_KEY' to connect manually"
     fi
     
     log_verbose "Enabling Tailscale service"
     sudo systemctl enable tailscaled || log_warn "Failed to enable Tailscale service"
     
     log "Tailscale setup completed"
+}
+
+check_tailscale_local_mode() {
+    log_step "Checking Tailscale status in local mode..."
+    
+    # Check if Tailscale is installed
+    if ! command -v tailscale &> /dev/null; then
+        log_error "Tailscale is not installed!"
+        echo ""
+        echo "Please install Tailscale first:"
+        echo "  curl -fsSL https://tailscale.com/install.sh | sh"
+        echo ""
+        echo "Then authenticate with your Tailscale account:"
+        echo "  sudo tailscale up"
+        echo ""
+        exit $EXIT_MISSING_DEPS
+    fi
+    
+    # Check if Tailscale is running and authenticated
+    if ! sudo tailscale status --json &> /dev/null; then
+        log_error "Tailscale is installed but not running or not authenticated!"
+        echo ""
+        echo "Please ensure Tailscale is set up and running:"
+        echo "  sudo tailscale up"
+        echo ""
+        echo "If you haven't authenticated yet, you'll be prompted to visit a URL to authenticate."
+        echo ""
+        exit $EXIT_CONFIG_FAILED
+    fi
+    
+    # Get Tailscale status
+    local tailscale_ip=$(tailscale ip -4 2>/dev/null || echo "unknown")
+    local tailscale_hostname=$(tailscale status --json 2>/dev/null | grep -o '"Name":"[^"]*"' | head -1 | cut -d'"' -f4 2>/dev/null || echo "unknown")
+    
+    log "✅ Tailscale is running"
+    log_verbose "Tailscale IP: $tailscale_ip"
+    log_verbose "Tailscale hostname: $tailscale_hostname"
 }
 
 set_hostname() {
@@ -361,10 +409,28 @@ install_k3s_server() {
     
     # Check if K3s is already installed
     if command -v k3s &> /dev/null; then
-        log "K3s is already installed, skipping installation"
-        if [ -f /var/lib/rancher/k3s/server/node-token ]; then
-            show_agent_setup_info
-            return 0
+        log "K3s is already installed, checking configuration..."
+        
+        # Check if this is running as a server by looking for server process
+        if sudo systemctl is-active --quiet k3s 2>/dev/null; then
+            log "K3s server service is already running"
+            
+            # Server is running, token file should exist - read it directly
+            if sudo test -f /var/lib/rancher/k3s/server/node-token; then
+                show_agent_setup_info
+                return 0
+            else
+                log_error "K3s server service is running but token file not found"
+                log_error "Server may have failed to initialize properly"
+                return 1
+            fi
+        elif sudo systemctl is-active --quiet k3s-agent 2>/dev/null; then
+            log_error "K3s is already installed and running as an agent (worker node)"
+            log_error "Cannot install server on a node that's already configured as an agent"
+            log_error "Use cleanup mode or reinstall K3s to change the node type"
+            return 1
+        else
+            log "K3s is installed but not running, will start as server"
         fi
     fi
     
@@ -398,8 +464,20 @@ install_k3s_agent() {
     
     # Check if K3s is already installed
     if command -v k3s &> /dev/null; then
-        log "K3s is already installed, skipping installation"
-        return 0
+        log "K3s is already installed, checking configuration..."
+        
+        # Check if this is running as an agent
+        if sudo systemctl is-active --quiet k3s-agent 2>/dev/null; then
+            log "K3s agent service is already running"
+            return 0
+        elif sudo systemctl is-active --quiet k3s 2>/dev/null; then
+            log_error "K3s is already installed and running as a server (master node)"
+            log_error "Cannot install agent on a node that's already configured as a server"
+            log_error "Use cleanup mode or reinstall K3s to change the node type"
+            return 1
+        else
+            log "K3s is installed but not running, will start as agent"
+        fi
     fi
     
     log_verbose "Downloading and installing K3s agent with server URL: $K3S_URL"
@@ -413,12 +491,13 @@ install_k3s_agent() {
 }
 
 show_agent_setup_info() {
-    if [ ! -f /var/lib/rancher/k3s/server/node-token ]; then
+    if ! sudo test -f /var/lib/rancher/k3s/server/node-token; then
         log_warn "K3s node token file not found, cannot show agent setup commands"
         return 1
     fi
     
-    local token=$(sudo cat /var/lib/rancher/k3s/server/node-token 2>/dev/null)
+    local token
+    token=$(sudo cat /var/lib/rancher/k3s/server/node-token 2>/dev/null)
     if [ -z "$token" ]; then
         log_warn "Failed to read K3s node token"
         return 1
@@ -426,22 +505,50 @@ show_agent_setup_info() {
     
     local server_url="https://$HOSTNAME:6443"
     
+    # Handle Tailscale auth key parameter based on context
+    local tailscale_flag=""
+    if [ "$LOCAL_MODE" = true ]; then
+        # In local mode, only include -t if it was explicitly provided
+        if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+            tailscale_flag=" -t $TAILSCALE_AUTH_KEY"
+        fi
+    else
+        # In non-local mode, always include -t (with placeholder if not provided)
+        local tailscale_key_param="${TAILSCALE_AUTH_KEY:-YOUR_TAILSCALE_AUTH_KEY}"
+        tailscale_flag=" -t $tailscale_key_param"
+    fi
+    
     echo ""
     log "=============================================="
     log "K3s Server Setup Complete!"
     log "=============================================="
     echo ""
+    log "K3s Token (for agent nodes): $token"
+    log "Server URL: $server_url"
+    echo ""
+    log "To get the token manually anytime:"
+    echo "sudo cat /var/lib/rancher/k3s/server/node-token"
+    echo ""
     log "To add agent nodes, use one of the following methods:"
     echo ""
-    echo "Option 1 - One-line setup:"
-    echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- AGENT_HOSTNAME -t $TAILSCALE_AUTH_KEY -k $token -u $server_url"
+    echo "Option 1 - One-line setup with auto-generated hostname:"
     echo ""
-    echo "Option 2 - Download and run manually:"
+    echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- phone-%d$tailscale_flag -k $token -u $server_url"
+    echo ""
+    echo "Option 2 - One-line setup with manual hostname:"
+    echo ""
+    echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
+    echo ""
+    echo "Option 3 - Download and run manually:"
+    echo ""
     echo "curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh > setup.sh"
     echo "chmod +x setup.sh"
-    echo "./setup.sh AGENT_HOSTNAME -t $TAILSCALE_AUTH_KEY -k $token -u $server_url"
+    echo "./setup.sh AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
     echo ""
-    log "Replace AGENT_HOSTNAME with the desired hostname for each agent node"
+    log "Option 1 auto-generates unique hostnames. For manual setup (Options 2-3), replace AGENT_HOSTNAME with the desired hostname for each agent node"
+    if [ "$LOCAL_MODE" = false ] && [ -z "$TAILSCALE_AUTH_KEY" ]; then
+        log "Replace YOUR_TAILSCALE_AUTH_KEY with your actual Tailscale auth key"
+    fi
     echo ""
 }
 
@@ -549,9 +656,29 @@ remove_from_tailscale() {
 
 # Validation functions
 validate_hostname() {
+    # In local mode, hostname is prohibited
+    if [ "$LOCAL_MODE" = true ] && [ -n "$HOSTNAME" ]; then
+        log_error "Hostname argument is not allowed in --local mode"
+        return 1
+    fi
+    
+    # In local mode without hostname, this is valid
+    if [ "$LOCAL_MODE" = true ] && [ -z "$HOSTNAME" ]; then
+        return 0
+    fi
+    
     if [ -z "$HOSTNAME" ]; then
         log_error "Hostname is required"
         return 1
+    fi
+    
+    # Check for auto-hostname pattern and expand it
+    if echo "$HOSTNAME" | grep -q '%d'; then
+        log_verbose "Auto-hostname pattern detected, expanding %d with timestamp"
+        local timestamp_b64
+        timestamp_b64=$(echo "$(date +%s)" | base64 | tr -d '=' | tr '/' '-' | cut -c1-8)
+        HOSTNAME=$(echo "$HOSTNAME" | sed "s/%d/$timestamp_b64/g")
+        log_verbose "Expanded hostname: $HOSTNAME"
     fi
     
     # Basic hostname validation
@@ -582,13 +709,22 @@ validate_k3s_params() {
     fi
 }
 
+validate_tailscale_key() {
+    # Validate Tailscale auth key format if provided
+    if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+        if ! echo "$TAILSCALE_AUTH_KEY" | grep -qE '^tskey-auth-'; then
+            log_error "Invalid Tailscale auth key format. Tailscale keys must start with 'tskey-auth-'"
+            log_error "Get a valid key at: https://login.tailscale.com/admin/machines/new-linux"
+            return 1
+        fi
+    fi
+}
+
 validate_local_params() {
     if [ "$LOCAL_MODE" = true ]; then
-        # In local mode, hostname is optional (will use current hostname)
-        if [ -z "$HOSTNAME" ]; then
-            HOSTNAME=$(hostname)
-            log_verbose "Local mode: using current hostname: $HOSTNAME"
-        fi
+        # In local mode, use current hostname
+        HOSTNAME=$(hostname)
+        log_verbose "Local mode: using current hostname: $HOSTNAME"
         
         # Local mode without K3s parameters requires server setup or agent parameters
         if [ -z "$K3S_TOKEN" ] && [ -z "$K3S_URL" ]; then
@@ -648,6 +784,49 @@ parse_arguments() {
                     ;;
                 *)
                     log_error "Unknown cleanup option: $1"
+                    echo ""
+                    show_help
+                    exit $EXIT_INVALID_ARGS
+                    ;;
+            esac
+        done
+        return 0
+    fi
+    
+    # Check if first argument is '--local'
+    if [ "$1" = "--local" ]; then
+        LOCAL_MODE=true
+        shift
+        
+        # Parse remaining options for local mode
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                -t|--tailscale-key)
+                    TAILSCALE_AUTH_KEY="$2"
+                    shift 2
+                    ;;
+                -k|--k3s-token)
+                    K3S_TOKEN="$2"
+                    shift 2
+                    ;;
+                -u|--k3s-url)
+                    K3S_URL="$2"
+                    shift 2
+                    ;;
+                -v|--verbose)
+                    VERBOSE=true
+                    shift
+                    ;;
+                -h|--help)
+                    show_help
+                    exit $EXIT_SUCCESS
+                    ;;
+                --version)
+                    show_version
+                    exit $EXIT_SUCCESS
+                    ;;
+                *)
+                    log_error "Unknown option for --local mode: $1"
                     echo ""
                     show_help
                     exit $EXIT_INVALID_ARGS
@@ -740,6 +919,7 @@ main() {
     # Regular setup mode - validate arguments
     validate_hostname || exit $EXIT_INVALID_ARGS
     validate_k3s_params || exit $EXIT_INVALID_ARGS
+    validate_tailscale_key || exit $EXIT_INVALID_ARGS
     validate_local_params || exit $EXIT_INVALID_ARGS
     
     # Pre-flight checks
@@ -782,6 +962,8 @@ main() {
         setup_tailscale
     else
         log "Local mode: skipping hostname, Docker, SSH, and Tailscale setup"
+        # But we still need to check that Tailscale is available
+        check_tailscale_local_mode
     fi
     
     # Install K3s (server or agent based on parameters)

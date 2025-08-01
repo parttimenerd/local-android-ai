@@ -57,6 +57,7 @@ See [android/README.md](android/README.md) for installation and usage details.
 2. **Debian Environment**: Set up within the terminal app
 3. **Basic Tools**: Install curl, wget, git within Debian
 4. **Tailscale Account**: Register at tailscale.com
+5. **Tailscale Auth Key**: Create one at https://login.tailscale.com/admin/machines/new-linux
 
 ### Master Node Configuration
 
@@ -77,6 +78,35 @@ See [android/README.md](android/README.md) for installation and usage details.
   --k3s-token $(cat /var/lib/rancher/k3s/server/node-token) \
   --k3s-url https://master-tailscale-ip:6443
 ```
+
+### Local Mode Setup
+
+For local development or when running on systems with existing prerequisites:
+
+```bash
+# Local server setup: computer/server as K3s master
+./setup.sh --local
+
+# Local mode: join existing cluster
+./setup.sh --local -k mynodetoken -u https://existing-server:6443
+
+# Local mode with Tailscale auth key (will install Tailscale if needed)
+./setup.sh --local -t tskey-auth-xxxxx
+```
+
+**Getting the K3s Token:**
+After setting up a local server, get the token for worker nodes:
+```bash
+sudo cat /var/lib/rancher/k3s/server/node-token
+```
+
+**Notes**: 
+- In normal mode, the root SSH password is set to 'root' for simplicity. This is **NOT done in `--local` mode** for security reasons.
+- Local mode will **check that Tailscale is running** and prompt you to install/configure it if needed, but won't modify your existing Tailscale setup.
+- Use local mode when setting up a computer/server as the K3s master that phones will connect to.
+- **Hostname argument is prohibited in local mode** - the current system hostname will always be used.
+- **With `-t` flag**: Tailscale will be installed automatically if not present.
+- **Token display**: The setup script will show the K3s token and commands to add worker nodes.
 
 ## Application Management
 
@@ -191,6 +221,20 @@ sudo tailscale down && sudo tailscale up
 sudo /usr/local/bin/k3s-uninstall.sh      # Server
 sudo /usr/local/bin/k3s-agent-uninstall.sh # Agent nodes
 ```
+
+**Remove Multiple Devices from Tailscale:**
+```bash
+# Remove devices by hostname prefix using Tailscale API
+./remove_from_vpn.sh <TAILSCALE_API_KEY> <HOSTNAME_PREFIX>
+
+# Example: Remove all devices starting with "phone-"
+./remove_from_vpn.sh tskey-api-xxxxx phone-
+
+# Example: Remove all test devices
+./remove_from_vpn.sh tskey-api-xxxxx test-
+```
+
+*Note: Requires a Tailscale API key (not auth key) from your Tailscale admin console.*
 
 ## License
 
