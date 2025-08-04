@@ -36,16 +36,16 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Optional: Run Maven compile/test locally if Maven is available
-if command -v mvn &> /dev/null; then
-    echo -e "${YELLOW}[MAVEN]${NC} Running Maven validate and compile..."
+# Check if we want to run Maven locally first (often not needed with Docker multi-stage build)
+if [ -n "$USE_LOCAL_MAVEN" ] && command -v mvn &> /dev/null; then
+    echo -e "${YELLOW}[MAVEN]${NC} Running Maven compile to verify code..."
     mvn clean compile || {
         echo -e "${RED}[ERROR]${NC} Maven compile failed. Fix compilation errors before building Docker image."
         exit 1
     }
-    echo -e "${GREEN}[SUCCESS]${NC} Maven compile successful"
+    echo -e "${GREEN}[SUCCESS]${NC} Maven compile successful, proceeding with Docker build"
 else
-    echo -e "${YELLOW}[INFO]${NC} Maven not found locally. Build will use Docker multi-stage build."
+    echo -e "${YELLOW}[INFO]${NC} Skipping local Maven build. Will use Docker multi-stage build."
 fi
 
 # Build the Docker image

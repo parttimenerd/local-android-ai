@@ -21,6 +21,8 @@ K3S_URL=""
 CLEANUP_MODE=false
 REMOVE_FROM_TAILSCALE=false
 LOCAL_MODE=false
+FORCE_MODE=false
+TEST_GEOCODER_MODE=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -71,10 +73,12 @@ USAGE:
     ./setup.sh HOSTNAME [OPTIONS]
     ./setup.sh --local [OPTIONS]
     ./setup.sh cleanup [OPTIONS]
+    ./setup.sh test-geocoder [OPTIONS]
 
 ARGUMENTS:
     HOSTNAME                    Set the hostname for this node (not allowed with --local)
     cleanup                     Remove not-ready nodes from cluster
+    test-geocoder               Test the geocoder service with sample city coordinates
 
 OPTIONS:
     -t, --tailscale-key KEY     Tailscale authentication key (validated before use)
@@ -83,6 +87,7 @@ OPTIONS:
     -k, --k3s-token TOKEN       K3s node token (must be used with -u)
     -u, --k3s-url URL           K3s server URL (must be used with -k)
     --local                     Local mode: skip hostname, password, Tailscale, Docker setup (but checks Tailscale is running)
+    --force                     Force K3s reinstall: uninstall existing K3s, reinstall fresh, redeploy geocoder (Docker untouched)
     -v, --verbose               Enable verbose output
     -h, --help                  Show this help message
     --version                   Show version information
@@ -109,6 +114,12 @@ EXAMPLES:
 
     # Clean up not-ready nodes and remove from Tailscale
     ./setup.sh cleanup --remove-from-tailscale -v
+
+    # Force K3s reinstall (uninstall K3s, reinstall fresh, keep Docker)
+    ./setup.sh my-phone-01 -t tskey-auth-xxxxx --force
+    
+    # Test geocoder service with sample world cities
+    ./setup.sh test-geocoder -v
 
 DESCRIPTION:
     This script will:
@@ -675,9 +686,318 @@ set_hostname() {
     fi
 }
 
+# Function to force reset the cluster and all components
+force_reset_cluster() {
+    local old_hostname=$(hostname)
+    log_step "Force reset: Completely resetting K3s cluster and reinstalling..."
+    
+    log_warn "⚠️  This will completely destroy the existing K3s cluster and all deployments!"
+    log_warn "⚠️  All pods, services, and data will be permanently lost!"
+    log_warn "⚠️  Docker will remain untouched - only K3s will be reinstalled"
+    
+    if [ "$VERBOSE" = false ]; then
+        echo ""
+        echo "Continuing in 5 seconds... Press Ctrl+C to cancel"
+        for i in 5 4 3 2 1; do
+            echo -n "$i... "
+            sleep 1
+        done
+        echo ""
+        echo ""
+        log "Starting K3s force reset process..."
+    fi
+    
+    # Stop and disable geolocation monitoring if it exists
+    log "Stopping geolocation monitoring service..."
+    sudo systemctl stop k3s-geolocation-monitor 2>/dev/null || true
+    sudo systemctl disable k3s-geolocation-monitor 2>/dev/null || true
+    sudo rm -f /usr/local/bin/k3s-geolocation-monitor 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/k3s-geolocation-monitor.service 2>/dev/null || true
+    
+    # Use official K3s uninstall scripts
+    log "Running official K3s uninstall scripts..."
+    
+    if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
+        log "Found K3s server uninstall script, running..."
+        if [ "$VERBOSE" = true ]; then
+            sudo /usr/local/bin/k3s-uninstall.sh
+        else
+            sudo /usr/local/bin/k3s-uninstall.sh 2>&1 | while read -r line; do
+                log "$line"
+            done
+        fi
+        log "✅ K3s server uninstall completed"
+    elif [ -f /usr/local/bin/k3s-agent-uninstall.sh ]; then
+        log "Found K3s agent uninstall script, running..."
+        if [ "$VERBOSE" = true ]; then
+            sudo /usr/local/bin/k3s-agent-uninstall.sh
+        else
+            sudo /usr/local/bin/k3s-agent-uninstall.sh 2>&1 | while read -r line; do
+                log "$line"
+            done
+        fi
+        log "✅ K3s agent uninstall completed"
+    else
+        log_warn "No K3s uninstall scripts found"
+        log "Attempting manual cleanup..."
+        
+        # Manual cleanup if no uninstall scripts exist
+        sudo systemctl stop k3s-agent 2>/dev/null || true
+        sudo systemctl stop k3s 2>/dev/null || true
+        sudo systemctl disable k3s-agent 2>/dev/null || true
+        sudo systemctl disable k3s 2>/dev/null || true
+        
+        sudo rm -rf /var/lib/rancher/k3s 2>/dev/null || true
+        sudo rm -rf /etc/rancher/k3s 2>/dev/null || true
+        sudo rm -f /usr/local/bin/k3s* 2>/dev/null || true
+        sudo rm -f /etc/systemd/system/k3s* 2>/dev/null || true
+        
+        sudo systemctl daemon-reload
+        log "Manual K3s cleanup completed"
+    fi
+
+    # set hostname back to $current_hostname
+    log "Resetting hostname to original value..."
+    local current_hostname=$(hostname)
+    if [ "$current_hostname" != "$old_hostname" ]; then
+        log_verbose "Current hostname: $current_hostname"
+        log_verbose "Setting hostname back to: $old_hostname"
+        sudo hostnamectl set-hostname "$old_hostname" || {
+            log_error "Failed to reset hostname"
+        }
+        log "Hostname is again set to $old_hostname"
+    fi
+    
+    log "✅ K3s force reset completed - system is ready for fresh K3s installation"
+    log "📝 Docker and other services remain untouched"
+}
+
+# Function to test geocoder city resolution with sample coordinates
+test_geocoder_city_resolution() {
+    log_step "Testing geocoder city resolution..."
+
+    # Wait for service to be ready (additional to deployment wait)
+    local max_retries=10
+    local retry_count=0
+    local geocoder_service_url=""
+    
+    log_verbose "Determining geocoder service URL..."
+    
+    # Try to find service IP
+    while [ $retry_count -lt $max_retries ]; do
+        local service_ip
+        service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+        
+        if [ -n "$service_ip" ]; then
+            geocoder_service_url="http://${service_ip}:8090"
+            log_verbose "Found geocoder service at: $geocoder_service_url"
+            break
+        fi
+        
+        log_verbose "Waiting for geocoder service IP... ($((retry_count + 1))/$max_retries)"
+        sleep 5
+        retry_count=$((retry_count + 1))
+    done
+    
+    # If service IP not found, try NodePort
+    if [ -z "$geocoder_service_url" ]; then
+        local node_port
+        node_port=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+        
+        if [ -n "$node_port" ]; then
+            geocoder_service_url="http://localhost:$node_port"
+            log_verbose "Using NodePort access: $geocoder_service_url"
+        else
+            # Fallback to default port on localhost
+            geocoder_service_url="http://localhost:8090"
+            log_verbose "Using default port on localhost: $geocoder_service_url"
+        fi
+    fi
+    
+    # Test cities with well-known coordinates
+    log "Testing city resolution with sample coordinates..."
+    
+    # Define test cities with their coordinates
+    declare -A test_cities=(
+        ["Berlin"]="52.52,13.40"
+        ["London"]="51.51,-0.13" 
+        ["Tokyo"]="35.68,139.76"
+        ["New York"]="40.71,-74.01"
+    )
+    
+    local success_count=0
+    
+    for city in "${!test_cities[@]}"; do
+        local coords=${test_cities[$city]}
+        local lat=${coords%,*}
+        local lon=${coords#*,}
+        
+        log_verbose "Testing coordinates for $city: $lat,$lon"
+        
+        # Call geocoder API
+        local url="${geocoder_service_url}/api/reverse-geocode?lat=${lat}&lon=${lon}&method=geonames"
+        local result
+        result=$(curl -s --connect-timeout 10 --max-time 15 "$url" 2>/dev/null)
+        
+        if [ $? -eq 0 ] && [ -n "$result" ]; then
+            # Extract location from response
+            local resolved_location
+            resolved_location=$(echo "$result" | grep -o '"location":"[^"]*"' | cut -d'"' -f4)
+            
+            if [ -n "$resolved_location" ]; then
+                log "✅ Resolved $city: $resolved_location"
+                success_count=$((success_count + 1))
+            else
+                log_warn "⚠️  Failed to extract location from response for $city"
+            fi
+        else
+            log_warn "⚠️  Failed to query geocoder for $city coordinates"
+        fi
+    done
+    
+    # Summarize results
+    local total=${#test_cities[@]}
+    if [ $success_count -eq $total ]; then
+        log "✅ All city resolutions successful ($success_count/$total)"
+        return 0
+    elif [ $success_count -gt 0 ]; then
+        log_warn "⚠️  Some city resolutions successful ($success_count/$total)"
+        # Still return success if at least one city resolves
+        return 0
+    else
+        log_error "❌ All city resolutions failed (0/$total)"
+        log_error "Geocoder service is not functional - this indicates cluster issues"
+        log_error "Exiting setup as the geocoder is a critical component for cluster functionality"
+        exit $EXIT_CONFIG_FAILED
+    fi
+}
+
+# Function to test geocoder functionality independently
+test_geocoder_service() {
+    log_step "Testing reverse geocoder service functionality..."
+    
+    # Check if kubectl is available
+    if ! command -v kubectl &> /dev/null; then
+        log_error "kubectl command not found, cannot test geocoder service"
+        exit $EXIT_MISSING_DEPS
+    fi
+    
+    # Check if the geocoder service exists
+    if ! kubectl get deployment reverse-geocoder &> /dev/null; then
+        log_error "Reverse geocoder service not found in the cluster"
+        log_error "Please deploy the geocoder service first"
+        exit $EXIT_CONFIG_FAILED
+    fi
+    
+    # Check if the service is ready
+    local ready_replicas
+    ready_replicas=$(kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    if [ "$ready_replicas" != "1" ]; then
+        log_warn "Reverse geocoder service is not ready ($ready_replicas/1 replicas)"
+        log_warn "Attempting tests anyway..."
+    else
+        log "Reverse geocoder service is ready"
+    fi
+    
+    # Get service details
+    local service_ip service_port
+    service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+    service_port=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8090")
+    
+    if [ -z "$service_ip" ]; then
+        log_warn "Could not determine service IP, using localhost:8090"
+        service_ip="localhost"
+    fi
+    
+    local api_url="http://${service_ip}:${service_port}"
+    log "Using geocoder API at: $api_url"
+    
+    # Test health endpoint first
+    log "Testing health endpoint..."
+    if curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" | grep -q "ok"; then
+        log "✅ Health endpoint responded successfully"
+    else
+        log_error "❌ Health endpoint failed"
+        log_error "Service may not be running properly"
+        exit $EXIT_CONFIG_FAILED
+    fi
+    
+    # Test world cities
+    log "Testing geocoder with major world cities..."
+    echo ""
+    printf "%-20s %-20s %-30s %s\n" "City" "Coordinates" "Resolution" "Status"
+    echo "-------------------------------------------------------------------------------"
+    
+    # Define test cities with their coordinates
+    declare -A test_cities=(
+        ["Berlin"]="52.52,13.40"
+        ["London"]="51.51,-0.13" 
+        ["Tokyo"]="35.68,139.76"
+        ["New York"]="40.71,-74.01"
+        ["Sydney"]="-33.87,151.21"
+        ["Moscow"]="55.75,37.62"
+        ["Cape Town"]="-33.92,18.42"
+        ["Rio de Janeiro"]="-22.91,-43.17"
+    )
+    
+    local success_count=0
+    local total=${#test_cities[@]}
+    
+    for city in "${!test_cities[@]}"; do
+        local coords=${test_cities[$city]}
+        local lat=${coords%,*}
+        local lon=${coords#*,}
+        
+        # Call geocoder API
+        local url="${api_url}/api/reverse-geocode?lat=${lat}&lon=${lon}&method=geonames"
+        local result
+        result=$(curl -s --connect-timeout 10 --max-time 15 "$url" 2>/dev/null)
+        
+        if [ $? -eq 0 ] && [ -n "$result" ]; then
+            # Extract location from response
+            local resolved_location
+            resolved_location=$(echo "$result" | grep -o '"location":"[^"]*"' | cut -d'"' -f4)
+            
+            if [ -n "$resolved_location" ]; then
+                printf "%-20s %-20s %-30s %s\n" "$city" "$lat,$lon" "$resolved_location" "✅"
+                success_count=$((success_count + 1))
+            else
+                printf "%-20s %-20s %-30s %s\n" "$city" "$lat,$lon" "No resolution" "❌"
+            fi
+        else
+            printf "%-20s %-20s %-30s %s\n" "$city" "$lat,$lon" "API error" "❌"
+        fi
+    done
+    
+    # Show summary
+    echo ""
+    log "Test results summary:"
+    log "  Total tests: $total"
+    log "  Successful: $success_count"
+    log "  Failed: $((total - success_count))"
+    
+    if [ $success_count -eq $total ]; then
+        log "✅ All city resolutions successful"
+        return 0
+    elif [ $success_count -gt 0 ]; then
+        log_warn "⚠️  Some city resolutions failed"
+        return 1
+    else
+        log_error "❌ All city resolutions failed"
+        log_error "Geocoder service is not working properly"
+        return 1
+    fi
+}
+
 # Function to deploy the reverse geocoder service
 deploy_geocoder_service() {
-    log_step "Deploying reverse geocoder service..."
+    log_verbose "[DEBUG] deploy_geocoder_service() function called"
+    log_verbose "[DEBUG] Current working directory: $(pwd)"
+    
+    log_step "Deploying reverse geocoder service for offline city name resolution..."
+    log "📍 This service provides local geocoding for node location labels"
+    
+    log_verbose "[DEBUG] Starting geocoder directory detection..."
     
     # Check if we're in the right directory structure
     local current_dir
@@ -685,15 +1005,20 @@ deploy_geocoder_service() {
     local geocoder_dir=""
     
     # Look for the geocoder_app directory
+    log_verbose "Looking for geocoder_app directory..."
     if [ -d "./geocoder_app" ]; then
         geocoder_dir="./geocoder_app"
+        log_verbose "Found geocoder_app in current directory"
     elif [ -d "../geocoder_app" ]; then
         geocoder_dir="../geocoder_app"
+        log_verbose "Found geocoder_app in parent directory"
     elif [ -d "/home/$USER/code/experiments/k3s-on-phone/geocoder_app" ]; then
         geocoder_dir="/home/$USER/code/experiments/k3s-on-phone/geocoder_app"
+        log_verbose "Found geocoder_app in expected path"
     else
         log_warn "Geocoder app directory not found, skipping geocoder deployment"
-        log_warn "Reverse geocoding will fallback to external Nominatim service"
+        log_warn "Node location labeling may be limited without local reverse geocoding service"
+        log_verbose "Searched in: ./geocoder_app, ../geocoder_app, /home/$USER/code/experiments/k3s-on-phone/geocoder_app"
         return 0
     fi
     
@@ -706,45 +1031,131 @@ deploy_geocoder_service() {
     }
     
     # Check if the geocoder service already exists
+    log_verbose "Checking if reverse-geocoder deployment already exists..."
     if kubectl get deployment reverse-geocoder >/dev/null 2>&1; then
-        log "Reverse geocoder service already deployed, checking status..."
-        if kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
-            log "✅ Reverse geocoder service is already running"
-            cd "$current_dir"
-            return 0
+        log_verbose "Found existing reverse-geocoder deployment"
+        if [ "$FORCE_MODE" = true ]; then
+            log "Force mode: Removing existing geocoder deployment for rebuild..."
+            kubectl delete deployment reverse-geocoder >/dev/null 2>&1 || true
+            kubectl delete service reverse-geocoder >/dev/null 2>&1 || true
         else
-            log "⚠️  Reverse geocoder service exists but not ready, redeploying..."
+            log "Reverse geocoder service already deployed, checking status..."
+            if kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
+                log "✅ Reverse geocoder service is already running"
+                cd "$current_dir"
+                return 0
+            else
+                log "⚠️  Reverse geocoder service exists but not ready, redeploying..."
+            fi
         fi
+    else
+        log_verbose "No existing reverse-geocoder deployment found, proceeding with deployment"
     fi
     
     # Build the geocoder service if build script exists
     if [ -x "./build.sh" ]; then
-        log_verbose "Building reverse geocoder service..."
-        if ./build.sh >/dev/null 2>&1; then
-            log "✅ Geocoder service built successfully"
-        else
-            log_warn "Geocoder build failed, attempting deployment anyway..."
-        fi
-    else
-        log_verbose "No build script found, deploying existing image..."
-    fi
-    
-    # Deploy the geocoder service if deployment script exists
-    if [ -x "./deploy.sh" ]; then
-        log_verbose "Deploying reverse geocoder service..."
-        if ./deploy.sh >/dev/null 2>&1; then
-            log "✅ Reverse geocoder service deployed successfully"
-            
-            # Wait for deployment to be ready
-            log_verbose "Waiting for geocoder service to be ready..."
-            if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s >/dev/null 2>&1; then
-                log "✅ Reverse geocoder service is ready"
+        # Force clean build in force mode
+        if [ "$FORCE_MODE" = true ] && [ -x "./clean.sh" ]; then
+            log_verbose "Force mode: Cleaning previous geocoder build..."
+            if [ "$VERBOSE" = true ]; then
+                ./clean.sh || log_warn "Clean script failed"
             else
-                log_warn "Geocoder service deployment timeout, may still be starting"
+                ./clean.sh >/dev/null 2>&1 || log_warn "Clean script failed"
+            fi
+        fi
+        
+        # If target directory exists but has permission issues, clean it
+        if [ -d "target" ] && [ ! -w "target" ]; then
+            log_verbose "Target directory exists but has permission issues, cleaning..."
+            sudo rm -rf target || {
+                log_warn "Failed to clean target directory, may have permission issues"
+            }
+        fi
+        
+        # Run the build script which will use Docker multi-stage build
+        log "🛠️ Building reverse geocoder Docker image..."
+        
+        # Add extra debugging info for verbose mode
+        if [ "$VERBOSE" = true ]; then
+            log_verbose "Docker build environment:"
+            docker info || log_warn "Failed to get Docker info"
+            
+            log_verbose "Project structure:"
+            ls -la || log_warn "Failed to list directory"
+            
+            # Run build with output shown
+            if ./build.sh; then
+                log "✅ Geocoder service Docker image built successfully"
+            else
+                log_error "Geocoder Docker build failed. See errors above."
+                log_error "Will not proceed with deployment."
+                cd "$current_dir"
+                return 1
             fi
         else
-            log_warn "Geocoder deployment failed, continuing without local reverse geocoding"
-            log_warn "Node location updates will use external Nominatim service"
+            # Run build with output hidden
+            if ./build.sh >/dev/null 2>&1; then
+                log "✅ Geocoder service Docker image built successfully"
+            else
+                log_error "Geocoder Docker build failed. Run with -v/--verbose to see details."
+                log_error "Will not proceed with deployment."
+                cd "$current_dir"
+                return 1
+            fi
+        fi
+    else
+        log_warn "No build script found for geocoder, skipping build"
+        log_warn "Attempting to deploy using existing image (if available)"
+    fi
+    
+# Deploy the geocoder service if deployment script exists
+    if [ -x "./deploy.sh" ]; then
+        log_verbose "Deploying reverse geocoder service..."
+        log_verbose "Executing: ./deploy.sh"
+        if [ "$VERBOSE" = true ]; then
+            log_verbose "Running deploy.sh with verbose output..."
+            if ./deploy.sh; then
+                log "✅ Reverse geocoder service deployed successfully"
+                
+                # Wait for deployment to be ready
+                log_verbose "Waiting for geocoder service to be ready..."
+                if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s; then
+                    log "✅ Reverse geocoder service is ready"
+                    
+                    # Test the city resolution capability
+                    test_geocoder_city_resolution
+                else
+                    log_warn "Geocoder service deployment timeout, may still be starting"
+                fi
+            else
+                log_warn "Geocoder deployment failed, continuing without local reverse geocoding"
+                log_warn "Node location updates will be limited without the geocoder service"
+            fi
+        else
+            log_verbose "Running deploy.sh with output suppressed..."
+            if ./deploy.sh >/dev/null 2>&1; then
+                log "✅ Reverse geocoder service deployed successfully"
+                
+                # Wait for deployment to be ready
+                log_verbose "Waiting for geocoder service to be ready..."
+                if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s >/dev/null 2>&1; then
+                    log "✅ Reverse geocoder service is ready"
+                    
+                    # Test the city resolution capability (with reduced verbosity)
+                    test_geocoder_city_resolution >/dev/null 2>&1
+                    if [ $? -eq 0 ]; then
+                        log "✅ City resolution test passed"
+                    else
+                        log_warn "⚠️  City resolution test failed. Run with -v/--verbose for details."
+                    fi
+                else
+                    log_warn "Geocoder service deployment timeout, may still be starting"
+                fi
+            else
+                log_warn "Geocoder deployment failed, continuing without local reverse geocoding"
+                log_warn "Node location updates will be limited without the geocoder service"
+                log_warn "Run with -v/--verbose to see deployment details"
+            fi
         fi
     else
         log_warn "No deployment script found for geocoder, skipping deployment"
@@ -756,6 +1167,11 @@ deploy_geocoder_service() {
 
 install_k3s_server() {
     log_step "Installing K3s as server (master node)..."
+    
+    # If force mode is enabled, reset everything first
+    if [ "$FORCE_MODE" = true ]; then
+        force_reset_cluster
+    fi
     
     # Check if K3s is already installed
     if command -v k3s &> /dev/null; then
@@ -793,11 +1209,23 @@ install_k3s_server() {
     fi
     
     log_verbose "Downloading and installing K3s server"
-    curl -sfL https://get.k3s.io | sh - || {
-        log_error "Failed to install K3s server"
-        log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
-        exit $EXIT_INSTALL_FAILED
-    }
+    # In local mode, use K3S_NODE_NAME to preserve the system hostname
+    if [ "$LOCAL_MODE" = true ]; then
+        log_verbose "Using K3S_NODE_NAME to preserve system hostname"
+        current_hostname=$(hostname)
+        curl -sfL https://get.k3s.io | K3S_NODE_NAME="$current_hostname" sh - || {
+            log_error "Failed to install K3s server"
+            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
+            exit $EXIT_INSTALL_FAILED
+        }
+    else
+        # Normal mode - let K3s handle hostname
+        curl -sfL https://get.k3s.io | sh - || {
+            log_error "Failed to install K3s server"
+            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
+            exit $EXIT_INSTALL_FAILED
+        }
+    fi
     
     log_verbose "Waiting for K3s to be ready..."
     local retries=30
@@ -1303,11 +1731,23 @@ install_k3s_agent() {
     fi
     
     log_verbose "Downloading and installing K3s agent with server URL: $K3S_URL"
-    curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
-        log_error "Failed to install K3s agent"
-        log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
-        exit $EXIT_INSTALL_FAILED
-    }
+    # In local mode, use K3S_NODE_NAME to preserve the system hostname
+    if [ "$LOCAL_MODE" = true ]; then
+        log_verbose "Using K3S_NODE_NAME to preserve system hostname"
+        current_hostname=$(hostname)
+        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_NAME="$current_hostname" sh - || {
+            log_error "Failed to install K3s agent"
+            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
+            exit $EXIT_INSTALL_FAILED
+        }
+    else
+        # Normal mode - let K3s handle hostname
+        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
+            log_error "Failed to install K3s agent"
+            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
+            exit $EXIT_INSTALL_FAILED
+        }
+    fi
     
     # Wait a moment for the agent to start and connect
     log_verbose "Waiting for K3s agent to connect to cluster..."
@@ -1437,7 +1877,7 @@ show_agent_setup_info() {
         return 1
     fi
     
-    local server_url="https://$HOSTNAME:6443"
+    local server_url="https://$(hostname):6443"
     
     # Handle Tailscale auth key parameter based on context
     local tailscale_flag=""
@@ -1795,6 +2235,37 @@ parse_arguments() {
         exit $EXIT_SUCCESS
     fi
     
+    # Check if first argument is 'test-geocoder'
+    if [ "$1" = "test-geocoder" ]; then
+        TEST_GEOCODER_MODE=true
+        shift
+        
+        # Parse test-geocoder-specific options
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                -v|--verbose)
+                    VERBOSE=true
+                    shift
+                    ;;
+                -h|--help)
+                    show_help
+                    exit $EXIT_SUCCESS
+                    ;;
+                --version)
+                    show_version
+                    exit $EXIT_SUCCESS
+                    ;;
+                *)
+                    log_error "Unknown test-geocoder option: $1"
+                    echo ""
+                    show_help
+                    exit $EXIT_INVALID_ARGS
+                    ;;
+            esac
+        done
+        return 0
+    fi
+    
     # Check if first argument is 'cleanup'
     if [ "$1" = "cleanup" ]; then
         CLEANUP_MODE=true
@@ -1850,6 +2321,10 @@ parse_arguments() {
                     K3S_URL="$2"
                     shift 2
                     ;;
+                --force)
+                    FORCE_MODE=true
+                    shift
+                    ;;
                 -v|--verbose)
                     VERBOSE=true
                     shift
@@ -1895,6 +2370,10 @@ parse_arguments() {
                 LOCAL_MODE=true
                 shift
                 ;;
+            --force)
+                FORCE_MODE=true
+                shift
+                ;;
             -v|--verbose)
                 VERBOSE=true
                 shift
@@ -1917,10 +2396,49 @@ parse_arguments() {
     done
 }
 
+# Function to handle test-geocoder mode
+handle_test_geocoder_mode() {
+    log "=============================================="
+    log "K3s on Phone Geocoder Test v${VERSION}"
+    log "=============================================="
+    log "Mode: Test geocoder service"
+    log "Verbose: $VERBOSE"
+    log "=============================================="
+    
+    if [ "$VERBOSE" = true ]; then
+        log_verbose "Verbose mode enabled - showing detailed output"
+    fi
+    
+    echo ""
+    
+    # Pre-flight checks for test-geocoder
+    check_sudo
+    
+    # Run geocoder tests
+    test_geocoder_service
+    
+    # Test city resolution functionality 
+    log_step "Testing geocoder city resolution with sample coordinates..."
+    test_geocoder_city_resolution
+    
+    echo ""
+    log "=============================================="
+    log "Geocoder testing completed!"
+    log "=============================================="
+    echo ""
+    return 0
+}
+
 # Main function
 main() {
     # Parse command line arguments
     parse_arguments "$@"
+    
+    # Handle test-geocoder mode
+    if [ "$TEST_GEOCODER_MODE" = true ]; then
+        handle_test_geocoder_mode
+        return $?
+    fi
     
     # Handle cleanup mode
     if [ "$CLEANUP_MODE" = true ]; then

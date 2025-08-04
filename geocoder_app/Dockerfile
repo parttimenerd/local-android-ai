@@ -21,6 +21,11 @@ COPY src ./src
 # Build the application
 RUN mvn clean package -DskipTests
 
+# Make sure the JAR file is correctly named
+RUN ls -la /app/target/
+RUN mv /app/target/reverse-geocoder-*.jar /app/target/reverse-geocoder.jar || echo "JAR file already correctly named"
+RUN ls -la /app/target/
+
 # Runtime stage - use lightweight JRE
 FROM ghcr.io/gardenlinux/gardenlinux/bare-sapmachine:1877.1
 

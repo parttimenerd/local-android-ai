@@ -60,3 +60,4 @@ mvnw.cmd
 *.attach_pid*
 add_nodes.md
 geonames-data
+*.class

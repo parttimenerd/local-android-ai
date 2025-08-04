@@ -14,11 +14,27 @@ spec:
       labels:
         app: reverse-geocoder
     spec:
-      # Deploy on master/control-plane node for better availability
-      nodeSelector:
-        node-role.kubernetes.io/control-plane: "true"
+      # Prefer control-plane node but allow phone nodes
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: Exists
+          - weight: 50
+            preference:
+              matchExpressions:
+              - key: device-type
+                operator: In
+                values:
+                - phone
+      # Add tolerations for both control-plane and phone nodes
       tolerations:
       - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/phone
         effect: NoSchedule
       containers:
       - name: reverse-geocoder
