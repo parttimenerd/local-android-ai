@@ -12,6 +12,7 @@ import me.bechberger.k3s.handlers.DashboardHandler;
 import me.bechberger.k3s.handlers.SystemInfoHandler;
 import me.bechberger.k3s.handlers.PhoneDataHandler;
 import me.bechberger.k3s.handlers.CameraCaptureHandler;
+import me.bechberger.k3s.handlers.ClusterLocationHandler;
 
 /**
  * Simple HTTP server that returns hostname and current timestamp.
@@ -95,6 +96,7 @@ public class ServerInfoServer {
         server.createContext("/api/system", new SystemInfoHandler());
         server.createContext("/api/phone", new PhoneDataHandler());
         server.createContext("/api/phone/capture", new CameraCaptureHandler());
+        server.createContext("/api/cluster/locations", new ClusterLocationHandler());
         
         // Start server
         server.start();
@@ -104,6 +106,7 @@ public class ServerInfoServer {
         System.out.println("Access at: http://localhost:" + port);
         System.out.println("Dashboard at: http://localhost:" + port + "/dashboard");
         System.out.println("Phone data API: http://localhost:" + port + "/api/phone");
+        System.out.println("Cluster locations API: http://localhost:" + port + "/api/cluster/locations");
         System.out.println("Note: Phone integration is optional - enhanced features available when Android K3s Phone Server runs on port 8005");
         
         // Add shutdown hook for graceful termination

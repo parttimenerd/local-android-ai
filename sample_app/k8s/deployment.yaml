@@ -15,17 +15,28 @@ spec:
       labels:
         app: server-info-server
     spec:
+      # Service account for reading node information
+      serviceAccountName: node-reader
       # Enable host networking to access Android app on localhost:8005
       hostNetwork: true
-      # Only schedule on agent nodes (not master/control-plane)
+      # Only schedule on phone nodes
       nodeSelector:
-        node-role.kubernetes.io/master: "false"
-      # Alternative: use node affinity to prefer agent nodes
+        device-type: phone
+      # Alternative: use node affinity for more flexible scheduling
       affinity:
         nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            preference:
+              matchExpressions:
+              - key: device-type
+                operator: In
+                values:
+                - phone
+          # Fallback: avoid master nodes if phone nodes not available
+          - weight: 50
+            preference:
+              matchExpressions:
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
         # Spread pods across different nodes

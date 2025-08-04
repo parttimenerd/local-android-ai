@@ -747,6 +747,436 @@ install_k3s_server() {
     show_agent_setup_info
 }
 
+# Function to set up geolocation monitoring service
+setup_geolocation_service() {
+    log_step "Setting up geolocation monitoring service..."
+    
+    # Create the geolocation monitor script
+    local service_script="/usr/local/bin/k3s-geolocation-monitor"
+    log_verbose "Creating geolocation monitor script at $service_script"
+    
+    sudo tee "$service_script" >/dev/null << 'EOF'
+#!/bin/bash
+
+# K3s Geolocation Monitor Service
+# Monitors phone app geolocation API and updates node labels
+
+# Configuration
+PHONE_API_URL="http://localhost:8005"
+GEOLOCATION_ENDPOINT="$PHONE_API_URL/location"
+NODE_NAME=$(hostname)
+LABEL_PREFIX="phone.location"
+CHECK_INTERVAL=20
+
+# Logging
+LOG_TAG="k3s-geolocation"
+
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] $1" | systemd-cat -t "$LOG_TAG" -p info
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [WARN] $1" | systemd-cat -t "$LOG_TAG" -p warning
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [ERROR] $1" | systemd-cat -t "$LOG_TAG" -p err
+}
+
+# Function to get current coordinates from phone app
+get_phone_location() {
+    local response
+    response=$(curl -s --connect-timeout 5 --max-time 10 "$GEOLOCATION_ENDPOINT" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && [ -n "$response" ]; then
+        # Try to parse JSON response
+        local latitude longitude altitude
+        
+        # Simple JSON parsing (works without jq)
+        latitude=$(echo "$response" | grep -o '"latitude"[[:space:]]*:[[:space:]]*[^,}]*' | sed 's/.*:[[:space:]]*//' | tr -d '"')
+        longitude=$(echo "$response" | grep -o '"longitude"[[:space:]]*:[[:space:]]*[^,}]*' | sed 's/.*:[[:space:]]*//' | tr -d '"')
+        altitude=$(echo "$response" | grep -o '"altitude"[[:space:]]*:[[:space:]]*[^,}]*' | sed 's/.*:[[:space:]]*//' | tr -d '"')
+        
+        # Validate coordinates (basic check)
+        if [[ "$latitude" =~ ^-?[0-9]+\.?[0-9]*$ ]] && [[ "$longitude" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+            # Use altitude if available, otherwise use 0
+            if [[ "$altitude" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+                echo "$latitude,$longitude,$altitude"
+            else
+                echo "$latitude,$longitude,0"
+            fi
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
+# Function to get current node labels
+get_current_labels() {
+    local latitude longitude altitude
+    
+    latitude=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/latitude']}" 2>/dev/null || echo "")
+    longitude=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/longitude']}" 2>/dev/null || echo "")
+    altitude=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/altitude']}" 2>/dev/null || echo "")
+    
+    if [ -n "$latitude" ] && [ -n "$longitude" ]; then
+        # Use altitude if available, otherwise use 0
+        if [ -n "$altitude" ]; then
+            echo "$latitude,$longitude,$altitude"
+        else
+            echo "$latitude,$longitude,0"
+        fi
+        return 0
+    fi
+    
+    return 1
+}
+
+# Function to update node labels with new coordinates
+update_node_labels() {
+    local new_coords="$1"
+    local latitude longitude altitude
+    
+    latitude=$(echo "$new_coords" | cut -d',' -f1)
+    longitude=$(echo "$new_coords" | cut -d',' -f2)
+    altitude=$(echo "$new_coords" | cut -d',' -f3)
+    
+    # Update labels
+    if kubectl label node "$NODE_NAME" "$LABEL_PREFIX/latitude=$latitude" --overwrite >/dev/null 2>&1 && \
+       kubectl label node "$NODE_NAME" "$LABEL_PREFIX/longitude=$longitude" --overwrite >/dev/null 2>&1 && \
+       kubectl label node "$NODE_NAME" "$LABEL_PREFIX/altitude=$altitude" --overwrite >/dev/null 2>&1; then
+        
+        log_info "Updated node labels: latitude=$latitude, longitude=$longitude, altitude=$altitude"
+        
+        # Also add a timestamp label for debugging
+        local timestamp
+        timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
+        kubectl label node "$NODE_NAME" "$LABEL_PREFIX/updated=$timestamp" --overwrite >/dev/null 2>&1
+        
+        return 0
+    else
+        log_error "Failed to update node labels"
+        return 1
+    fi
+}
+
+# Function to perform reverse geocoding using online service
+reverse_geocode() {
+    local latitude="$1"
+    local longitude="$2"
+    
+    # Use OpenStreetMap Nominatim for reverse geocoding
+    local url="https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1"
+    
+    local response
+    response=$(curl -s --connect-timeout 10 --max-time 15 \
+        -H "User-Agent: K3s-on-Phone/1.0" \
+        "$url" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && [ -n "$response" ]; then
+        # Extract city information from JSON response
+        local city country_code
+        
+        # Try different location types in order of preference
+        city=$(echo "$response" | grep -o '"city":"[^"]*"' | cut -d'"' -f4)
+        if [ -z "$city" ]; then
+            city=$(echo "$response" | grep -o '"town":"[^"]*"' | cut -d'"' -f4)
+        fi
+        if [ -z "$city" ]; then
+            city=$(echo "$response" | grep -o '"village":"[^"]*"' | cut -d'"' -f4)
+        fi
+        if [ -z "$city" ]; then
+            city=$(echo "$response" | grep -o '"hamlet":"[^"]*"' | cut -d'"' -f4)
+        fi
+        if [ -z "$city" ]; then
+            city=$(echo "$response" | grep -o '"suburb":"[^"]*"' | cut -d'"' -f4)
+        fi
+        
+        # Get country code
+        country_code=$(echo "$response" | grep -o '"country_code":"[^"]*"' | cut -d'"' -f4 | tr '[:lower:]' '[:upper:]')
+        
+        if [ -n "$city" ]; then
+            if [ -n "$country_code" ]; then
+                echo "${city}, ${country_code}"
+            else
+                echo "$city"
+            fi
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+
+# Function to update city label
+update_city_label() {
+    local latitude="$1"
+    local longitude="$2"
+    
+    # Check if we need to update (only if no city label or it's old)
+    local current_city city_updated_label
+    current_city=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/city']}" 2>/dev/null || echo "")
+    city_updated_label=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/city-updated']}" 2>/dev/null || echo "")
+    
+    # Skip if city was updated recently (within 24 hours)
+    if [ -n "$current_city" ] && [ -n "$city_updated_label" ]; then
+        local city_updated_epoch current_epoch age_seconds
+        city_updated_epoch=$(date -d "$city_updated_label" +%s 2>/dev/null || echo "0")
+        current_epoch=$(date +%s)
+        age_seconds=$((current_epoch - city_updated_epoch))
+        
+        # Skip if updated within 24 hours (86400 seconds)
+        if [ $age_seconds -lt 86400 ]; then
+            log_info "City label is current: $current_city"
+            return 0
+        fi
+    fi
+    
+    # Perform reverse geocoding
+    local city_name
+    if city_name=$(reverse_geocode "$latitude" "$longitude"); then
+        log_info "Found city: $city_name"
+        
+        # Escape special characters for Kubernetes labels
+        local escaped_city
+        escaped_city=$(echo "$city_name" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/^_*//;s/_*$//')
+        
+        if kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city=$escaped_city" --overwrite >/dev/null 2>&1; then
+            # Also add a timestamp for city update
+            local timestamp
+            timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
+            kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city-updated=$timestamp" --overwrite >/dev/null 2>&1
+            
+            log_info "Updated city label: $city_name"
+            return 0
+        else
+            log_error "Failed to update city label"
+            return 1
+        fi
+    else
+        log_warn "Reverse geocoding failed for coordinates $latitude, $longitude"
+        # Set a generic city label to avoid repeated attempts
+        local escaped_city="Unknown"
+        kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city=$escaped_city" --overwrite >/dev/null 2>&1
+        local timestamp
+        timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
+        kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city-updated=$timestamp" --overwrite >/dev/null 2>&1
+        return 1
+    fi
+}
+
+# Function to check if coordinates have changed significantly
+coordinates_changed() {
+    local old_coords="$1"
+    local new_coords="$2"
+    
+    # If no old coordinates, consider it changed
+    if [ -z "$old_coords" ]; then
+        return 0
+    fi
+    
+    # Parse coordinates
+    local old_lat old_lon new_lat new_lon
+    old_lat=$(echo "$old_coords" | cut -d',' -f1)
+    old_lon=$(echo "$old_coords" | cut -d',' -f2)
+    new_lat=$(echo "$new_coords" | cut -d',' -f1)
+    new_lon=$(echo "$new_coords" | cut -d',' -f2)
+    
+    # Calculate rough distance (simplified for speed)
+    # Consider changed if difference > 0.0001 degrees (~11 meters)
+    local lat_diff lon_diff
+    lat_diff=$(echo "$old_lat $new_lat" | awk '{print ($1 > $2) ? $1 - $2 : $2 - $1}')
+    lon_diff=$(echo "$old_lon $new_lon" | awk '{print ($1 > $2) ? $1 - $2 : $2 - $1}')
+    
+    # Use awk for floating point comparison
+    if awk "BEGIN {exit !($lat_diff > 0.0001 || $lon_diff > 0.0001)}"; then
+        return 0  # Changed
+    else
+        return 1  # Not changed
+    fi
+}
+
+# Main monitoring loop
+main() {
+    log_info "Starting geolocation monitoring for node: $NODE_NAME"
+    log_info "Phone API endpoint: $GEOLOCATION_ENDPOINT"
+    log_info "Check interval: ${CHECK_INTERVAL}s"
+    
+    while true; do
+        # Get current location from phone
+        local new_location
+        if new_location=$(get_phone_location); then
+            log_info "Phone app available, location: $new_location"
+            
+            # Get current node labels
+            local current_labels
+            current_labels=$(get_current_labels) || current_labels=""
+            
+            # Check if coordinates changed
+            if coordinates_changed "$current_labels" "$new_location"; then
+                log_info "Location changed from '$current_labels' to '$new_location', updating labels..."
+                
+                if update_node_labels "$new_location"; then
+                    log_info "Successfully updated node geolocation labels"
+                    
+                    # Also update city information using reverse geocoding
+                    log_info "Updating city information..."
+                    local latitude longitude
+                    latitude=$(echo "$new_location" | cut -d',' -f1)
+                    longitude=$(echo "$new_location" | cut -d',' -f2)
+                    
+                    if update_city_label "$latitude" "$longitude"; then
+                        log_info "Successfully updated city information"
+                    else
+                        log_warn "Failed to update city information"
+                    fi
+                else
+                    log_error "Failed to update node labels"
+                fi
+            else
+                log_info "Location unchanged, no update needed"
+            fi
+        else
+            # Phone app not available, but don't spam logs
+            if [ $(($(date +%s) % 300)) -eq 0 ]; then  # Log every 5 minutes
+                log_warn "Phone app not available at $GEOLOCATION_ENDPOINT"
+            fi
+        fi
+        
+        sleep "$CHECK_INTERVAL"
+    done
+}
+
+# Signal handlers for graceful shutdown
+cleanup() {
+    log_info "Received shutdown signal, stopping geolocation monitoring"
+    exit 0
+}
+
+trap cleanup TERM INT
+
+# Start monitoring
+main
+EOF
+    
+    # Make the script executable
+    sudo chmod +x "$service_script"
+    log_verbose "Made geolocation monitor script executable"
+    
+    # Create systemd service file
+    local service_file="/etc/systemd/system/k3s-geolocation-monitor.service"
+    log_verbose "Creating systemd service file at $service_file"
+    
+    sudo tee "$service_file" >/dev/null << EOF
+[Unit]
+Description=K3s Geolocation Monitor
+Documentation=https://github.com/parttimenerd/k3s-on-phone
+After=k3s-agent.service
+Wants=k3s-agent.service
+StartLimitInterval=0
+
+[Service]
+Type=simple
+ExecStart=$service_script
+Restart=always
+RestartSec=30
+User=root
+Group=root
+KillMode=process
+TimeoutStopSec=30
+
+# Environment
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=k3s-geolocation
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Reload systemd and enable the service
+    sudo systemctl daemon-reload
+    
+    if sudo systemctl enable k3s-geolocation-monitor.service; then
+        log_verbose "Enabled geolocation monitor service"
+        
+        # Start the service
+        if sudo systemctl start k3s-geolocation-monitor.service; then
+            log "✅ Geolocation monitoring service started successfully"
+            
+            # Check if it's running
+            sleep 2
+            if sudo systemctl is-active --quiet k3s-geolocation-monitor.service; then
+                log_verbose "Geolocation service is running"
+            else
+                log_warn "Geolocation service may have failed to start"
+            fi
+        else
+            log_warn "Failed to start geolocation monitoring service"
+        fi
+    else
+        log_warn "Failed to enable geolocation monitoring service"
+    fi
+    
+    log "Geolocation monitoring service setup completed"
+    log "Service will check phone app every 20 seconds and update node labels"
+    log "View logs with: sudo journalctl -u k3s-geolocation-monitor -f"
+}
+
+# Function to label the current node as a phone for deployment targeting
+label_node_as_phone() {
+    log_step "Labeling node as 'phone' for deployment targeting..."
+    
+    local node_name
+    node_name=$(hostname)
+    
+    # Wait for the node to be registered in the cluster
+    local max_attempts=30
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        if kubectl get node "$node_name" &>/dev/null 2>&1; then
+            log_verbose "Node $node_name found in cluster"
+            break
+        fi
+        
+        if [ $attempt -eq $max_attempts ]; then
+            log_warn "Node $node_name not found in cluster after $max_attempts attempts"
+            log_warn "Node labeling skipped - you may need to label manually:"
+            log_warn "  kubectl label node $node_name device-type=phone"
+            return 1
+        fi
+        
+        log_verbose "Waiting for node $node_name to appear in cluster... (attempt $attempt/$max_attempts)"
+        sleep 2
+        attempt=$((attempt + 1))
+    done
+    
+    # Apply the phone label
+    if kubectl label node "$node_name" device-type=phone --overwrite &>/dev/null; then
+        log "✅ Node $node_name labeled as device-type=phone"
+        
+        # Also add a role label for clarity
+        if kubectl label node "$node_name" node-role.kubernetes.io/phone=true --overwrite &>/dev/null; then
+            log_verbose "Node $node_name also labeled with role phone"
+        fi
+        
+        # Verify the labels were applied
+        log_verbose "Node labels:"
+        kubectl get node "$node_name" --show-labels 2>/dev/null | grep -E "device-type=phone|node-role.kubernetes.io/phone" || true
+        
+    else
+        log_warn "Failed to label node $node_name - you may need to do this manually:"
+        log_warn "  kubectl label node $node_name device-type=phone"
+        log_warn "  kubectl label node $node_name node-role.kubernetes.io/phone=true"
+        return 1
+    fi
+}
+
 install_k3s_agent() {
     log_step "Installing K3s as agent (worker node)..."
     
@@ -803,6 +1233,12 @@ install_k3s_agent() {
     log_verbose "Waiting for K3s agent to connect to cluster..."
     sleep 5
     
+    # Label the node as a phone for deployment targeting
+    label_node_as_phone
+    
+    # Set up geolocation monitoring service
+    setup_geolocation_service
+    
     # Show agent setup completion information
     show_agent_completion_info
 }
@@ -838,6 +1274,15 @@ show_agent_completion_info() {
             echo ""
             log "Node Details:"
             kubectl get node "$HOSTNAME" -o wide 2>/dev/null || log_warn "Could not retrieve detailed node information"
+            
+            # Show node labels for phone targeting
+            local device_label
+            device_label=$(kubectl get node "$HOSTNAME" -o jsonpath='{.metadata.labels.device-type}' 2>/dev/null || echo "")
+            if [ "$device_label" = "phone" ]; then
+                log "Node Label: ✅ device-type=phone (ready for phone-targeted deployments)"
+            else
+                log "Node Label: ⚠️  device-type not set (deployments may not target this node)"
+            fi
         fi
         
         # Show cluster nodes count
@@ -870,6 +1315,15 @@ show_agent_completion_info() {
         log "  Docker Registry: ✅ Configured for local registry access"
     else
         log "  Docker Registry: ⚠️  No insecure registry configuration"
+    fi
+    
+    # Geolocation monitoring service status
+    if sudo systemctl is-active --quiet k3s-geolocation-monitor.service 2>/dev/null; then
+        log "  Geolocation Service: ✅ Running (monitors phone app every 20s)"
+    elif sudo systemctl is-enabled --quiet k3s-geolocation-monitor.service 2>/dev/null; then
+        log "  Geolocation Service: ⏳ Enabled but not running"
+    else
+        log "  Geolocation Service: ❌ Not installed"
     fi
     
     # Tailscale information if available

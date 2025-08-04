@@ -227,6 +227,9 @@
                     oDeviceModel.setDefaultBindingMode("OneWay");
                     this.getView().setModel(oDeviceModel, "device");
                     
+                    // Initialize cluster markers array
+                    this.clusterMarkers = [];
+                    
                     // Load initial data
                     this.loadSystemData();
                     
@@ -261,6 +264,9 @@
                     
                     // Load phone data
                     this.loadPhoneData();
+                    
+                    // Load cluster location data
+                    this.loadClusterLocationData();
                 },
                 
                 updateUI: function() {
@@ -299,6 +305,9 @@
                     
                     const apiUrl = refreshAI ? '/api/phone?refreshAI=true' : '/api/phone';
                     
+                    // Also load cluster location data
+                    this.loadClusterLocationData();
+                    
                     fetch(apiUrl)
                         .then(response => response.json())
                         .then(data => {
@@ -324,6 +333,24 @@
                         });
                 },
                 
+                loadClusterLocationData: function() {
+                    // Load cluster location data for other nodes
+                    fetch('/api/cluster/locations?phone-only=true')
+                        .then(response => response.json())
+                        .then(data => {
+                            this.clusterLocationData = data;
+                            console.log('Cluster location data loaded:', data);
+                            // If map is already initialized, update it with cluster data
+                            if (this.map && this.currentPhoneLocation) {
+                                this.updateMapWithClusterNodes();
+                            }
+                        })
+                        .catch(error => {
+                            console.log('Cluster location data not available:', error);
+                            this.clusterLocationData = null;
+                        });
+                },
+                
                 updatePhoneUI: function(phoneData) {
                     const locationText = this.byId("locationText");
                     const accuracyText = this.byId("accuracyText");
@@ -342,12 +369,19 @@
                         locationText.setText(`${loc.latitude.toFixed(6)}, ${loc.longitude.toFixed(6)}`);
                         accuracyText.setText(`Accuracy: ±${loc.accuracy.toFixed(1)}m | Alt: ${loc.altitude.toFixed(1)}m`);
                         
+                        // Store current phone location for cluster node updates
+                        this.currentPhoneLocation = { 
+                            latitude: loc.latitude, 
+                            longitude: loc.longitude 
+                        };
+                        
                         // Initialize and update map with orientation
                         const orientation = phoneData.orientation ? phoneData.orientation.azimuth : null;
                         this.initializeMap(loc.latitude, loc.longitude, orientation);
                     } else {
                         locationText.setText("No GPS data");
                         accuracyText.setText("");
+                        this.currentPhoneLocation = null;
                     }
                     
                     // Update orientation data
@@ -411,10 +445,13 @@
                     // Update map location
                     this.map.setView([lat, lng], 15);
                     
-                    // Remove existing marker
+                    // Remove existing phone marker
                     if (this.phoneMarker) {
                         this.map.removeLayer(this.phoneMarker);
                     }
+                    
+                    // Update cluster node markers
+                    this.updateMapWithClusterNodes();
                     
                     // Create directional marker based on orientation
                     if (orientation !== null && orientation !== undefined) {
@@ -477,6 +514,87 @@
                                 Lng: ${lng.toFixed(6)}<br/>
                                 <em>No orientation data</em>
                             `);
+                    }
+                },
+                
+                updateMapWithClusterNodes: function() {
+                    if (!this.map || !this.clusterLocationData) {
+                        return;
+                    }
+                    
+                    // Remove existing cluster markers
+                    if (this.clusterMarkers) {
+                        this.clusterMarkers.forEach(marker => {
+                            this.map.removeLayer(marker);
+                        });
+                    }
+                    this.clusterMarkers = [];
+                    
+                    const currentHostname = this.systemData ? this.systemData.hostname : null;
+                    
+                    // Add markers for each cluster node
+                    if (this.clusterLocationData.nodes) {
+                        this.clusterLocationData.nodes.forEach(node => {
+                            // Skip the current node (it will have its own marker)
+                            if (node.name === currentHostname) {
+                                return;
+                            }
+                            
+                            // Check if this node has valid coordinates
+                            if (node.latitude && node.longitude && 
+                                node.latitude !== 0 && node.longitude !== 0) {
+                                
+                                // Create muted marker for other nodes
+                                const clusterIcon = L.divIcon({
+                                    className: 'custom-cluster-marker',
+                                    html: `
+                                        <div style="position: relative; width: 24px; height: 24px;">
+                                            <!-- Muted circle for other nodes -->
+                                            <div style="
+                                                width: 16px; 
+                                                height: 16px; 
+                                                background: #888888; 
+                                                border-radius: 50%; 
+                                                border: 2px solid white; 
+                                                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                                                position: absolute;
+                                                top: 4px;
+                                                left: 4px;
+                                                opacity: 0.7;
+                                            "></div>
+                                            <!-- Small phone icon -->
+                                            <div style="
+                                                position: absolute;
+                                                top: 1px;
+                                                left: 7px;
+                                                font-size: 10px;
+                                                color: white;
+                                                text-shadow: 0 0 2px rgba(0,0,0,0.8);
+                                            ">📱</div>
+                                        </div>
+                                    `,
+                                    iconSize: [24, 24],
+                                    iconAnchor: [12, 12]
+                                });
+                                
+                                const marker = L.marker([node.latitude, node.longitude], { icon: clusterIcon })
+                                    .addTo(this.map)
+                                    .bindPopup(`
+                                        <strong>📱 ${node.name}</strong><br/>
+                                        <strong>Location:</strong> ${node.cityName || 'Unknown'}<br/>
+                                        <strong>Coordinates:</strong><br/>
+                                        Lat: ${node.latitude.toFixed(6)}<br/>
+                                        Lng: ${node.longitude.toFixed(6)}<br/>
+                                        <strong>Device:</strong> ${node.deviceType || 'phone'}<br/>
+                                        <strong>IP:</strong> ${node.ip || 'N/A'}<br/>
+                                        <em>Last updated: ${node.lastUpdated ? new Date(node.lastUpdated).toLocaleString() : 'Unknown'}</em>
+                                    `);
+                                
+                                this.clusterMarkers.push(marker);
+                                
+                                console.log(`Added cluster marker for ${node.name} at ${node.latitude}, ${node.longitude}`);
+                            }
+                        });
                     }
                 },
                 

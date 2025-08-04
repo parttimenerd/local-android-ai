@@ -132,9 +132,6 @@ if docker images "$IMAGE_NAME" | grep -q "$IMAGE_TAG"; then
                     echo -e "${YELLOW}[WARN]${NC} Image import reported success but not found in K3s runtime"
                 fi
                 
-                # Check for multi-node setup and offer to distribute image
-                distribute_image_to_agents "$TEMP_IMAGE_FILE"
-                
             else
                 echo -e "${YELLOW}[WARN]${NC} Failed to import to K3s, but image is built locally"
                 echo -e "${YELLOW}[INFO]${NC} You can still deploy using the local Docker image"
@@ -165,8 +162,6 @@ echo -e "  ${YELLOW}•${NC} Describe failed pods: sudo k3s kubectl describe pod
 echo -e "  ${YELLOW}•${NC} View pod logs: sudo k3s kubectl logs <pod-name>"
 echo ""
 echo -e "${YELLOW}[MULTI-NODE]${NC} For multi-node clusters:"
-echo -e "  ${YELLOW}•${NC} Run this build script on each node to distribute images"
-echo -e "  ${YELLOW}•${NC} Setup SSH keys: ssh-copy-id root@<agent-ip> (password: root)"
-echo -e "  ${YELLOW}•${NC} Or use the registry manager: ../setup-registry.sh setup"
-echo -e "  ${YELLOW}•${NC} Then push images: ../setup-registry.sh push $FULL_IMAGE_NAME"
+echo -e "  ${YELLOW}•${NC} The deploy script will handle image distribution automatically"
+echo -e "  ${YELLOW}•${NC} Or use the registry: ../registry.sh push $FULL_IMAGE_NAME"
 echo -e "  ${YELLOW}•${NC} With hostNetwork: app accessible on each node's IP:8080"

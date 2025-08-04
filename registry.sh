@@ -69,6 +69,7 @@ COMMANDS:
     cleanup                     Remove unused registry data
     remove                      Completely remove the registry and data
     info                        Show detailed registry information
+    address                     Show registry address for use in manifests
     logs                        Show registry container logs
 
 OPTIONS:
@@ -173,6 +174,13 @@ get_master_ip() {
     echo "$master_ip"
 }
 
+# Function to get registry address
+get_registry_address() {
+    local master_ip
+    master_ip=$(get_master_ip)
+    echo "${master_ip}:${REGISTRY_PORT}"
+}
+
 # Function to check if registry is running
 is_registry_running() {
     docker ps --filter "name=$REGISTRY_NAME" --filter "status=running" | grep -q "$REGISTRY_NAME"
@@ -181,6 +189,82 @@ is_registry_running() {
 # Function to check if registry container exists
 registry_exists() {
     docker ps -a --filter "name=$REGISTRY_NAME" | grep -q "$REGISTRY_NAME"
+}
+
+# Function to configure Docker daemon for insecure registries
+configure_docker_insecure_registry() {
+    local master_ip="$1"
+    local registry_address="${master_ip}:${REGISTRY_PORT}"
+    
+    log "Configuring Docker daemon for insecure registry: $registry_address"
+    
+    # Create or update Docker daemon configuration
+    local daemon_config="/etc/docker/daemon.json"
+    local temp_config="/tmp/docker-daemon.json"
+    
+    # Check if daemon.json exists
+    if [ -f "$daemon_config" ]; then
+        # Parse existing configuration and add insecure registry
+        if command -v jq &>/dev/null; then
+            # Use jq if available for proper JSON manipulation
+            sudo jq --arg registry "$registry_address" \
+                '.["insecure-registries"] += [$registry] | .["insecure-registries"] |= unique' \
+                "$daemon_config" | sudo tee "$temp_config" >/dev/null
+        else
+            # Fallback: simple text manipulation (less robust)
+            if grep -q "insecure-registries" "$daemon_config"; then
+                # Add to existing insecure-registries array
+                sudo sed "s/\"insecure-registries\"[[:space:]]*:[[:space:]]*\[\([^]]*\)\]/\"insecure-registries\": [\1, \"$registry_address\"]/g" \
+                    "$daemon_config" | sudo tee "$temp_config" >/dev/null
+            else
+                # Add insecure-registries to existing config
+                sudo sed 's/{/{\n  "insecure-registries": ["'"$registry_address"'"],/' \
+                    "$daemon_config" | sudo tee "$temp_config" >/dev/null
+            fi
+        fi
+    else
+        # Create new daemon.json
+        sudo tee "$temp_config" >/dev/null << EOF
+{
+  "insecure-registries": ["$registry_address"]
+}
+EOF
+    fi
+    
+    # Validate JSON and apply
+    if command -v jq &>/dev/null && jq . "$temp_config" >/dev/null 2>&1; then
+        sudo cp "$temp_config" "$daemon_config"
+        sudo chmod 644 "$daemon_config"
+        log "✅ Docker daemon configuration updated"
+        
+        # Restart Docker daemon
+        log "Restarting Docker daemon..."
+        if sudo systemctl restart docker; then
+            log "✅ Docker daemon restarted successfully"
+            
+            # Wait for Docker to be ready
+            for i in {1..30}; do
+                if docker info >/dev/null 2>&1; then
+                    log "✅ Docker daemon is ready"
+                    break
+                fi
+                if [ $i -eq 30 ]; then
+                    log_error "Docker daemon failed to restart properly"
+                    return 1
+                fi
+                sleep 1
+            done
+        else
+            log_error "Failed to restart Docker daemon"
+            return 1
+        fi
+    else
+        log_error "Failed to create valid Docker daemon configuration"
+        return 1
+    fi
+    
+    # Cleanup
+    sudo rm -f "$temp_config" 2>/dev/null || true
 }
 
 # Function to setup the registry
@@ -231,6 +315,9 @@ setup_registry() {
         fi
         sleep 1
     done
+    
+    # Configure Docker daemon for insecure registry
+    configure_docker_insecure_registry "$master_ip"
     
     # Configure K3s nodes
     configure_k3s_nodes
@@ -843,7 +930,7 @@ while [[ $# -gt 0 ]]; do
             echo "Local Docker Registry Management Script v${VERSION}"
             exit 0
             ;;
-        setup|start|stop|restart|status|configure-k3s|list|ls|delete|push|pull|cleanup|remove|info|logs)
+        setup|start|stop|restart|status|configure-k3s|list|ls|delete|push|pull|cleanup|remove|info|address|logs)
             COMMAND="$1"
             shift
             break
@@ -928,6 +1015,9 @@ case "$COMMAND" in
         ;;
     info)
         show_info
+        ;;
+    address)
+        get_registry_address
         ;;
     logs)
         show_logs

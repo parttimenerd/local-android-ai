@@ -13,7 +13,9 @@ Kubernetes cluster deployment on Android devices using Debian in KVM via Android
 Deploy a multi-node K3s cluster across Android phones using:
 - K3s lightweight Kubernetes distribution
 - Tailscale mesh VPN for secure networking  
-- Java sample application demonstrating load balancing
+- Java sample application with cluster location mapping and city information
+- Automated Docker registry setup and image distribution
+- Real-time GPS tracking and geographic visualization
 - Automated scripts for setup and deployment
 
 
@@ -36,24 +38,27 @@ Deploy a multi-node K3s cluster across Android phones using:
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-01 -t YOUR_TAILSCALE_KEY
 ```
 
+*Automatically sets up Docker registry, K3s server, and geolocation monitoring.*
+
 ### Worker Node Setup  
 ```bash
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-02 -t YOUR_TAILSCALE_KEY -k K3S_TOKEN -u https://phone-01:6443
 ```
 
+*Automatically configures Docker registry access and joins cluster with geolocation monitoring.*
+
 ### Deploy Sample Application
 
 #### Option 1: Using Local Registry (Recommended for Multi-Node)
 ```bash
-# Set up local Docker registry
-./setup-registry.sh setup
+# Registry is automatically set up during K3s installation
 
 # Build and push application image
 cd sample_app
 ./build.sh
-../setup-registry.sh push server-info-server:latest
+../registry.sh push server-info-server:latest
 
-# Deploy application
+# Deploy application with cluster map features
 ./deploy.sh && ./test.sh
 ```
 
@@ -80,64 +85,82 @@ cd sample_app
 ./deploy.sh && ./test.sh
 ```
 
+## New Features
+
+### 🗺️ Cluster Location Mapping with City Information
+- **Interactive map dashboard** showing all nodes with real-time locations
+- **City information**: Automatic reverse geocoding adds city names to node labels
+- **Visual markers**: Current node (blue arrow) vs other nodes (muted gray phone icons)
+- **Geographic overview**: See your distributed K3s cluster on an actual world map
+
+### 🐳 Automatic Docker Registry Integration  
+- **Zero-config setup**: Registry automatically configured during K3s installation
+- **Seamless distribution**: Images pushed once, available on all nodes
+- **Insecure registry handling**: Automatic Docker daemon configuration for local development
+- **Dynamic addressing**: Registry location automatically detected for server/agent nodes
+
+### 📍 Enhanced Geolocation Features
+- **City tracking**: OpenStreetMap reverse geocoding for human-readable locations
+- **Smart caching**: City updates only when location changes significantly
+- **Node labels**: GPS coordinates and city information stored as Kubernetes labels
+- **API integration**: Cluster location API includes city information for applications
+
+Access the cluster map at: `http://your-app:8080/dashboard.html`
+
 ## Registry Management
 
-The project includes a comprehensive Docker registry management system for easy image distribution across K3s nodes.
+The project includes a comprehensive Docker registry management system for easy image distribution across K3s nodes. **Registry setup is now automatic during K3s installation.**
 
 ### Registry Setup
 ```bash
-# Set up local Docker registry
-./setup-registry.sh setup
+# Registry is automatically set up during ./setup.sh
+# Manual operations (if needed):
 
 # Check registry status
-./setup-registry.sh status
+./registry.sh status
 
 # View registry information
-./setup-registry.sh info
+./registry.sh info
 ```
 
 ### Image Management
 ```bash
 # List all images in registry
-./setup-registry.sh list
+./registry.sh list
 
 # Push a local image to registry
-./setup-registry.sh push my-app:latest
+./registry.sh push my-app:latest
 
 # Pull an image from registry
-./setup-registry.sh pull my-app:latest
+./registry.sh pull my-app:latest
 
 # Delete an image from registry
-./setup-registry.sh delete my-app:latest
+./registry.sh delete my-app:latest
 ```
 
 ### Registry Operations
 ```bash
 # Start/stop registry
-./setup-registry.sh start
-./setup-registry.sh stop
-./setup-registry.sh restart
+./registry.sh start
+./registry.sh stop
+./registry.sh restart
 
 # View registry logs
-./setup-registry.sh logs
+./registry.sh logs
 
 # Clean up unused data
-./setup-registry.sh cleanup
+./registry.sh cleanup
 
 # Completely remove registry
-./setup-registry.sh remove
+./registry.sh remove
 ```
 
 ### K3s Integration
-```bash
-# Configure K3s nodes to use registry
-./setup-registry.sh configure-k3s
-
-# Registry automatically configures:
-# - Master node with registries.yaml
-# - Agent nodes via SSH (if accessible)
-# - Insecure registry settings for local development
-```
+Registry integration is **automatic during setup**:
+- Master node: Local registry on port 5000
+- Agent nodes: Configured to use master's registry
+- Docker daemon: Automatically configured for insecure local registry
+- No manual configuration needed
 
 ### Reset Cluster to Clean State
 ```bash
@@ -163,9 +186,28 @@ The project includes a comprehensive Docker registry management system for easy 
 ./clean.sh -t tskey-api-xxxxx --dry-run
 ```
 
+### Delete Specific Resources
+```bash
+# Delete a specific pod
+./delete.sh pod my-app-pod
+
+# Delete all pods in a namespace (with confirmation)
+./delete.sh pod --all -n my-namespace
+
+# Preview what would be deleted (recommended)
+./delete.sh deployment my-app --dry-run
+
+# Force delete without confirmation
+./delete.sh service my-service --force
+
+# Delete complete application stack
+./delete.sh app my-application
+```
+
 **Script Comparison:**
 - `reset.sh`: Removes ALL nodes and apps, resets to server-only cluster
 - `clean.sh`: Removes only NotReady/unreachable nodes, keeps working cluster
+- `delete.sh`: Safely delete specific resources (pods, deployments, services, nodes)
 - `setup.sh cleanup`: Legacy cleanup for NotReady nodes only
 
 ### Android Phone Server App
@@ -265,6 +307,98 @@ The sample app demonstrates:
 - LoadBalancer service with Tailscale integration
 - Horizontal scaling across cluster nodes
 - Health checks and readiness probes
+- **Interactive cluster location map with city information**
+- **Real-time geographic visualization of node distribution**
+
+### Cluster Location Mapping
+
+The sample application includes comprehensive location features:
+
+**Interactive Map Dashboard**: Access at `http://your-app:8080/dashboard.html`
+- 🗺️ World map showing all cluster nodes in real-time
+- 📍 Current node: Blue marker with directional arrow
+- 📱 Other nodes: Muted gray markers with phone icons  
+- 🏙️ City information: Popup shows city names and coordinates
+
+**REST API for Applications**:
+
+```bash
+# Get all node locations with city information
+curl http://your-app:8080/api/cluster/locations
+
+# Get phone nodes only
+curl http://your-app:8080/api/cluster/locations?phone-only=true
+```
+
+**API Response Format** (now includes city information):
+```json
+{
+  "cluster": "k3s-phone",
+  "timestamp": 1691234567890,
+  "nodeCount": 3,
+  "nodes": [
+    {
+      "name": "phone-01",
+      "ip": "192.168.1.100",
+      "latitude": 51.5074,
+      "longitude": -0.1278,
+      "altitude": 100.0,
+      "deviceType": "phone",
+      "cityName": "London, GB",
+      "lastUpdated": "2025-08-01T10:30:00Z"
+    }
+  ]
+}
+```
+
+This enables building status maps and location-aware dashboards that show the real-time geographic distribution of your K3s cluster nodes with human-readable city information.
+
+### Phone Node Targeting
+
+Agent nodes are automatically labeled as `device-type=phone` to enable phone-specific deployments:
+
+```bash
+# Check node labels
+kubectl get nodes --show-labels
+
+# View phone nodes only
+kubectl get nodes -l device-type=phone
+
+# View phone nodes with location and city
+kubectl get nodes -l device-type=phone -o custom-columns=NAME:.metadata.name,LATITUDE:.metadata.labels.phone\.location/latitude,LONGITUDE:.metadata.labels.phone\.location/longitude,CITY:.metadata.labels.phone\.location/city
+
+# Deploy to phone nodes only (automatic with sample app)
+kubectl apply -f k8s/deployment.yaml
+```
+
+**Deployment Configuration:**
+```yaml
+nodeSelector:
+  device-type: phone
+```
+
+**Geolocation Monitoring:**
+Agent nodes include a service that monitors the phone app's geolocation API every 20 seconds and automatically updates node labels:
+- `phone.location/latitude`
+- `phone.location/longitude` 
+- `phone.location/altitude`
+- `phone.location/city` (e.g., "London, GB")
+- `phone.location/city-updated` (timestamp)
+- `phone.location/updated`
+
+This ensures applications only run on phone devices, not on server/desktop nodes that might join the cluster.
+
+**Manual Labeling (if needed):**
+```bash
+# Label existing nodes as phones
+kubectl label node my-phone-node device-type=phone
+
+# Remove phone label
+kubectl label node my-phone-node device-type-
+
+# Label server/desktop nodes differently
+kubectl label node my-server-node device-type=server
+```
 
 ## Monitoring and Operations
 
@@ -274,12 +408,50 @@ The sample app demonstrates:
 kubectl get nodes -o wide
 kubectl top nodes
 
+# Node information with location and city
+kubectl get nodes -o custom-columns=NAME:.metadata.name,STATUS:.status.conditions[-1].type,DEVICE:.metadata.labels.device-type,LAT:.metadata.labels.phone\.location/latitude,LON:.metadata.labels.phone\.location/longitude,CITY:.metadata.labels.phone\.location/city
+
 # Pod status across namespaces  
 kubectl get pods --all-namespaces
 kubectl top pods --all-namespaces
 
 # Service discovery
 kubectl get services --all-namespaces
+```
+
+### Geolocation Monitoring
+```bash
+# Check geolocation service on agent nodes
+sudo systemctl status k3s-geolocation-monitor
+
+# View geolocation logs
+sudo journalctl -u k3s-geolocation-monitor -f
+
+# Test phone app API
+curl -s http://localhost:8005/location
+
+# Check phone location labels with city information
+kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/altitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
+```
+
+### Testing & Diagnostics
+```bash
+# Interactive cluster map testing  
+cd sample_app
+./test-cluster-map.sh
+
+# Comprehensive geolocation testing
+./test-geolocation.sh help
+
+# Quick diagnostics
+./test-geolocation.sh test-api     # Test phone app connection
+./test-geolocation.sh show-current # Show current location labels
+./test-geolocation.sh monitor      # Run one-time location update
+./test-geolocation.sh simulate 51.5074 -0.1278 100  # Test with coordinates
+
+# Service status checks
+./test-geolocation.sh show-service # Check systemd service
+./test-geolocation.sh test-labels  # Test label operations
 ```
 
 ### Network Verification
@@ -369,6 +541,7 @@ sudo /usr/local/bin/k3s-agent-uninstall.sh # Agent nodes
 # Example: Remove all devices starting with "phone-"
 ./remove_from_vpn.sh tskey-api-xxxxx phone-
 
+
 # Example: Remove all test devices
 ./remove_from_vpn.sh tskey-api-xxxxx test-
 ```
@@ -396,9 +569,11 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 
 - [x] test it with one phone as the basic k3s client
     - the computer being the host
-- [ ] deploy the application to the cluster with replication
-- [ ] add another phone and improve deploy scripts
-- [ ] test and fix phone app
-- [ ] test and fix advanced features of phone app
+- [x] deploy the application to the cluster with replication
+- [x] add another phone and improve deploy scripts
+- [x] test and fix phone app
+- [x] use phone app to automatically update location labels in node
+- [x] test and fix advanced features of phone app
+- [x] create a small webapp in Java that shows the location of all nodes on a map
 - [ ] test cluster without a computer, just two phones
 - [ ] write blog post
