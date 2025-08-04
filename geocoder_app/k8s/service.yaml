@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverse-geocoder
+  labels:
+    app: reverse-geocoder
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8090
+    targetPort: 8090
+    protocol: TCP
+    name: http
+  selector:
+    app: reverse-geocoder
+---
+# Optional: NodePort service for external access (debugging)
+apiVersion: v1
+kind: Service
+metadata:
+  name: reverse-geocoder-nodeport
+  labels:
+    app: reverse-geocoder
+spec:
+  type: NodePort
+  ports:
+  - port: 8090
+    targetPort: 8090
+    nodePort: 30090
+    protocol: TCP
+    name: http
+  selector:
+    app: reverse-geocoder

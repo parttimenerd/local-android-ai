@@ -59,3 +59,4 @@ mvnw.cmd
 # Runtime files
 *.attach_pid*
 add_nodes.md
+geonames-data

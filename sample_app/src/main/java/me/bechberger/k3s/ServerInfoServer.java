@@ -108,6 +108,7 @@ public class ServerInfoServer {
         System.out.println("Phone data API: http://localhost:" + port + "/api/phone");
         System.out.println("Cluster locations API: http://localhost:" + port + "/api/cluster/locations");
         System.out.println("Note: Phone integration is optional - enhanced features available when Android K3s Phone Server runs on port 8005");
+        System.out.println("Note: Reverse geocoding now provided by standalone geocoder service on port 8090");
         
         // Add shutdown hook for graceful termination
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

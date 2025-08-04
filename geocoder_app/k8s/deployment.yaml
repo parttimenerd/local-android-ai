@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reverse-geocoder
+  labels:
+    app: reverse-geocoder
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reverse-geocoder
+  template:
+    metadata:
+      labels:
+        app: reverse-geocoder
+    spec:
+      # Deploy on master/control-plane node for better availability
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: "true"
+      tolerations:
+      - key: node-role.kubernetes.io/control-plane
+        effect: NoSchedule
+      containers:
+      - name: reverse-geocoder
+        image: reverse-geocoder:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8090
+          name: http
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx256m -Xms128m"

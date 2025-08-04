@@ -27,6 +27,10 @@ Lightweight Java application providing:
 
 ## Quick Start
 
+### Prerequisites
+- K3s cluster with reverse-geocoder service deployed (for location features)
+- Docker registry configured for multi-node deployments
+
 ### Build and Deploy
 ```bash
 # Build Docker image
@@ -97,11 +101,12 @@ sample_app/
 ### Dashboard Features
 The `/dashboard` endpoint provides a comprehensive monitoring interface featuring:
 - **Real-time system monitoring**: Memory usage, CPU load, uptime tracking
-- **Interactive phone location map**: Live GPS tracking with orientation markers
+- **Interactive phone location map**: Live GPS tracking with orientation markers using reverse-geocoder service
 - **Live camera feed**: Real-time camera capture from connected Android device
 - **AI-powered descriptions**: Automatic scene analysis and description updates
 - **Auto-refresh**: System data every 10 seconds, AI descriptions every minute
 - **Responsive design**: SAP UI5 components with mobile-friendly interface
+- **City location display**: Automatic city resolution using local GeoNames database
 
 ### Health Response
 ```json
@@ -126,6 +131,25 @@ The `/dashboard` endpoint provides a comprehensive monitoring interface featurin
 - Node anti-affinity deployment with auto-scaling
 - LoadBalancer service via Tailscale
 - Base image: `ghcr.io/gardenlinux/gardenlinux/bare-sapmachine:1877.1`
+- Reverse geocoding integration with standalone geocoder service
+
+## Service Dependencies
+
+### Reverse Geocoder Service
+The application integrates with the reverse-geocoder service for location features:
+
+```bash
+# Deploy geocoder service first (from geocoder_app directory)
+cd ../geocoder_app
+./build.sh && ./deploy.sh
+
+# Then deploy the main application
+cd ../sample_app
+./build.sh && ./deploy.sh
+```
+
+The application automatically discovers the geocoder service at:
+`http://reverse-geocoder.default.svc.cluster.local:8090`
 
 ## Usage Examples
 

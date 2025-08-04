@@ -99,13 +99,7 @@ cd sample_app
 - **Insecure registry handling**: Automatic Docker daemon configuration for local development
 - **Dynamic addressing**: Registry location automatically detected for server/agent nodes
 
-### 📍 Enhanced Geolocation Features
-- **City tracking**: OpenStreetMap reverse geocoding for human-readable locations
-- **Smart caching**: City updates only when location changes significantly
-- **Node labels**: GPS coordinates and city information stored as Kubernetes labels
-- **API integration**: Cluster location API includes city information for applications
 
-Access the cluster map at: `http://your-app:8080/dashboard.html`
 
 ## Registry Management
 
@@ -319,6 +313,37 @@ The sample application includes comprehensive location features:
 - 📍 Current node: Blue marker with directional arrow
 - 📱 Other nodes: Muted gray markers with phone icons  
 - 🏙️ City information: Popup shows city names and coordinates
+
+## Reverse Geocoder Service
+
+A standalone, high-performance reverse geocoding service provides city name resolution for all cluster nodes:
+
+### Features
+- **Local GeoNames Database**: 30,632+ cities from 14 countries
+- **Zero External Dependencies**: Complete offline operation  
+- **High Performance**: Fast local database lookups
+- **Comprehensive Testing**: 20+ unit tests with parametric validation
+- **UTF-8 Safe**: Proper handling of international characters
+
+### Deployment
+```bash
+cd geocoder_app
+./build.sh && ./deploy.sh
+
+# Test the service
+kubectl run curl-test --image=curlimages/curl --rm -i --restart=Never --command -- \
+  curl 'http://reverse-geocoder.default.svc.cluster.local:8090/health'
+```
+
+### API Usage
+```bash
+# Get city for coordinates
+curl 'http://reverse-geocoder.default.svc.cluster.local:8090/api/reverse-geocode?lat=52.5200&lon=13.4050'
+
+# Returns: {"location":"Berlin, DE","method":"geonames","coordinates":{"latitude":52.520000,"longitude":13.405000}}
+```
+
+See [geocoder_app/README.md](geocoder_app/README.md) for complete documentation.
 
 **REST API for Applications**:
 
@@ -567,13 +592,14 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 
 # Roadmap
 
-- [x] test it with one phone as the basic k3s client
+- [ ] test it with one phone as the basic k3s client
     - the computer being the host
 - [x] deploy the application to the cluster with replication
-- [x] add another phone and improve deploy scripts
-- [x] test and fix phone app
+- [ ] add another phone and improve deploy scripts
+- [ ] test and fix phone app
 - [x] use phone app to automatically update location labels in node
-- [x] test and fix advanced features of phone app
+- [ ] test and fix advanced features of phone app
 - [x] create a small webapp in Java that shows the location of all nodes on a map
+- [ ] update phone app to use tokens and all to download gemma model directly
 - [ ] test cluster without a computer, just two phones
 - [ ] write blog post

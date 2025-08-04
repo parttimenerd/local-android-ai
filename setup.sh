@@ -675,6 +675,85 @@ set_hostname() {
     fi
 }
 
+# Function to deploy the reverse geocoder service
+deploy_geocoder_service() {
+    log_step "Deploying reverse geocoder service..."
+    
+    # Check if we're in the right directory structure
+    local current_dir
+    current_dir=$(pwd)
+    local geocoder_dir=""
+    
+    # Look for the geocoder_app directory
+    if [ -d "./geocoder_app" ]; then
+        geocoder_dir="./geocoder_app"
+    elif [ -d "../geocoder_app" ]; then
+        geocoder_dir="../geocoder_app"
+    elif [ -d "/home/$USER/code/experiments/k3s-on-phone/geocoder_app" ]; then
+        geocoder_dir="/home/$USER/code/experiments/k3s-on-phone/geocoder_app"
+    else
+        log_warn "Geocoder app directory not found, skipping geocoder deployment"
+        log_warn "Reverse geocoding will fallback to external Nominatim service"
+        return 0
+    fi
+    
+    log_verbose "Found geocoder directory at: $geocoder_dir"
+    
+    # Change to geocoder directory
+    cd "$geocoder_dir" || {
+        log_warn "Cannot access geocoder directory, skipping geocoder deployment"
+        return 0
+    }
+    
+    # Check if the geocoder service already exists
+    if kubectl get deployment reverse-geocoder >/dev/null 2>&1; then
+        log "Reverse geocoder service already deployed, checking status..."
+        if kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
+            log "✅ Reverse geocoder service is already running"
+            cd "$current_dir"
+            return 0
+        else
+            log "⚠️  Reverse geocoder service exists but not ready, redeploying..."
+        fi
+    fi
+    
+    # Build the geocoder service if build script exists
+    if [ -x "./build.sh" ]; then
+        log_verbose "Building reverse geocoder service..."
+        if ./build.sh >/dev/null 2>&1; then
+            log "✅ Geocoder service built successfully"
+        else
+            log_warn "Geocoder build failed, attempting deployment anyway..."
+        fi
+    else
+        log_verbose "No build script found, deploying existing image..."
+    fi
+    
+    # Deploy the geocoder service if deployment script exists
+    if [ -x "./deploy.sh" ]; then
+        log_verbose "Deploying reverse geocoder service..."
+        if ./deploy.sh >/dev/null 2>&1; then
+            log "✅ Reverse geocoder service deployed successfully"
+            
+            # Wait for deployment to be ready
+            log_verbose "Waiting for geocoder service to be ready..."
+            if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s >/dev/null 2>&1; then
+                log "✅ Reverse geocoder service is ready"
+            else
+                log_warn "Geocoder service deployment timeout, may still be starting"
+            fi
+        else
+            log_warn "Geocoder deployment failed, continuing without local reverse geocoding"
+            log_warn "Node location updates will use external Nominatim service"
+        fi
+    else
+        log_warn "No deployment script found for geocoder, skipping deployment"
+    fi
+    
+    # Return to original directory
+    cd "$current_dir"
+}
+
 install_k3s_server() {
     log_step "Installing K3s as server (master node)..."
     
@@ -736,6 +815,9 @@ install_k3s_server() {
     fi
     
     log "K3s server installed successfully!"
+    
+    # Deploy the reverse geocoder service (critical for node location labeling)
+    deploy_geocoder_service
     
     # Setup local Docker registry for the server
     if setup_local_registry; then
@@ -861,13 +943,30 @@ update_node_labels() {
     fi
 }
 
-# Function to perform reverse geocoding using online service
+# Function to perform reverse geocoding using local API
 reverse_geocode() {
     local latitude="$1"
     local longitude="$2"
     
-    # Use OpenStreetMap Nominatim for reverse geocoding
-    local url="https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1"
+    # Try to find the reverse geocoder service endpoint
+    local api_url=""
+    
+    # First try to find the geocoder service in Kubernetes
+    if command -v kubectl >/dev/null 2>&1; then
+        local service_ip
+        service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+        if [ -n "$service_ip" ]; then
+            api_url="http://${service_ip}:8090"
+        fi
+    fi
+    
+    # If Kubernetes service not found, try localhost (for development)
+    if [ -z "$api_url" ]; then
+        api_url="http://localhost:8090"
+    fi
+    
+    # Call our reverse geocoding API (using geonames method only)
+    local url="${api_url}/api/reverse-geocode?lat=${latitude}&lon=${longitude}&method=geonames"
     
     local response
     response=$(curl -s --connect-timeout 10 --max-time 15 \
@@ -875,37 +974,18 @@ reverse_geocode() {
         "$url" 2>/dev/null)
     
     if [ $? -eq 0 ] && [ -n "$response" ]; then
-        # Extract city information from JSON response
-        local city country_code
+        # Extract location from JSON response
+        local location
+        location=$(echo "$response" | grep -o '"location":"[^"]*"' | cut -d'"' -f4)
         
-        # Try different location types in order of preference
-        city=$(echo "$response" | grep -o '"city":"[^"]*"' | cut -d'"' -f4)
-        if [ -z "$city" ]; then
-            city=$(echo "$response" | grep -o '"town":"[^"]*"' | cut -d'"' -f4)
-        fi
-        if [ -z "$city" ]; then
-            city=$(echo "$response" | grep -o '"village":"[^"]*"' | cut -d'"' -f4)
-        fi
-        if [ -z "$city" ]; then
-            city=$(echo "$response" | grep -o '"hamlet":"[^"]*"' | cut -d'"' -f4)
-        fi
-        if [ -z "$city" ]; then
-            city=$(echo "$response" | grep -o '"suburb":"[^"]*"' | cut -d'"' -f4)
-        fi
-        
-        # Get country code
-        country_code=$(echo "$response" | grep -o '"country_code":"[^"]*"' | cut -d'"' -f4 | tr '[:lower:]' '[:upper:]')
-        
-        if [ -n "$city" ]; then
-            if [ -n "$country_code" ]; then
-                echo "${city}, ${country_code}"
-            else
-                echo "$city"
-            fi
+        if [ -n "$location" ]; then
+            echo "$location"
             return 0
         fi
     fi
     
+    # If local API fails, return empty (no external fallback)
+    log_warn "Local reverse geocoding API failed for coordinates $latitude, $longitude"
     return 1
 }
 
