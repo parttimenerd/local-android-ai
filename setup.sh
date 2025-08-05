@@ -1755,42 +1755,43 @@ check_geolocation_provider() {
 }
 
 check_and_reinstall_tailscale_for_agent() {
-    log_step "Checking Tailscale configuration for agent mode..."
-
+    log_step "Setting up Tailscale for agent mode..."
+    
     # Check if Tailscale is installed and configured
     if command -v tailscale &> /dev/null && sudo tailscale status --json &> /dev/null; then
         log "Tailscale is already configured - reinstalling for clean agent setup..."
-
+        
         # Log out and disconnect from Tailscale
         log_verbose "Logging out from Tailscale..."
         sudo tailscale logout 2>/dev/null || log_warn "Failed to logout from Tailscale (may not be logged in)"
-
+        
         # Stop the Tailscale daemon
         log_verbose "Stopping Tailscale daemon..."
         if command -v systemctl &>/dev/null; then
             sudo systemctl stop tailscaled 2>/dev/null || log_warn "Failed to stop Tailscale daemon"
         fi
-
+        
         # Purge Tailscale package to ensure clean reinstall
         log_verbose "Removing Tailscale package..."
         if command -v apt-get &>/dev/null; then
             sudo apt-get remove -y tailscale 2>/dev/null || log_warn "Failed to remove Tailscale package"
             sudo apt-get purge -y tailscale 2>/dev/null || log_warn "Failed to purge Tailscale package"
         fi
-
+        
         # Remove state directory to ensure clean state
         log_verbose "Cleaning Tailscale state..."
         sudo rm -rf /var/lib/tailscale 2>/dev/null || log_warn "Failed to remove Tailscale state directory"
-
-        # Reinstall Tailscale with fresh configuration
-        log_verbose "Reinstalling Tailscale..."
-        setup_tailscale
-
-        # Test connectivity to K3s server after Tailscale setup
-        test_k3s_server_connectivity
+        
+        log_verbose "Reinstalling Tailscale with fresh configuration..."
     else
-        log_verbose "Tailscale not configured, proceeding with standard setup"
+        log "Setting up Tailscale for agent mode..."
     fi
+    
+    # Install and configure Tailscale (fresh install or reinstall)
+    setup_tailscale
+    
+    # Test connectivity to K3s server after Tailscale setup
+    test_k3s_server_connectivity
 }
 
 test_k3s_server_connectivity() {
@@ -2128,9 +2129,11 @@ show_agent_setup_info() {
     fi
 
     # Create the commands for display and file
-    local cmd_auto="ping github.com && curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- phone-%d$tailscale_flag -k $token -u $server_url"
-    local cmd_manual="ping github.com && curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh | bash -s -- AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
-    local cmd_download1="ping github.com && curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh > setup.sh"
+    local ping_command="ping -c 3 -q github.com"
+    local setup_url="https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/refs/heads/main/setup.sh"
+    local cmd_auto="$ping_command && curl -sfL $setup_url | bash -s -- phone-%d$tailscale_flag -k $token -u $server_url"
+    local cmd_manual="$ping_command && curl -sfL $setup_url | bash -s -- AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
+    local cmd_download1="$ping_command && curl -sfL $setup_url > setup.sh"
     local cmd_download2="chmod +x setup.sh"
     local cmd_download3="./setup.sh AGENT_HOSTNAME$tailscale_flag -k $token -u $server_url"
 
@@ -2194,7 +2197,7 @@ $server_url
 
 ## Setup Methods
 
-⚠️ **Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, check your DNS/network settings before proceeding.
+⚠️ **Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, close the Linux Terminal App tab and reinstall debian.
 
 ### Option 1 - One-line setup with auto-generated hostname
 \`\`\`bash
@@ -2779,7 +2782,15 @@ main() {
         set_hostname
         install_docker
         setup_ssh
-        setup_tailscale
+        
+        # Skip Tailscale setup in agent mode - let install_k3s_agent handle it
+        if [ -z "$K3S_TOKEN" ] || [ -z "$K3S_URL" ]; then
+            # Server mode - set up Tailscale normally
+            setup_tailscale
+        else
+            # Agent mode - skip initial Tailscale setup, will be handled in install_k3s_agent
+            log_verbose "Agent mode: skipping initial Tailscale setup (will be handled by agent installer)"
+        fi
     else
         log "Local mode: skipping hostname, Docker, SSH, and Tailscale setup"
         # But we still need to check that Tailscale is available
