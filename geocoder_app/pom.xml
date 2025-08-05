@@ -40,6 +40,55 @@
 
     <build>
         <plugins>
+            <!-- GeoNames data preparation plugin -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.1.0</version>
+                <executions>
+                    <execution>
+                        <id>prepare-geonames-data</id>
+                        <phase>generate-resources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>bash</executable>
+                            <arguments>
+                                <argument>-c</argument>
+                                <argument>
+                                    # Check if GeoNames resources are available
+                                    RESOURCES_DIR="src/main/resources/geonames-data"
+                                    REQUIRED_FILES=5
+                                    
+                                    if [ -d "$RESOURCES_DIR" ]; then
+                                        existing_files=$(find "$RESOURCES_DIR" -name "*.txt" | wc -l)
+                                        echo "[INFO] Found $existing_files GeoNames resource files"
+                                    else
+                                        existing_files=0
+                                        echo "[INFO] GeoNames resources directory not found"
+                                    fi
+                                    
+                                    if [ $existing_files -lt $REQUIRED_FILES ]; then
+                                        echo "[PREPARE] Need to download GeoNames data (found $existing_files, need at least $REQUIRED_FILES)..."
+                                        if [ -f "./prepare-geonames-data.sh" ]; then
+                                            echo "[EXEC] Running prepare-geonames-data.sh..."
+                                            ./prepare-geonames-data.sh
+                                            echo "[SUCCESS] GeoNames data prepared for Maven build"
+                                        else
+                                            echo "[ERROR] prepare-geonames-data.sh not found and GeoNames data is missing"
+                                            exit 1
+                                        fi
+                                    else
+                                        echo "[SKIP] GeoNames data already available ($existing_files files), proceeding with build"
+                                    fi
+                                </argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -68,7 +117,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>me.bechberger.k3s.GeocoderServer</mainClass>
+                            <mainClass>me.bechberger.k3s.geocoder.GeocoderServer</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

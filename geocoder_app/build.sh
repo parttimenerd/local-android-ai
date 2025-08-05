@@ -36,6 +36,51 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
+# Check and prepare GeoNames data for build-time caching
+RESOURCES_DIR="src/main/resources/geonames-data"
+REQUIRED_FILES=5  # Minimum number of country files needed
+
+echo -e "${YELLOW}[CHECK]${NC} Checking GeoNames resources..."
+
+# Count existing resource files
+if [ -d "$RESOURCES_DIR" ]; then
+    existing_files=$(find "$RESOURCES_DIR" -name "*.txt" | wc -l)
+    echo -e "${GREEN}[INFO]${NC} Found $existing_files GeoNames resource files"
+else
+    existing_files=0
+    echo -e "${YELLOW}[INFO]${NC} GeoNames resources directory not found"
+fi
+
+# Check if we need to prepare data
+if [ $existing_files -lt $REQUIRED_FILES ]; then
+    echo -e "${YELLOW}[PREPARE]${NC} Need to download GeoNames data (found $existing_files, need at least $REQUIRED_FILES)..."
+    
+    if [ -f "./prepare-geonames-data.sh" ]; then
+        ./prepare-geonames-data.sh || {
+            echo -e "${RED}[ERROR]${NC} Failed to prepare GeoNames data"
+            exit 1
+        }
+        echo -e "${GREEN}[SUCCESS]${NC} GeoNames data prepared successfully"
+    else
+        echo -e "${RED}[ERROR]${NC} prepare-geonames-data.sh not found and GeoNames data is missing"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}[SKIP]${NC} GeoNames data already available ($existing_files files), skipping download"
+    
+    # Show available countries
+    if [ -d "$RESOURCES_DIR" ]; then
+        echo -e "${GREEN}[INFO]${NC} Available countries:"
+        for txt_file in "$RESOURCES_DIR"/*.txt; do
+            if [ -f "$txt_file" ]; then
+                country=$(basename "$txt_file" .txt)
+                size=$(du -h "$txt_file" | cut -f1)
+                echo -e "  ${YELLOW}•${NC} $country: $size"
+            fi
+        done
+    fi
+fi
+
 # Check if we want to run Maven locally first (often not needed with Docker multi-stage build)
 if [ -n "$USE_LOCAL_MAVEN" ] && command -v mvn &> /dev/null; then
     echo -e "${YELLOW}[MAVEN]${NC} Running Maven compile to verify code..."

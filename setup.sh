@@ -765,6 +765,164 @@ force_reset_cluster() {
     log "📝 Docker and other services remain untouched"
 }
 
+# Function to comprehensively test geocoder service functionality
+test_geocoder_comprehensive() {
+    log_step "Comprehensive geocoder service testing..."
+
+    # First, ensure kubectl is available
+    if ! command -v kubectl &> /dev/null; then
+        log_error "kubectl not available - cannot test geocoder service"
+        return 1
+    fi
+
+    # Check if geocoder deployment exists
+    if ! sudo kubectl get deployment reverse-geocoder &> /dev/null 2>&1; then
+        log_error "Geocoder deployment not found in cluster"
+        return 1
+    fi
+
+    # Check deployment status
+    local ready_replicas desired_replicas
+    ready_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    desired_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+    
+    if [ "$ready_replicas" != "$desired_replicas" ]; then
+        log_error "Geocoder deployment not ready: $ready_replicas/$desired_replicas replicas available"
+        return 1
+    fi
+    log_verbose "✅ Geocoder deployment is ready: $ready_replicas/$desired_replicas replicas"
+
+    # Get service endpoint
+    local service_ip service_port api_url
+    service_ip=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+    service_port=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8090")
+    
+    if [ -z "$service_ip" ]; then
+        log_error "Cannot determine geocoder service IP"
+        return 1
+    fi
+    
+    api_url="http://${service_ip}:${service_port}"
+    log_verbose "Testing geocoder at: $api_url"
+
+    # Test 1: Health endpoint
+    log_verbose "1. Testing health endpoint..."
+    local health_response
+    health_response=$(curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && (echo "$health_response" | grep -q "healthy" || echo "$health_response" | grep -q "ok"); then
+        log_verbose "✅ Health endpoint responding"
+    else
+        log_error "❌ Health endpoint failed or not responding"
+        log_error "Response: ${health_response:-'No response'}"
+        return 1
+    fi
+
+    # Test 2: API endpoint basic connectivity
+    log_verbose "2. Testing API endpoint connectivity..."
+    local api_test_url="${api_url}/api/reverse-geocode?lat=52.52&lon=13.40&method=geonames"
+    local api_response
+    api_response=$(curl -s --connect-timeout 10 --max-time 15 "$api_test_url" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && [ -n "$api_response" ]; then
+        log_verbose "✅ API endpoint responding"
+    else
+        log_error "❌ API endpoint not responding"
+        return 1
+    fi
+
+    # Test 3: Comprehensive city resolution test
+    log_verbose "3. Testing city resolution with diverse coordinates..."
+    
+    # Define comprehensive test cases with expected results
+    declare -A test_coordinates=(
+        ["Berlin_Germany"]="52.52,13.40"
+        ["London_UK"]="51.51,-0.13"
+        ["Tokyo_Japan"]="35.68,139.76"
+        ["New_York_USA"]="40.71,-74.01"
+        ["Sydney_Australia"]="-33.87,151.21"
+        ["Moscow_Russia"]="55.75,37.62"
+    )
+
+    local test_count=0
+    local success_count=0
+    
+    for test_case in "${!test_coordinates[@]}"; do
+        test_count=$((test_count + 1))
+        local coords=${test_coordinates[$test_case]}
+        local lat=${coords%,*}
+        local lon=${coords#*,}
+        local city_name=${test_case%_*}  # Extract city name before underscore
+        
+        log_verbose "  Testing $city_name ($lat, $lon)..."
+        
+        local test_url="${api_url}/api/reverse-geocode?lat=${lat}&lon=${lon}&method=geonames"
+        local response
+        response=$(curl -s --connect-timeout 10 --max-time 15 "$test_url" 2>/dev/null)
+        
+        if [ $? -eq 0 ] && [ -n "$response" ]; then
+            # Check if response contains location data
+            local location
+            location=$(echo "$response" | grep -o '"location":"[^"]*"' | cut -d'"' -f4)
+            
+            if [ -n "$location" ]; then
+                log_verbose "    ✅ $city_name → $location"
+                success_count=$((success_count + 1))
+            else
+                log_verbose "    ⚠️  $city_name → No location in response"
+                log_verbose "    Response: $response"
+            fi
+        else
+            log_verbose "    ❌ $city_name → API call failed"
+        fi
+    done
+
+    # Test 4: Method parameter validation
+    log_verbose "4. Testing different geocoding methods..."
+    local berlin_lat="52.52"
+    local berlin_lon="13.40"
+    
+    # Test geonames method (primary)
+    local geonames_url="${api_url}/api/reverse-geocode?lat=${berlin_lat}&lon=${berlin_lon}&method=geonames"
+    local geonames_response
+    geonames_response=$(curl -s --connect-timeout 10 --max-time 15 "$geonames_url" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$geonames_response" | grep -q '"location"'; then
+        log_verbose "✅ Geonames method working"
+    else
+        log_verbose "⚠️  Geonames method not responding properly"
+    fi
+
+    # Test 5: Error handling
+    log_verbose "5. Testing error handling with invalid coordinates..."
+    local invalid_url="${api_url}/api/reverse-geocode?lat=999&lon=999&method=geonames"
+    local invalid_response
+    invalid_response=$(curl -s --connect-timeout 5 --max-time 10 "$invalid_url" 2>/dev/null)
+    
+    if [ $? -eq 0 ]; then
+        log_verbose "✅ API handles invalid coordinates gracefully"
+    else
+        log_verbose "⚠️  API error handling test failed"
+    fi
+
+    # Summarize results
+    echo ""
+    log "Geocoder Test Results:"
+    log "  Total coordinate tests: $test_count"
+    log "  Successful resolutions: $success_count"
+    log "  Success rate: $(( (success_count * 100) / test_count ))%"
+    
+    # Determine overall success
+    if [ $success_count -ge $((test_count * 2 / 3)) ]; then  # At least 2/3 success rate
+        log "✅ Geocoder service is functional and ready"
+        return 0
+    else
+        log_error "❌ Geocoder service test failed - insufficient success rate"
+        log_error "Expected at least 67% success rate, got $(( (success_count * 100) / test_count ))%"
+        return 1
+    fi
+}
+
 # Function to test geocoder city resolution with sample coordinates
 test_geocoder_city_resolution() {
     log_step "Testing geocoder city resolution..."
@@ -779,7 +937,7 @@ test_geocoder_city_resolution() {
     # Try to find service IP
     while [ $retry_count -lt $max_retries ]; do
         local service_ip
-        service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+        service_ip=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
 
         if [ -n "$service_ip" ]; then
             geocoder_service_url="http://${service_ip}:8090"
@@ -795,7 +953,7 @@ test_geocoder_city_resolution() {
     # If service IP not found, try NodePort
     if [ -z "$geocoder_service_url" ]; then
         local node_port
-        node_port=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
+        node_port=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].nodePort}' 2>/dev/null)
 
         if [ -n "$node_port" ]; then
             geocoder_service_url="http://localhost:$node_port"
@@ -869,115 +1027,45 @@ test_geocoder_city_resolution() {
 test_geocoder_service() {
     log_step "Testing reverse geocoder service functionality..."
 
-    # Check if kubectl is available
+    # Ensure kubectl is available
     if ! command -v kubectl &> /dev/null; then
         log_error "kubectl command not found, cannot test geocoder service"
         exit $EXIT_MISSING_DEPS
     fi
 
     # Check if the geocoder service exists
-    if ! kubectl get deployment reverse-geocoder &> /dev/null; then
+    if ! sudo kubectl get deployment reverse-geocoder &> /dev/null; then
         log_error "Reverse geocoder service not found in the cluster"
         log_error "Please deploy the geocoder service first"
         exit $EXIT_CONFIG_FAILED
     fi
 
-    # Check if the service is ready
-    local ready_replicas
-    ready_replicas=$(kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-    if [ "$ready_replicas" != "1" ]; then
-        log_warn "Reverse geocoder service is not ready ($ready_replicas/1 replicas)"
-        log_warn "Attempting tests anyway..."
-    else
-        log "Reverse geocoder service is ready"
-    fi
-
-    # Get service details
-    local service_ip service_port
-    service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
-    service_port=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8090")
-
-    if [ -z "$service_ip" ]; then
-        log_warn "Could not determine service IP, using localhost:8090"
-        service_ip="localhost"
-    fi
-
-    local api_url="http://${service_ip}:${service_port}"
-    log "Using geocoder API at: $api_url"
-
-    # Test health endpoint first
-    log "Testing health endpoint..."
-    if curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" | grep -q "ok"; then
-        log "✅ Health endpoint responded successfully"
-    else
-        log_error "❌ Health endpoint failed"
-        log_error "Service may not be running properly"
-        exit $EXIT_CONFIG_FAILED
-    fi
-
-    # Test world cities
-    log "Testing geocoder with major world cities..."
+    # Run comprehensive geocoder tests
+    log "Running comprehensive geocoder functionality tests..."
     echo ""
-    printf "%-20s %-20s %-30s %s\n" "City" "Coordinates" "Resolution" "Status"
-    echo "-------------------------------------------------------------------------------"
-
-    # Define test cities with their coordinates
-    declare -A test_cities=(
-        ["Berlin"]="52.52,13.40"
-        ["London"]="51.51,-0.13"
-        ["Tokyo"]="35.68,139.76"
-        ["New York"]="40.71,-74.01"
-        ["Sydney"]="-33.87,151.21"
-        ["Moscow"]="55.75,37.62"
-        ["Cape Town"]="-33.92,18.42"
-        ["Rio de Janeiro"]="-22.91,-43.17"
-    )
-
-    local success_count=0
-    local total=${#test_cities[@]}
-
-    for city in "${!test_cities[@]}"; do
-        local coords=${test_cities[$city]}
-        local lat=${coords%,*}
-        local lon=${coords#*,}
-
-        # Call geocoder API
-        local url="${api_url}/api/reverse-geocode?lat=${lat}&lon=${lon}&method=geonames"
-        local result
-        result=$(curl -s --connect-timeout 10 --max-time 15 "$url" 2>/dev/null)
-
-        if [ $? -eq 0 ] && [ -n "$result" ]; then
-            # Extract location from response
-            local resolved_location
-            resolved_location=$(echo "$result" | grep -o '"location":"[^"]*"' | cut -d'"' -f4)
-
-            if [ -n "$resolved_location" ]; then
-                printf "%-20s %-20s %-30s %s\n" "$city" "$lat,$lon" "$resolved_location" "✅"
-                success_count=$((success_count + 1))
-            else
-                printf "%-20s %-20s %-30s %s\n" "$city" "$lat,$lon" "No resolution" "❌"
-            fi
-        else
-            printf "%-20s %-20s %-30s %s\n" "$city" "$lat,$lon" "API error" "❌"
-        fi
-    done
-
-    # Show summary
-    echo ""
-    log "Test results summary:"
-    log "  Total tests: $total"
-    log "  Successful: $success_count"
-    log "  Failed: $((total - success_count))"
-
-    if [ $success_count -eq $total ]; then
-        log "✅ All city resolutions successful"
+    
+    if test_geocoder_comprehensive; then
+        echo ""
+        log "=============================================="
+        log "✅ GEOCODER SERVICE TEST: PASSED"
+        log "=============================================="
+        log "The reverse geocoder service is fully functional"
+        log "All major city resolution tests passed"
+        log "Geolocation monitoring will work correctly"
         return 0
-    elif [ $success_count -gt 0 ]; then
-        log_warn "⚠️  Some city resolutions failed"
-        return 1
     else
-        log_error "❌ All city resolutions failed"
-        log_error "Geocoder service is not working properly"
+        echo ""
+        log "=============================================="
+        log "❌ GEOCODER SERVICE TEST: FAILED"
+        log "=============================================="
+        log_error "The reverse geocoder service has functional issues"
+        log_error "Geolocation monitoring may not work properly"
+        echo ""
+        log "Troubleshooting recommendations:"
+        log "  1. Check deployment status: kubectl get deployment reverse-geocoder"
+        log "  2. Check pod logs: kubectl logs deployment/reverse-geocoder"
+        log "  3. Check service status: kubectl get service reverse-geocoder"
+        log "  4. Restart deployment: kubectl rollout restart deployment/reverse-geocoder"
         return 1
     fi
 }
@@ -989,6 +1077,23 @@ deploy_geocoder_service() {
 
     log_step "Deploying reverse geocoder service for offline city name resolution..."
     log "📍 This service provides local geocoding for node location labels"
+
+    # Ensure kubectl is available and cluster is accessible
+    if ! command -v kubectl &> /dev/null; then
+        log_error "kubectl command not found - cannot deploy geocoder service"
+        return 1
+    fi
+
+    # Test cluster connectivity (use sudo kubectl like deploy.sh does)
+    log_verbose "Testing Kubernetes cluster connectivity..."
+    if ! sudo kubectl cluster-info &> /dev/null; then
+        log_error "Cannot connect to Kubernetes cluster"
+        log_error "Make sure K3s server is running and kubectl is configured properly"
+        log_error "Try: sudo systemctl status k3s"
+        log_error "For manual kubectl access: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+        return 1
+    fi
+    log_verbose "✅ Kubernetes cluster is accessible"
 
     log_verbose "[DEBUG] Starting geocoder directory detection..."
 
@@ -1009,31 +1114,32 @@ deploy_geocoder_service() {
         geocoder_dir="/home/$USER/code/experiments/k3s-on-phone/geocoder_app"
         log_verbose "Found geocoder_app in expected path"
     else
-        log_warn "Geocoder app directory not found, skipping geocoder deployment"
-        log_warn "Node location labeling may be limited without local reverse geocoding service"
-        log_verbose "Searched in: ./geocoder_app, ../geocoder_app, /home/$USER/code/experiments/k3s-on-phone/geocoder_app"
-        return 0
+        log_error "Geocoder app directory not found - this is required for cluster functionality"
+        log_error "Searched in: ./geocoder_app, ../geocoder_app, /home/$USER/code/experiments/k3s-on-phone/geocoder_app"
+        log_error "Please ensure the geocoder_app directory exists in the project"
+        return 1
     fi
 
     log_verbose "Found geocoder directory at: $geocoder_dir"
 
     # Change to geocoder directory
     cd "$geocoder_dir" || {
-        log_warn "Cannot access geocoder directory, skipping geocoder deployment"
-        return 0
+        log_error "Cannot access geocoder directory at $geocoder_dir"
+        log_error "Check directory permissions and existence"
+        return 1
     }
 
     # Check if the geocoder service already exists
     log_verbose "Checking if reverse-geocoder deployment already exists..."
-    if kubectl get deployment reverse-geocoder >/dev/null 2>&1; then
+    if sudo kubectl get deployment reverse-geocoder >/dev/null 2>&1; then
         log_verbose "Found existing reverse-geocoder deployment"
         if [ "$FORCE_MODE" = true ]; then
             log "Force mode: Removing existing geocoder deployment for rebuild..."
-            kubectl delete deployment reverse-geocoder >/dev/null 2>&1 || true
-            kubectl delete service reverse-geocoder >/dev/null 2>&1 || true
+            sudo kubectl delete deployment reverse-geocoder >/dev/null 2>&1 || true
+            sudo kubectl delete service reverse-geocoder >/dev/null 2>&1 || true
         else
             log "Reverse geocoder service already deployed, checking status..."
-            if kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
+            if sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
                 log "✅ Reverse geocoder service is already running"
                 cd "$current_dir"
                 return 0
@@ -1079,6 +1185,16 @@ deploy_geocoder_service() {
             # Run build with output shown
             if ./build.sh; then
                 log "✅ Geocoder service Docker image built successfully"
+                
+                # Verify the image was created
+                if docker images | grep -q "reverse-geocoder.*latest"; then
+                    log_verbose "✅ Docker image 'reverse-geocoder:latest' confirmed in local registry"
+                else
+                    log_error "❌ Docker image 'reverse-geocoder:latest' not found after build"
+                    log_error "Build may have failed silently. Check Docker daemon and build script."
+                    cd "$current_dir"
+                    return 1
+                fi
             else
                 log_error "Geocoder Docker build failed. See errors above."
                 log_error "Will not proceed with deployment."
@@ -1089,6 +1205,16 @@ deploy_geocoder_service() {
             # Run build with output hidden
             if ./build.sh >/dev/null 2>&1; then
                 log "✅ Geocoder service Docker image built successfully"
+                
+                # Verify the image was created
+                if docker images | grep -q "reverse-geocoder.*latest"; then
+                    log_verbose "✅ Docker image 'reverse-geocoder:latest' confirmed in local registry"
+                else
+                    log_error "❌ Docker image 'reverse-geocoder:latest' not found after build"
+                    log_error "Build may have failed silently. Run with -v/--verbose for details."
+                    cd "$current_dir"
+                    return 1
+                fi
             else
                 log_error "Geocoder Docker build failed. Run with -v/--verbose to see details."
                 log_error "Will not proceed with deployment."
@@ -1097,8 +1223,11 @@ deploy_geocoder_service() {
             fi
         fi
     else
-        log_warn "No build script found for geocoder, skipping build"
-        log_warn "Attempting to deploy using existing image (if available)"
+        log_error "No build script found for geocoder at ./build.sh"
+        log_error "The geocoder service requires a build step to create the Docker image"
+        log_error "Please ensure build.sh exists and is executable in the geocoder_app directory"
+        cd "$current_dir"
+        return 1
     fi
 
 # Deploy the geocoder service if deployment script exists
@@ -1107,22 +1236,75 @@ deploy_geocoder_service() {
         log_verbose "Executing: ./deploy.sh"
         if [ "$VERBOSE" = true ]; then
             log_verbose "Running deploy.sh with verbose output..."
+            log_verbose "=== DEPLOY.SH OUTPUT START ==="
             if ./deploy.sh; then
+                log_verbose "=== DEPLOY.SH OUTPUT END ==="
                 log "✅ Reverse geocoder service deployed successfully"
 
-                # Wait for deployment to be ready
+                # Wait for deployment to be ready with verbose monitoring
                 log_verbose "Waiting for geocoder service to be ready..."
-                if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s; then
-                    log "✅ Reverse geocoder service is ready"
-
-                    # Test the city resolution capability
-                    test_geocoder_city_resolution
-                else
-                    log_warn "Geocoder service deployment timeout, may still be starting"
+                log_verbose "Monitoring deployment progress..."
+                
+                # Show deployment status while waiting
+                local wait_count=0
+                local max_wait=120
+                while [ $wait_count -lt $max_wait ]; do
+                    local ready_replicas
+                    ready_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+                    local desired_replicas
+                    desired_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
+                    
+                    log_verbose "Deployment status: $ready_replicas/$desired_replicas replicas ready (${wait_count}s/${max_wait}s)"
+                    
+                    if [ "$ready_replicas" = "$desired_replicas" ] && [ "$ready_replicas" != "0" ]; then
+                        log "✅ Reverse geocoder service is ready after ${wait_count}s"
+                        break
+                    fi
+                    
+                    # Show pod status and logs periodically
+                    if [ $((wait_count % 15)) -eq 0 ] && [ $wait_count -gt 0 ]; then
+                        log_verbose "=== Pod status check (${wait_count}s) ==="
+                        sudo kubectl get pods -l app=reverse-geocoder -o wide || true
+                        
+                        log_verbose "=== Pod logs (last 10 lines) ==="
+                        sudo kubectl logs deployment/reverse-geocoder --tail=10 2>/dev/null || log_verbose "No logs available yet"
+                        log_verbose "=== End status check ==="
+                    fi
+                    
+                    sleep 2
+                    wait_count=$((wait_count + 2))
+                done
+                
+                # Final check
+                if [ $wait_count -ge $max_wait ]; then
+                    log_error "Geocoder service deployment timeout after ${max_wait}s"
+                    log_error "=== Final deployment diagnostics ==="
+                    log_error "Deployment status:"
+                    sudo kubectl get deployment reverse-geocoder -o wide || true
+                    log_error "Pod status:"
+                    sudo kubectl get pods -l app=reverse-geocoder -o wide || true
+                    log_error "Pod details:"
+                    sudo kubectl describe pods -l app=reverse-geocoder || true
+                    log_error "Recent pod logs:"
+                    sudo kubectl logs deployment/reverse-geocoder --tail=20 || log_error "No logs available"
+                    log_error "=== End diagnostics ==="
+                    cd "$current_dir"
+                    return 1
                 fi
+
+                # Comprehensive test of geocoder functionality
+                if ! test_geocoder_comprehensive; then
+                    log_error "Geocoder service deployed but failed functionality tests"
+                    cd "$current_dir"
+                    return 1
+                fi
+                log "✅ Geocoder service is fully functional"
             else
-                log_warn "Geocoder deployment failed, continuing without local reverse geocoding"
-                log_warn "Node location updates will be limited without the geocoder service"
+                log_verbose "=== DEPLOY.SH OUTPUT END ==="
+                log_error "Geocoder deployment failed - deploy.sh returned error"
+                log_error "This is a critical component for cluster functionality"
+                cd "$current_dir"
+                return 1
             fi
         else
             log_verbose "Running deploy.sh with output suppressed..."
@@ -1134,28 +1316,47 @@ deploy_geocoder_service() {
                 if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s >/dev/null 2>&1; then
                     log "✅ Reverse geocoder service is ready"
 
-                    # Test the city resolution capability (with reduced verbosity)
-                    test_geocoder_city_resolution >/dev/null 2>&1
-                    if [ $? -eq 0 ]; then
-                        log "✅ City resolution test passed"
+                    # Comprehensive test of geocoder functionality (with reduced verbosity)
+                    if test_geocoder_comprehensive >/dev/null 2>&1; then
+                        log "✅ Geocoder functionality test passed"
                     else
-                        log_warn "⚠️  City resolution test failed. Run with -v/--verbose for details."
+                        log_error "Geocoder service deployed but failed functionality tests"
+                        log_error "Run with -v/--verbose to see test details"
+                        cd "$current_dir"
+                        return 1
                     fi
                 else
-                    log_warn "Geocoder service deployment timeout, may still be starting"
+                    log_error "Geocoder service deployment timeout - deployment failed to become ready"
+                    
+                    # Check for image issues even in non-verbose mode
+                    if kubectl get pods -l app=reverse-geocoder | grep -q "ErrImageNeverPull\|ImagePullBackOff\|ErrImagePull"; then
+                        log_error "❌ IMAGE ISSUE: K3s cannot find Docker image 'reverse-geocoder:latest'"
+                        log_error "Run with -v/--verbose for detailed troubleshooting steps"
+                    else
+                        log_error "❌ DEPLOYMENT ISSUE: Run with -v/--verbose for details"
+                    fi
+                    
+                    cd "$current_dir"
+                    return 1
                 fi
             else
-                log_warn "Geocoder deployment failed, continuing without local reverse geocoding"
-                log_warn "Node location updates will be limited without the geocoder service"
-                log_warn "Run with -v/--verbose to see deployment details"
+                log_error "Geocoder deployment failed - deploy.sh returned error"
+                log_error "Run with -v/--verbose to see deployment details"
+                cd "$current_dir"
+                return 1
             fi
         fi
     else
-        log_warn "No deployment script found for geocoder, skipping deployment"
+        log_error "No deployment script found for geocoder at ./deploy.sh"
+        log_error "The geocoder service requires a deployment script to install to Kubernetes"
+        log_error "Please ensure deploy.sh exists and is executable in the geocoder_app directory"
+        cd "$current_dir"
+        return 1
     fi
 
     # Return to original directory
     cd "$current_dir"
+    return 0
 }
 
 install_k3s_server() {
@@ -1237,15 +1438,22 @@ install_k3s_server() {
 
     log "K3s server installed successfully!"
 
-    # Deploy the reverse geocoder service (critical for node location labeling)
-    deploy_geocoder_service
-
     # Setup local Docker registry for the server
     if setup_local_registry; then
         log "✅ Registry setup completed"
     else
         log_warn "Registry setup failed - continuing without registry"
     fi
+
+    # Deploy the reverse geocoder service (critical for node location labeling)
+    if ! deploy_geocoder_service; then
+        log_error "❌ Geocoder service deployment failed - this is critical for cluster functionality"
+        log_error "The geocoder service is required for proper node location labeling"
+        log_error "Without it, geolocation monitoring and node targeting will not work correctly"
+        exit $EXIT_CONFIG_FAILED
+    fi
+
+
 
     show_agent_setup_info
 }
@@ -1375,7 +1583,7 @@ reverse_geocode() {
     # First try to find the geocoder service in Kubernetes
     if command -v kubectl >/dev/null 2>&1; then
         local service_ip
-        service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+        service_ip=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
         if [ -n "$service_ip" ]; then
             api_url="http://${service_ip}:8090"
         fi
@@ -1678,7 +1886,7 @@ label_node_as_phone() {
     fi
 }
 
-# Function to check geolocation provider connectivity
+# Function to check geolocation provider connectivity and basic functionality
 check_geolocation_provider() {
     log_step "Checking reverse geolocation provider connectivity..."
 
@@ -1689,25 +1897,47 @@ check_geolocation_provider() {
     # First try to find the geocoder service in Kubernetes (if kubectl is available)
     if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info &>/dev/null 2>&1; then
         log_verbose "Checking for geocoder service in cluster..."
+        
+        # Check if deployment exists
+        if ! sudo kubectl get deployment reverse-geocoder &>/dev/null 2>&1; then
+            log_warn "⚠️  Geocoder deployment not found in cluster"
+            log_warn "⚠️  Geocoder service was not deployed or deployment failed"
+            return 1
+        fi
+        
+        # Check deployment readiness
+        local ready_replicas
+        ready_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        if [ "$ready_replicas" != "1" ]; then
+            log_warn "⚠️  Geocoder deployment not ready: $ready_replicas/1 replicas"
+            return 1
+        fi
+        log_verbose "✅ Geocoder deployment is ready"
+        
+        # Get service IP
         local service_ip
-        service_ip=$(kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
+        service_ip=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
         if [ -n "$service_ip" ]; then
             api_url="http://${service_ip}:8090"
             log_verbose "Found geocoder service in cluster at: $api_url"
+        else
+            log_warn "⚠️  Cannot determine geocoder service IP"
+            return 1
         fi
-    fi
-
-    # If Kubernetes service not found, try localhost (for development/local testing)
-    if [ -z "$api_url" ]; then
-        api_url="http://localhost:8090"
-        log_verbose "Trying localhost geocoder service: $api_url"
+    else
+        log_warn "⚠️  Cannot check geocoder service - kubectl not available or cluster not accessible"
+        return 1
     fi
 
     # Test the health endpoint
     log_verbose "Testing geocoder health endpoint..."
-    if curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" 2>/dev/null | grep -q "ok"; then
+    local health_response
+    health_response=$(curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$health_response" | grep -q "ok"; then
         log "✅ Reverse geolocation provider is accessible"
         provider_available=true
+        log_verbose "Health response: $health_response"
 
         # Test a simple reverse geocode request
         log_verbose "Testing reverse geocoding functionality..."
@@ -1722,13 +1952,18 @@ check_geolocation_provider() {
                 log "✅ Reverse geocoding test successful: $test_location"
             else
                 log_warn "⚠️  Reverse geocoding test returned no location"
+                log_verbose "API response: $test_result"
+                provider_available=false
             fi
         else
             log_warn "⚠️  Reverse geocoding test failed"
+            log_verbose "API call failed or returned no data"
+            provider_available=false
         fi
 
     else
         log_warn "⚠️  Reverse geolocation provider not accessible at $api_url"
+        log_verbose "Health endpoint response: ${health_response:-'No response'}"
         log_warn "⚠️  City name resolution may not work properly"
         log_warn "⚠️  Geolocation monitoring will still track coordinates"
     fi
@@ -1741,8 +1976,19 @@ check_geolocation_provider() {
         log_warn "Geolocation provider check failed - limited functionality:"
         log_warn "  • Coordinate tracking: ✅ Available"
         log_warn "  • City name resolution: ❌ Not available"
-        log_warn "  • Solution: Ensure geocoder service is deployed on the cluster"
+        log_warn "  • Solution: Check geocoder service status on the master node"
         log_warn "  • Alternative: City names can be added manually via kubectl labels"
+        
+        # Provide troubleshooting information
+        if command -v kubectl >/dev/null 2>&1; then
+            log_warn ""
+            log_warn "Troubleshooting commands:"
+            log_warn "  • Check deployment: kubectl get deployment reverse-geocoder"
+            log_warn "  • Check pods: kubectl get pods -l app=reverse-geocoder"
+            log_warn "  • Check service: kubectl get service reverse-geocoder"
+            log_warn "  • Check logs: kubectl logs deployment/reverse-geocoder"
+        fi
+        
         return 1
     fi
 }
@@ -2141,8 +2387,20 @@ install_k3s_agent() {
     # Label the node as a phone for deployment targeting
     label_node_as_phone
 
-    # Check if reverse geolocation provider is available
-    check_geolocation_provider
+    # Check if reverse geolocation provider is available and functional
+    if ! check_geolocation_provider; then
+        log_warn "Geocoder service not accessible from agent node"
+        log_warn "Geolocation monitoring will have limited functionality"
+    else
+        # Run comprehensive tests on the geocoder service
+        log_verbose "Running comprehensive geocoder tests from agent node..."
+        if test_geocoder_comprehensive; then
+            log "✅ Geocoder service fully functional from agent node"
+        else
+            log_warn "⚠️  Geocoder service has limited functionality from agent node"
+            log_warn "Some geolocation features may not work properly"
+        fi
+    fi
 
     # Set up geolocation monitoring service
     setup_geolocation_service
@@ -2354,7 +2612,7 @@ show_agent_setup_info() {
     log "To add agent nodes, use one of the following methods:"
     echo ""
     log_warn "⚠️  Network Resolution: Commands include 'ping github.com' to test connectivity first"
-    log_warn "⚠️  If ping fails, check DNS/network settings before proceeding with setup"
+    log_warn "⚠️  If ping fails, close the Linux Terminal App tab and reinstall Debian."
     echo ""
     echo "Option 1 - One-line setup with auto-generated hostname:"
     echo ""
@@ -2400,7 +2658,7 @@ $server_url
 
 ## Setup Methods
 
-⚠️ **Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, close the Linux Terminal App tab and reinstall debian.
+⚠️ **Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, close the Linux Terminal App tab and reinstall Debian.
 
 ### Option 1 - One-line setup with auto-generated hostname
 \`\`\`bash

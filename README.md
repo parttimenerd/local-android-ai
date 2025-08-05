@@ -608,4 +608,5 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 ## Log
 
 5.8.2025
-- worked on properly setting up the agent
+- worked on properly setting up the agent's tailscale
+- worked on fixing the automatic geocoder deployment (it now works)
