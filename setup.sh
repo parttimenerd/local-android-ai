@@ -537,13 +537,6 @@ setup_tailscale() {
         fi
     fi
 
-    # Check if already configured and running
-    if sudo tailscale status --json &> /dev/null; then
-        log "Tailscale is already configured and running"
-        log_verbose "Status: $(sudo tailscale status --peers=false 2>/dev/null | head -1 || echo 'Connected')"
-        return 0
-    fi
-
     if [ -n "$TAILSCALE_AUTH_KEY" ]; then
         log_verbose "Connecting to Tailscale with validated auth key"
         log_verbose "Auth key starts with: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
@@ -1755,11 +1748,11 @@ check_geolocation_provider() {
 }
 
 check_and_reinstall_tailscale_for_agent() {
-    log_step "Setting up Tailscale for agent mode..."
+    log_step "Setting up Tailscale for agent mode (always reinstalling for clean setup)..."
     
-    # Check if Tailscale is installed and configured
-    if command -v tailscale &> /dev/null && sudo tailscale status --json &> /dev/null; then
-        log "Tailscale is already configured - reinstalling for clean agent setup..."
+    # Always reinstall Tailscale in agent mode for clean configuration
+    if command -v tailscale &> /dev/null; then
+        log "Tailscale is installed - removing for clean agent setup..."
         
         # Log out and disconnect from Tailscale
         log_verbose "Logging out from Tailscale..."
@@ -1789,13 +1782,12 @@ check_and_reinstall_tailscale_for_agent() {
         sudo pkill -f tailscaled 2>/dev/null || true
         sleep 2
         
-        log_verbose "Reinstalling Tailscale with fresh configuration..."
+        log_verbose "Installing fresh Tailscale for agent..."
     else
-        log "Setting up Tailscale for agent mode..."
+        log "Installing Tailscale for agent mode..."
     fi
     
-    # Install and configure Tailscale (fresh install or reinstall)
-    # Force authentication by temporarily clearing any cached status
+    # Install and configure Tailscale (fresh install)
     setup_tailscale_for_agent
     
     # Test connectivity to K3s server after Tailscale setup
@@ -1860,16 +1852,16 @@ setup_tailscale_for_agent() {
         fi
     fi
 
-    # For agent mode, always attempt authentication (don't check if already configured)
-    # This ensures we authenticate even after a clean reinstall
+    # For agent mode, always attempt authentication regardless of current status
+    # This ensures we connect to the correct Tailscale network with the provided auth key
     if [ -n "$TAILSCALE_AUTH_KEY" ]; then
         log_verbose "Connecting to Tailscale with validated auth key"
         log_verbose "Auth key starts with: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
         log_verbose "Hostname for auth: $HOSTNAME"
         
-        # Attempt authentication with detailed error handling
-        log "Authenticating with Tailscale using provided auth key..."
-        if sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME"; then
+        # Always run tailscale up in agent mode, even if already connected
+        log "Authenticating with Tailscale using provided auth key (forced in agent mode)..."
+        if sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME" --force-reauth; then
             log "Successfully connected to Tailscale"
             
             # Show connection status
