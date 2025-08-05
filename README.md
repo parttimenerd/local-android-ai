@@ -603,3 +603,9 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 - [ ] update phone app to use tokens and all to download gemma model directly
 - [ ] test cluster without a computer, just two phones
 - [ ] write blog post
+
+
+## Log
+
+5.8.2025
+- worked on properly setting up the agent

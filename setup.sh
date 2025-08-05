@@ -1938,6 +1938,74 @@ test_k3s_server_connectivity() {
     fi
 }
 
+# Function to setup kubectl configuration for agent nodes
+setup_kubectl_for_agent() {
+    log_step "Configuring kubectl for agent node..."
+
+    # On agent nodes, kubectl needs to use the server's kubeconfig
+    # or connect through the agent's configuration
+    
+    # First, check if K3s agent has created its config
+    local agent_config="/etc/rancher/k3s/k3s.yaml"
+    
+    if [ -f "$agent_config" ]; then
+        log_verbose "Found K3s agent config at $agent_config"
+        
+        # Set up KUBECONFIG environment variable for current user
+        local user_home
+        if [ "$USER" = "root" ]; then
+            user_home="/root"
+        else
+            user_home="/home/$USER"
+        fi
+        
+        # Create .bashrc entry for KUBECONFIG
+        if [ -f "$user_home/.bashrc" ]; then
+            if ! grep -q "KUBECONFIG.*k3s.yaml" "$user_home/.bashrc"; then
+                log_verbose "Adding KUBECONFIG to .bashrc"
+                echo "" >> "$user_home/.bashrc"
+                echo "# K3s kubectl configuration" >> "$user_home/.bashrc"
+                echo "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$user_home/.bashrc"
+                log "✅ Added KUBECONFIG to ~/.bashrc"
+            else
+                log_verbose "KUBECONFIG already configured in .bashrc"
+            fi
+        fi
+        
+        # Also set it for the current session
+        export KUBECONFIG="$agent_config"
+        log_verbose "Set KUBECONFIG for current session"
+        
+        # Copy the config to user's .kube directory for convenience
+        local kube_dir="$user_home/.kube"
+        if [ ! -d "$kube_dir" ]; then
+            mkdir -p "$kube_dir"
+            log_verbose "Created $kube_dir directory"
+        fi
+        
+        # Copy the config file (with proper permissions)
+        sudo cp "$agent_config" "$kube_dir/config"
+        sudo chown "$USER:$(id -gn)" "$kube_dir/config"
+        chmod 600 "$kube_dir/config"
+        log_verbose "Copied kubeconfig to $kube_dir/config"
+        
+        # Test kubectl connectivity
+        log_verbose "Testing kubectl connectivity..."
+        if KUBECONFIG="$agent_config" kubectl cluster-info &> /dev/null; then
+            log "✅ kubectl configured successfully for agent node"
+            return 0
+        else
+            log_warn "⚠️  kubectl configuration found but connection test failed"
+            log_warn "The agent may still be connecting to the cluster"
+            return 1
+        fi
+    else
+        log_warn "⚠️  K3s agent config not found at $agent_config"
+        log_warn "This is normal during initial startup - the config will be created when the agent connects"
+        return 1
+    fi
+}
+
 install_k3s_agent() {
     log_step "Installing K3s as agent (worker node)..."
 
@@ -2064,6 +2132,9 @@ install_k3s_agent() {
     log_verbose "Waiting for K3s agent to connect to cluster..."
     sleep 5
 
+    # Configure kubectl for agent node
+    setup_kubectl_for_agent
+
     # Test connectivity to K3s server after installation
     test_k3s_server_connectivity_post_install
 
@@ -2166,8 +2237,22 @@ show_agent_completion_info() {
 
     else
         log "Cluster Connection: ⏳ Agent connecting to cluster..."
-        log_warn "kubectl not available or cluster not accessible from agent node"
-        log "The agent should be connecting to the cluster. Check status from the server node."
+        echo ""
+        log "kubectl Configuration:"
+        log "⚠️  kubectl is not working properly on this agent node"
+        echo ""
+        log "To fix kubectl on this agent node:"
+        log "  1. Set KUBECONFIG environment variable:"
+        log "     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+        echo ""
+        log "  2. Or reload your shell to pick up the configuration:"
+        log "     source ~/.bashrc"
+        echo ""
+        log "  3. Test kubectl:"
+        log "     kubectl get nodes"
+        echo ""
+        log "  Note: kubectl was configured automatically, but you may need to"
+        log "        restart your shell or run 'source ~/.bashrc' to pick up the changes."
     fi
 
     # Network information
@@ -2205,6 +2290,13 @@ show_agent_completion_info() {
 
     echo ""
     log "Next Steps:"
+    echo ""
+    log "kubectl Usage on Agent Node:"
+    log "  • kubectl is configured to work on this agent node"
+    log "  • If you get connection errors, run: source ~/.bashrc"
+    log "  • Or manually set: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+    echo ""
+    log "Cluster Management:"
     log "  • Check cluster status from server node: kubectl get nodes"
     log "  • View pods on this node: kubectl get pods --all-namespaces --field-selector spec.nodeName=$HOSTNAME"
     log "  • Monitor node logs: sudo journalctl -u k3s-agent -f"
