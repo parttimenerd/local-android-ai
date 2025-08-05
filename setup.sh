@@ -1769,6 +1769,8 @@ check_and_reinstall_tailscale_for_agent() {
         log_verbose "Stopping Tailscale daemon..."
         if command -v systemctl &>/dev/null; then
             sudo systemctl stop tailscaled 2>/dev/null || log_warn "Failed to stop Tailscale daemon"
+            # Wait for daemon to fully stop
+            sleep 3
         fi
         
         # Purge Tailscale package to ensure clean reinstall
@@ -1782,16 +1784,133 @@ check_and_reinstall_tailscale_for_agent() {
         log_verbose "Cleaning Tailscale state..."
         sudo rm -rf /var/lib/tailscale 2>/dev/null || log_warn "Failed to remove Tailscale state directory"
         
+        # Ensure daemon is completely stopped
+        log_verbose "Ensuring Tailscale daemon is fully stopped..."
+        sudo pkill -f tailscaled 2>/dev/null || true
+        sleep 2
+        
         log_verbose "Reinstalling Tailscale with fresh configuration..."
     else
         log "Setting up Tailscale for agent mode..."
     fi
     
     # Install and configure Tailscale (fresh install or reinstall)
-    setup_tailscale
+    # Force authentication by temporarily clearing any cached status
+    setup_tailscale_for_agent
     
     # Test connectivity to K3s server after Tailscale setup
     test_k3s_server_connectivity
+}
+
+setup_tailscale_for_agent() {
+    log_step "Installing and configuring Tailscale for agent..."
+    
+    # Check network connectivity first
+    if ! ping -c 1 8.8.8.8 &>/dev/null; then
+        log_error "No internet connectivity - cannot install Tailscale"
+        echo "Please check your network connection and try again"
+        exit $EXIT_INSTALL_FAILED
+    fi
+
+    # Install Tailscale if not already installed
+    if ! command -v tailscale &> /dev/null; then
+        log_verbose "Installing Tailscale"
+        
+        # Try the official installer with better error handling
+        if ! curl -fsSL https://tailscale.com/install.sh | sh; then
+            log_error "Failed to install Tailscale via official installer"
+            echo ""
+            echo "Troubleshooting options:"
+            echo "1. Check internet connectivity: ping tailscale.com"
+            echo "2. Check firewall/proxy settings"
+            echo "3. Try manual installation from https://tailscale.com/download"
+            echo "4. Check the manual installation guide at: https://tailscale.com/kb/"
+            echo ""
+            exit $EXIT_INSTALL_FAILED
+        fi
+        
+        # Verify installation
+        if ! command -v tailscale &> /dev/null; then
+            log_error "Tailscale installation completed but command not found"
+            echo "Try: sudo apt-get install tailscale"
+            exit $EXIT_INSTALL_FAILED
+        fi
+        
+        log "Tailscale installed successfully"
+    else
+        log "Tailscale is already installed"
+        log_verbose "Version: $(tailscale version --short 2>/dev/null || echo 'unknown')"
+    fi
+
+    # Ensure Tailscale daemon is running
+    log_verbose "Starting Tailscale daemon..."
+    if command -v systemctl &>/dev/null; then
+        sudo systemctl enable tailscaled 2>/dev/null || log_warn "Failed to enable Tailscale service"
+        sudo systemctl start tailscaled 2>/dev/null || log_warn "Failed to start Tailscale service"
+        
+        # Wait for daemon to initialize
+        sleep 3
+        
+        # Check if daemon is running
+        if ! sudo systemctl is-active tailscaled &>/dev/null; then
+            log_error "Tailscale daemon failed to start"
+            echo "Check status with: sudo systemctl status tailscaled"
+            echo "Check logs with: sudo journalctl -u tailscaled"
+            exit $EXIT_CONFIG_FAILED
+        fi
+    fi
+
+    # For agent mode, always attempt authentication (don't check if already configured)
+    # This ensures we authenticate even after a clean reinstall
+    if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+        log_verbose "Connecting to Tailscale with validated auth key"
+        log_verbose "Auth key starts with: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
+        log_verbose "Hostname for auth: $HOSTNAME"
+        
+        # Attempt authentication with detailed error handling
+        log "Authenticating with Tailscale using provided auth key..."
+        if sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME"; then
+            log "Successfully connected to Tailscale"
+            
+            # Show connection status
+            sleep 2
+            if sudo tailscale status &>/dev/null; then
+                log_verbose "Tailscale IP: $(tailscale ip -4 2>/dev/null || echo 'unknown')"
+            fi
+        else
+            local exit_code=$?
+            log_error "Failed to connect to Tailscale (exit code: $exit_code)"
+            echo ""
+            echo "Debug information:"
+            echo "• Auth key length: ${#TAILSCALE_AUTH_KEY}"
+            echo "• Auth key prefix: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
+            echo "• Hostname: $HOSTNAME"
+            echo ""
+            echo "Common issues:"
+            echo "• Auth key expired or invalid"
+            echo "• Auth key already used (single-use keys)"
+            echo "• Network connectivity problems"
+            echo "• Firewall blocking Tailscale"
+            echo "• Hostname already in use"
+            echo ""
+            echo "Troubleshooting:"
+            echo "• Check auth key at: https://login.tailscale.com/admin/settings/keys"
+            echo "• Try manual authentication: sudo tailscale up"
+            echo "• Check Tailscale documentation: https://tailscale.com/kb/"
+            echo ""
+            exit $EXIT_CONFIG_FAILED
+        fi
+    else
+        log_error "No Tailscale auth key provided for agent mode"
+        log_error "Agent mode requires Tailscale auth key for automatic setup"
+        echo ""
+        echo "Please provide auth key with: -t YOUR_AUTH_KEY"
+        echo "Get an auth key from: https://login.tailscale.com/admin/settings/keys"
+        echo ""
+        exit $EXIT_INVALID_ARGS
+    fi
+
+    log "Tailscale setup completed for agent"
 }
 
 test_k3s_server_connectivity() {
