@@ -23,7 +23,6 @@ public class GeocoderServer {
      */
     public static void initializeGeocoder() throws Exception {
         if (geocoder == null) {
-            // Use optimized global geocoder with Germany + France first, then background loading
             geocoder = ReverseGeocodingService.getGlobalGeocoder();
         }
     }

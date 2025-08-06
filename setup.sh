@@ -226,6 +226,39 @@ detect_ssh_service_name() {
     echo "$ssh_service"
 }
 
+# Function to install debugging utilities for network troubleshooting
+install_debug_utilities() {
+    log_verbose "Installing network debugging utilities..."
+    
+    # Install netcat for port testing and other useful debugging tools
+    local packages_to_install=""
+    
+    # Check if netcat is installed
+    if ! command -v nc &> /dev/null; then
+        packages_to_install="$packages_to_install netcat-openbsd"
+    fi
+    
+    # Check if curl is installed (usually is, but just in case)
+    if ! command -v curl &> /dev/null; then
+        packages_to_install="$packages_to_install curl"
+    fi
+    
+    # Check if dig is installed for DNS debugging
+    if ! command -v dig &> /dev/null; then
+        packages_to_install="$packages_to_install dnsutils"
+    fi
+    
+    # Install missing packages if any
+    if [ -n "$packages_to_install" ]; then
+        log_verbose "Installing missing debug utilities:$packages_to_install"
+        sudo apt-get update -qq && sudo apt-get install -y $packages_to_install || {
+            log_warn "Failed to install some debug utilities, network troubleshooting may be limited"
+        }
+    else
+        log_verbose "All debugging utilities already installed"
+    fi
+}
+
 install_docker() {
     log_step "Installing Docker..."
 
@@ -296,7 +329,17 @@ setup_docker_insecure_registry() {
     local registry_port="${2:-5000}"
     local registry_address="${master_ip}:${registry_port}"
 
+    log_verbose "Debug: Received master_ip='$master_ip', registry_port='$registry_port'"
+    log_verbose "Debug: Constructed registry_address='$registry_address'"
     log "Configuring Docker daemon for insecure registry: $registry_address"
+
+    # Install jq if not present (required for JSON manipulation)
+    if ! command -v jq &>/dev/null; then
+        log_verbose "Installing jq for JSON manipulation..."
+        sudo apt-get update -qq && sudo apt-get install -y jq || {
+            log_warn "Failed to install jq, falling back to text manipulation"
+        }
+    fi
 
     # Create or update Docker daemon configuration
     local daemon_config="/etc/docker/daemon.json"
@@ -331,8 +374,48 @@ setup_docker_insecure_registry() {
 EOF
     fi
 
+    # Debug: Show what was written to temp config
+    log_verbose "Debug: Contents of temp config file:"
+    log_verbose "$(cat "$temp_config" 2>/dev/null || echo 'Failed to read temp config')"
+    
     # Validate JSON and apply
-    if command -v jq &>/dev/null && jq . "$temp_config" >/dev/null 2>&1; then
+    if command -v jq &>/dev/null; then
+        log_verbose "Debug: Validating JSON with jq..."
+        if jq . "$temp_config" >/dev/null 2>&1; then
+            log_verbose "Debug: JSON validation passed"
+            sudo cp "$temp_config" "$daemon_config"
+            sudo chmod 644 "$daemon_config"
+            log "✅ Docker daemon configuration updated"
+
+            # Restart Docker daemon
+            log "Restarting Docker daemon..."
+            if sudo systemctl restart docker; then
+                log "✅ Docker daemon restarted successfully"
+
+                # Wait for Docker to be ready
+                for i in {1..30}; do
+                    if docker info >/dev/null 2>&1; then
+                        log "✅ Docker daemon is ready"
+                        break
+                    fi
+                    if [ $i -eq 30 ]; then
+                        log_error "Docker daemon failed to restart properly"
+                        return 1
+                    fi
+                    sleep 1
+                done
+            else
+                log_error "Failed to restart Docker daemon"
+                return 1
+            fi
+        else
+            log_error "Debug: JSON validation failed"
+            log_error "Debug: jq error output:"
+            jq . "$temp_config" 2>&1 || true
+            return 1
+        fi
+    else
+        log_verbose "Debug: jq not available, skipping JSON validation"
         sudo cp "$temp_config" "$daemon_config"
         sudo chmod 644 "$daemon_config"
         log "✅ Docker daemon configuration updated"
@@ -358,9 +441,6 @@ EOF
             log_error "Failed to restart Docker daemon"
             return 1
         fi
-    else
-        log_error "Failed to create valid Docker daemon configuration"
-        return 1
     fi
 
     # Cleanup
@@ -1359,6 +1439,139 @@ deploy_geocoder_service() {
     return 0
 }
 
+# Function to deploy the node-labeler service
+deploy_node_labeler_service() {
+    log_verbose "[DEBUG] deploy_node_labeler_service() function called"
+    log_verbose "[DEBUG] Current working directory: $(pwd)"
+
+    log_step "Deploying node-labeler service for agent node management..."
+    log "🏷️  This service allows agent nodes to label themselves without kubectl"
+
+    # Ensure kubectl is available and cluster is accessible
+    if ! command -v kubectl &> /dev/null; then
+        log_error "kubectl command not found - cannot deploy node-labeler service"
+        return 1
+    fi
+
+    # Test cluster connectivity
+    log_verbose "Testing Kubernetes cluster connectivity..."
+    if ! sudo kubectl cluster-info &> /dev/null; then
+        log_error "Cannot connect to Kubernetes cluster"
+        log_error "Make sure K3s server is running and kubectl is configured properly"
+        return 1
+    fi
+    log_verbose "✅ Kubernetes cluster is accessible"
+
+    # Check if we're in the right directory structure
+    local current_dir
+    current_dir=$(pwd)
+    local node_labeler_dir=""
+
+    # Look for the node-labeler-service directory
+    log_verbose "Looking for node-labeler-service directory..."
+    if [ -d "./node-labeler-service" ]; then
+        node_labeler_dir="./node-labeler-service"
+        log_verbose "Found node-labeler-service in current directory"
+    elif [ -d "../node-labeler-service" ]; then
+        node_labeler_dir="../node-labeler-service"
+        log_verbose "Found node-labeler-service in parent directory"
+    elif [ -d "/home/$USER/code/experiments/k3s-on-phone/node-labeler-service" ]; then
+        node_labeler_dir="/home/$USER/code/experiments/k3s-on-phone/node-labeler-service"
+        log_verbose "Found node-labeler-service in expected path"
+    else
+        log_error "Node-labeler service directory not found - this is required for agent functionality"
+        log_error "Searched in: ./node-labeler-service, ../node-labeler-service"
+        log_error "Please ensure the node-labeler-service directory exists in the project"
+        return 1
+    fi
+
+    log_verbose "Found node-labeler service directory at: $node_labeler_dir"
+
+    # Change to node-labeler directory
+    cd "$node_labeler_dir" || {
+        log_error "Cannot access node-labeler directory at $node_labeler_dir"
+        log_error "Check directory permissions and existence"
+        return 1
+    }
+
+    # Check if the node-labeler service already exists
+    log_verbose "Checking if node-labeler-service deployment already exists..."
+    if sudo kubectl get deployment node-labeler-service -n kube-system >/dev/null 2>&1; then
+        log_verbose "Found existing node-labeler-service deployment"
+        if [ "$FORCE_MODE" = true ]; then
+            log "Force mode: Removing existing node-labeler deployment for rebuild..."
+            sudo kubectl delete deployment node-labeler-service -n kube-system >/dev/null 2>&1 || true
+            sudo kubectl delete service node-labeler-service -n kube-system >/dev/null 2>&1 || true
+        else
+            log "Node-labeler service already deployed, checking status..."
+            if sudo kubectl get deployment node-labeler-service -n kube-system -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
+                log "✅ Node-labeler service is already running"
+                cd "$current_dir"
+                return 0
+            else
+                log "⚠️  Node-labeler service exists but not ready, redeploying..."
+            fi
+        fi
+    else
+        log_verbose "No existing node-labeler-service deployment found, proceeding with deployment"
+    fi
+
+    # Build and deploy the service using the build-deploy script
+    if [ -x "./build-deploy.sh" ]; then
+        log "🛠️ Building and deploying node-labeler service..."
+        
+        if [ "$VERBOSE" = true ]; then
+            log_verbose "Running build-deploy.sh with verbose output..."
+            if ./build-deploy.sh --namespace kube-system; then
+                log "✅ Node-labeler service deployed successfully"
+            else
+                log_error "❌ Node-labeler service deployment failed"
+                cd "$current_dir"
+                return 1
+            fi
+        else
+            log_verbose "Running build-deploy.sh with output suppressed..."
+            if ./build-deploy.sh --namespace kube-system >/dev/null 2>&1; then
+                log "✅ Node-labeler service deployed successfully"
+            else
+                log_error "❌ Node-labeler service deployment failed"
+                cd "$current_dir"
+                return 1
+            fi
+        fi
+    else
+        log_error "No build-deploy script found for node-labeler at ./build-deploy.sh"
+        log_error "The node-labeler service requires a build-deploy script"
+        log_error "Please ensure build-deploy.sh exists and is executable in the node-labeler-service directory"
+        cd "$current_dir"
+        return 1
+    fi
+
+    # Wait for deployment to be ready
+    log_verbose "Waiting for node-labeler service to be ready..."
+    local retries=30
+    while [ $retries -gt 0 ]; do
+        if sudo kubectl get deployment node-labeler-service -n kube-system -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
+            break
+        fi
+        sleep 2
+        retries=$((retries - 1))
+    done
+
+    if [ $retries -eq 0 ]; then
+        log_error "Node-labeler service failed to become ready"
+        cd "$current_dir"
+        return 1
+    fi
+
+    log "✅ Node-labeler service is ready and functional"
+    log "🏷️  Agent nodes can now label themselves using the service"
+
+    # Return to original directory
+    cd "$current_dir"
+    return 0
+}
+
 install_k3s_server() {
     log_step "Installing K3s as server (master node)..."
 
@@ -1456,6 +1669,14 @@ install_k3s_server() {
         exit $EXIT_CONFIG_FAILED
     fi
 
+    # Deploy the node-labeler service (critical for agent node labeling)
+    if ! deploy_node_labeler_service; then
+        log_error "❌ Node-labeler service deployment failed - this is critical for cluster functionality"
+        log_error "The node-labeler service is required for agent nodes to label themselves"
+        log_error "Without it, agent nodes cannot set device-type and other labels automatically"
+        exit $EXIT_CONFIG_FAILED
+    fi
+
 
 
     show_agent_setup_info
@@ -1497,6 +1718,54 @@ log_error() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [ERROR] $1" | systemd-cat -t "$LOG_TAG" -p err
 }
 
+# Function to get Kubernetes API credentials
+get_k8s_api_credentials() {
+    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+    
+    if [ ! -f "$kubeconfig" ]; then
+        return 1
+    fi
+    
+    # Extract server URL and token from kubeconfig
+    K3S_URL=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
+    K3S_TOKEN=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
+    
+    if [ -n "$K3S_URL" ] && [ -n "$K3S_TOKEN" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to make Kubernetes API calls
+k8s_api_call() {
+    local method="$1"
+    local endpoint="$2"
+    local data="$3"
+    
+    # Get API credentials if not already set
+    if [ -z "$K3S_URL" ] || [ -z "$K3S_TOKEN" ]; then
+        if ! get_k8s_api_credentials; then
+            return 1
+        fi
+    fi
+    
+    local url="${K3S_URL}${endpoint}"
+    local curl_opts="-s -k -H \"Authorization: Bearer $K3S_TOKEN\""
+    
+    if [ "$method" = "GET" ]; then
+        curl -s -k -H "Authorization: Bearer $K3S_TOKEN" "$url"
+    elif [ "$method" = "PATCH" ]; then
+        curl -s -k -X PATCH \
+            -H "Authorization: Bearer $K3S_TOKEN" \
+            -H "Content-Type: application/merge-patch+json" \
+            -d "$data" \
+            "$url"
+    else
+        return 1
+    fi
+}
+
 # Function to get current coordinates from phone app
 get_phone_location() {
     local response
@@ -1528,20 +1797,26 @@ get_phone_location() {
 
 # Function to get current node labels
 get_current_labels() {
-    local latitude longitude altitude
+    local node_response
+    node_response=$(k8s_api_call "GET" "/api/v1/nodes/$NODE_NAME")
+    
+    if [ $? -eq 0 ] && [ -n "$node_response" ]; then
+        local latitude longitude altitude
+        
+        # Extract latitude, longitude, altitude from API response
+        latitude=$(echo "$node_response" | grep -o "\"$LABEL_PREFIX/latitude\":\"[^\"]*\"" | cut -d'"' -f4)
+        longitude=$(echo "$node_response" | grep -o "\"$LABEL_PREFIX/longitude\":\"[^\"]*\"" | cut -d'"' -f4)
+        altitude=$(echo "$node_response" | grep -o "\"$LABEL_PREFIX/altitude\":\"[^\"]*\"" | cut -d'"' -f4)
 
-    latitude=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/latitude']}" 2>/dev/null || echo "")
-    longitude=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/longitude']}" 2>/dev/null || echo "")
-    altitude=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/altitude']}" 2>/dev/null || echo "")
-
-    if [ -n "$latitude" ] && [ -n "$longitude" ]; then
-        # Use altitude if available, otherwise use 0
-        if [ -n "$altitude" ]; then
-            echo "$latitude,$longitude,$altitude"
-        else
-            echo "$latitude,$longitude,0"
+        if [ -n "$latitude" ] && [ -n "$longitude" ]; then
+            # Use altitude if available, otherwise use 0
+            if [ -n "$altitude" ]; then
+                echo "$latitude,$longitude,$altitude"
+            else
+                echo "$latitude,$longitude,0"
+            fi
+            return 0
         fi
-        return 0
     fi
 
     return 1
@@ -1556,21 +1831,121 @@ update_node_labels() {
     longitude=$(echo "$new_coords" | cut -d',' -f2)
     altitude=$(echo "$new_coords" | cut -d',' -f3)
 
-    # Update labels
-    if kubectl label node "$NODE_NAME" "$LABEL_PREFIX/latitude=$latitude" --overwrite >/dev/null 2>&1 && \
-       kubectl label node "$NODE_NAME" "$LABEL_PREFIX/longitude=$longitude" --overwrite >/dev/null 2>&1 && \
-       kubectl label node "$NODE_NAME" "$LABEL_PREFIX/altitude=$altitude" --overwrite >/dev/null 2>&1; then
-
-        log_info "Updated node labels: latitude=$latitude, longitude=$longitude, altitude=$altitude"
-
-        # Also add a timestamp label for debugging
-        local timestamp
-        timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
-        kubectl label node "$NODE_NAME" "$LABEL_PREFIX/updated=$timestamp" --overwrite >/dev/null 2>&1
-
+    # Use node-labeler service (required for agents)
+    if update_labels_via_service "$latitude" "$longitude" "$altitude"; then
+        log_info "Updated node labels via service: latitude=$latitude, longitude=$longitude, altitude=$altitude"
         return 0
     else
-        log_error "Failed to update node labels"
+        log_error "Node-labeler service is required but unavailable"
+        log_error "Agent nodes must use node-labeler service for label updates"
+        return 1
+    fi
+}
+
+# Function to update labels via node-labeler service
+update_labels_via_service() {
+    local latitude="$1"
+    local longitude="$2" 
+    local altitude="$3"
+    
+    # Get API credentials if not already set
+    if [ -z "$K3S_URL" ] || [ -z "$K3S_TOKEN" ]; then
+        if ! get_k8s_api_credentials; then
+            return 1
+        fi
+    fi
+    
+    # Get node-labeler service endpoint
+    local service_response service_ip service_port
+    service_response=$(curl -s -k \
+        -H "Authorization: Bearer $K3S_TOKEN" \
+        "${K3S_URL}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
+    
+    if [ $? -ne 0 ] || ! echo "$service_response" | grep -q '"kind":"Service"'; then
+        return 1
+    fi
+    
+    # Extract service IP and port
+    service_ip=$(echo "$service_response" | grep -o '"clusterIP":"[^"]*"' | cut -d'"' -f4)
+    service_port=$(echo "$service_response" | grep -o '"port":[0-9]*' | head -1 | cut -d':' -f2)
+    
+    if [ -z "$service_ip" ] || [ -z "$service_port" ]; then
+        return 1
+    fi
+    
+    # Call node-labeler service geolocation endpoint
+    local labeler_url="http://${service_ip}:${service_port}"
+    local request_data="{\"latitude\":$latitude,\"longitude\":$longitude"
+    
+    if [ -n "$altitude" ] && [ "$altitude" != "0" ]; then
+        request_data="$request_data,\"altitude\":$altitude"
+    fi
+    request_data="$request_data}"
+    
+    local response
+    response=$(curl -s --connect-timeout 10 --max-time 15 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $K3S_TOKEN" \
+        -d "$request_data" \
+        "${labeler_url}/api/v1/node/${NODE_NAME}/geolocation" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$response" | grep -q '"success":true'; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to update city labels via node-labeler service
+update_city_via_service() {
+    local city_name="$1"
+    local timestamp="$2"
+    
+    # Get API credentials if not already set
+    if [ -z "$K3S_URL" ] || [ -z "$K3S_TOKEN" ]; then
+        if ! get_k8s_api_credentials; then
+            return 1
+        fi
+    fi
+    
+    # Get node-labeler service endpoint
+    local service_response service_ip service_port
+    service_response=$(curl -s -k \
+        -H "Authorization: Bearer $K3S_TOKEN" \
+        "${K3S_URL}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
+    
+    if [ $? -ne 0 ] || ! echo "$service_response" | grep -q '"kind":"Service"'; then
+        return 1
+    fi
+    
+    # Extract service IP and port
+    service_ip=$(echo "$service_response" | grep -o '"clusterIP":"[^"]*"' | cut -d'"' -f4)
+    service_port=$(echo "$service_response" | grep -o '"port":[0-9]*' | head -1 | cut -d':' -f2)
+    
+    if [ -z "$service_ip" ] || [ -z "$service_port" ]; then
+        return 1
+    fi
+    
+    # Escape special characters for Kubernetes labels
+    local escaped_city
+    escaped_city=$(echo "$city_name" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/^_*//;s/_*$//')
+    
+    # Call node-labeler service city endpoint
+    local labeler_url="http://${service_ip}:${service_port}"
+    local request_data="{\"city\":\"$escaped_city\",\"timestamp\":\"$timestamp\"}"
+    
+    local response
+    response=$(curl -s --connect-timeout 10 --max-time 15 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $K3S_TOKEN" \
+        -d "$request_data" \
+        "${labeler_url}/api/v1/node/${NODE_NAME}/city" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$response" | grep -q '"success":true'; then
+        return 0
+    else
         return 1
     fi
 }
@@ -1627,9 +2002,10 @@ update_city_label() {
     local longitude="$2"
 
     # Check if we need to update (only if no city label or it's old)
-    local current_city city_updated_label
-    current_city=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/city']}" 2>/dev/null || echo "")
-    city_updated_label=$(kubectl get node "$NODE_NAME" -o jsonpath="{.metadata.labels['$LABEL_PREFIX/city-updated']}" 2>/dev/null || echo "")
+    local current_labels current_city city_updated_label
+    current_labels=$(get_current_labels)
+    current_city=$(echo "$current_labels" | grep "^$LABEL_PREFIX/city=" | cut -d'=' -f2)
+    city_updated_label=$(echo "$current_labels" | grep "^$LABEL_PREFIX/city-updated=" | cut -d'=' -f2)
 
     # Skip if city was updated recently (within 24 hours)
     if [ -n "$current_city" ] && [ -n "$city_updated_label" ]; then
@@ -1650,30 +2026,30 @@ update_city_label() {
     if city_name=$(reverse_geocode "$latitude" "$longitude"); then
         log_info "Found city: $city_name"
 
-        # Escape special characters for Kubernetes labels
-        local escaped_city
-        escaped_city=$(echo "$city_name" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/^_*//;s/_*$//')
+        # Create timestamp for city update
+        local timestamp
+        timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
 
-        if kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city=$escaped_city" --overwrite >/dev/null 2>&1; then
-            # Also add a timestamp for city update
-            local timestamp
-            timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
-            kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city-updated=$timestamp" --overwrite >/dev/null 2>&1
-
-            log_info "Updated city label: $city_name"
+        # Update city labels via node-labeler service
+        if update_city_via_service "$city_name" "$timestamp"; then
+            log_info "Updated city label via service: $city_name"
             return 0
         else
-            log_error "Failed to update city label"
+            log_error "Node-labeler service is required but unavailable for city updates"
             return 1
         fi
     else
         log_warn "Reverse geocoding failed for coordinates $latitude, $longitude"
         # Set a generic city label to avoid repeated attempts
-        local escaped_city="Unknown"
-        kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city=$escaped_city" --overwrite >/dev/null 2>&1
         local timestamp
         timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
-        kubectl label node "$NODE_NAME" "$LABEL_PREFIX/city-updated=$timestamp" --overwrite >/dev/null 2>&1
+
+        # Update with unknown city via node-labeler service  
+        if update_city_via_service "Unknown" "$timestamp"; then
+            log_info "Updated city label via service: Unknown"
+        else
+            log_error "Node-labeler service is required but unavailable for city updates"
+        fi
         return 1
     fi
 }
@@ -1864,6 +2240,110 @@ EOF
     return 0
 }
 
+# Function to check if node-labeler service is available
+check_node_labeler_service() {
+    log_verbose "Checking for node-labeler service availability..."
+    
+    # Get Kubernetes API credentials
+    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+    if [ ! -f "$kubeconfig" ]; then
+        log_verbose "Kubeconfig not found at $kubeconfig"
+        return 1
+    fi
+    
+    # Extract server URL and token from kubeconfig
+    local k3s_url k3s_token
+    k3s_url=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
+    k3s_token=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
+    
+    if [ -z "$k3s_url" ] || [ -z "$k3s_token" ]; then
+        log_verbose "Could not extract API credentials from kubeconfig"
+        return 1
+    fi
+    
+    # Check if node-labeler service exists in kube-system namespace
+    local service_response
+    service_response=$(curl -s -k \
+        -H "Authorization: Bearer $k3s_token" \
+        "${k3s_url}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$service_response" | grep -q '"kind":"Service"'; then
+        log_verbose "✅ Node-labeler service found in cluster"
+        return 0
+    else
+        log_verbose "❌ Node-labeler service not found in cluster"
+        return 1
+    fi
+}
+
+# Function to set device type via node-labeler service
+set_device_type_via_service() {
+    local device_type="$1"
+    local token="$2"
+    local node_name="$3"
+    
+    log_verbose "Setting device type '$device_type' for node '$node_name' via service..."
+    
+    # Get Kubernetes API credentials
+    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+    if [ ! -f "$kubeconfig" ]; then
+        log_verbose "Kubeconfig not found at $kubeconfig"
+        return 1
+    fi
+    
+    # Extract server URL and token from kubeconfig
+    local k3s_url k3s_token
+    k3s_url=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
+    k3s_token=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
+    
+    if [ -z "$k3s_url" ] || [ -z "$k3s_token" ]; then
+        log_verbose "Could not extract API credentials from kubeconfig"
+        return 1
+    fi
+    
+    # Get node-labeler service endpoint from kube-system namespace
+    local service_response service_ip service_port
+    service_response=$(curl -s -k \
+        -H "Authorization: Bearer $k3s_token" \
+        "${k3s_url}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
+    
+    if [ $? -ne 0 ] || ! echo "$service_response" | grep -q '"kind":"Service"'; then
+        log_verbose "Failed to get node-labeler service details"
+        return 1
+    fi
+    
+    # Extract service IP and port
+    service_ip=$(echo "$service_response" | grep -o '"clusterIP":"[^"]*"' | cut -d'"' -f4)
+    service_port=$(echo "$service_response" | grep -o '"port":[0-9]*' | head -1 | cut -d':' -f2)
+    
+    if [ -z "$service_ip" ] || [ -z "$service_port" ]; then
+        log_verbose "Could not determine service endpoint"
+        return 1
+    fi
+    
+    # Call node-labeler service to set device type
+    local labeler_url="http://${service_ip}:${service_port}"
+    local request_data="{\"deviceType\":\"$device_type\"}"
+    
+    log_verbose "Calling node-labeler service at $labeler_url"
+    local response
+    response=$(curl -s --connect-timeout 10 --max-time 15 \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $k3s_token" \
+        -d "$request_data" \
+        "${labeler_url}/api/v1/node/${node_name}/device-type" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && echo "$response" | grep -q '"success":true'; then
+        log_verbose "✅ Node labeling request successful"
+        return 0
+    else
+        log_verbose "❌ Node labeling request failed"
+        log_verbose "Response: ${response:-'No response'}"
+        return 1
+    fi
+}
+
 # Function to label the current node as a phone for deployment targeting
 label_node_as_phone() {
     log_step "Labeling node as 'phone' for deployment targeting..."
@@ -1871,45 +2351,90 @@ label_node_as_phone() {
     local node_name
     node_name=$(hostname)
 
-    # Wait for the node to be registered in the cluster
-    local max_attempts=30
-    local attempt=1
+    # Always use the node-labeler service (required for proper agent labeling)
+    log_verbose "Using node-labeler service for labeling (required)..."
+    
+    # Check if node-labeler service is available
+    if ! check_node_labeler_service; then
+        log_error "❌ Node-labeler service not available in cluster"
+        log_error "❌ This service is required for agent nodes to label themselves"
+        log_error "❌ Make sure the node-labeler service was deployed on the server"
+        echo ""
+        log_error "To fix this issue:"
+        log_error "1. On the server node, ensure node-labeler service is deployed"
+        log_error "2. Check service status: kubectl get deployment node-labeler-service -n kube-system"
+        log_error "3. Check service logs: kubectl logs deployment/node-labeler-service -n kube-system"
+        return 1
+    fi
 
-    while [ $attempt -le $max_attempts ]; do
-        if kubectl get node "$node_name" &>/dev/null 2>&1; then
-            log_verbose "Node $node_name found in cluster"
-            break
-        fi
-
-        if [ $attempt -eq $max_attempts ]; then
-            log_warn "Node $node_name not found in cluster after $max_attempts attempts"
-            log_warn "Node labeling skipped - you may need to label manually:"
-            log_warn "  kubectl label node $node_name device-type=phone"
-            return 1
-        fi
-
-        log_verbose "Waiting for node $node_name to appear in cluster... (attempt $attempt/$max_attempts)"
-        sleep 2
-        attempt=$((attempt + 1))
-    done
-
-    # Apply the phone label
-    if kubectl label node "$node_name" device-type=phone --overwrite &>/dev/null; then
+    log_verbose "Node labeler service is available, proceeding with service-based labeling..."
+    
+    # Set device type via service (this is the primary and required method)
+    if set_device_type_via_service "phone" "$K3S_TOKEN" "$node_name"; then
+        log "✅ Device labels set successfully via node labeler service"
         log "✅ Node $node_name labeled as device-type=phone"
-
-        # Also add a role label for clarity
-        if kubectl label node "$node_name" node-role.kubernetes.io/phone=true --overwrite &>/dev/null; then
-            log_verbose "Node $node_name also labeled with role phone"
-        fi
-
-        # Verify the labels were applied
-        log_verbose "Node labels:"
-        kubectl get node "$node_name" --show-labels 2>/dev/null | grep -E "device-type=phone|node-role.kubernetes.io/phone" || true
-
+        log "🏷️  Using node-labeler service for all labeling operations"
+        return 0
     else
-        log_warn "Failed to label node $node_name - you may need to do this manually:"
-        log_warn "  kubectl label node $node_name device-type=phone"
-        log_warn "  kubectl label node $node_name node-role.kubernetes.io/phone=true"
+        log_error "❌ Failed to set device type via node labeler service"
+        log_error "❌ Node labeling is required for proper agent functionality"
+        echo ""
+        log_error "Troubleshooting steps:"
+        log_error "1. Check if node-labeler service is running: kubectl get pods -n kube-system -l app=node-labeler-service"
+        log_error "2. Check service logs: kubectl logs deployment/node-labeler-service -n kube-system"
+        log_error "3. Verify service endpoint: kubectl get service node-labeler-service -n kube-system"
+        log_error "4. Check network connectivity between agent and service"
+        return 1
+    fi
+}
+
+# Function to label node via direct Kubernetes API (fallback method)
+label_node_via_api() {
+    local node_name="$1"
+    
+    log_verbose "Attempting to label node '$node_name' via direct Kubernetes API..."
+    
+    # Get Kubernetes API credentials
+    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
+    if [ ! -f "$kubeconfig" ]; then
+        log_verbose "Kubeconfig not found at $kubeconfig"
+        return 1
+    fi
+    
+    # Extract server URL and token from kubeconfig
+    local k3s_url k3s_token
+    k3s_url=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
+    k3s_token=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
+    
+    if [ -z "$k3s_url" ] || [ -z "$k3s_token" ]; then
+        log_verbose "Could not extract API credentials from kubeconfig"
+        return 1
+    fi
+    
+    # Create patch data for node labels
+    local patch_data='{
+        "metadata": {
+            "labels": {
+                "device-type": "phone",
+                "node-role.kubernetes.io/phone": "true"
+            }
+        }
+    }'
+    
+    # Apply labels using Kubernetes API
+    local response
+    response=$(curl -s -k -X PATCH \
+        -H "Authorization: Bearer $k3s_token" \
+        -H "Content-Type: application/merge-patch+json" \
+        -d "$patch_data" \
+        "${k3s_url}/api/v1/nodes/$node_name" 2>/dev/null)
+    
+    if [ $? -eq 0 ] && ! echo "$response" | grep -q '"code":[45][0-9][0-9]'; then
+        log_verbose "✅ Direct API labeling successful"
+        return 0
+    else
+        log_verbose "❌ Direct API labeling failed"
+        log_verbose "Response: ${response:-'No response'}"
         return 1
     fi
 }
@@ -2219,8 +2744,27 @@ setup_kubectl_for_agent() {
     # On agent nodes, kubectl needs to use the server's kubeconfig
     # or connect through the agent's configuration
     
-    # First, check if K3s agent has created its config
+    # First, wait for K3s agent to create its config (give it time to connect)
     local agent_config="/etc/rancher/k3s/k3s.yaml"
+    local wait_count=0
+    local max_wait=60  # Wait up to 60 seconds for agent to connect
+    
+    log_verbose "Waiting for K3s agent to connect and create config file..."
+    while [ $wait_count -lt $max_wait ]; do
+        if [ -f "$agent_config" ]; then
+            log_verbose "K3s agent config found after ${wait_count}s"
+            break
+        fi
+        
+        # Show progress every 10 seconds
+        if [ $((wait_count % 10)) -eq 0 ] && [ $wait_count -gt 0 ]; then
+            log_verbose "⏳ Still waiting for agent to connect... (${wait_count}s/${max_wait}s)"
+            log_verbose "Agent status: $(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')"
+        fi
+        
+        sleep 2
+        wait_count=$((wait_count + 2))
+    done
     
     if [ -f "$agent_config" ]; then
         log_verbose "Found K3s agent config at $agent_config"
@@ -2263,48 +2807,209 @@ setup_kubectl_for_agent() {
         chmod 600 "$kube_dir/config"
         log_verbose "Copied kubeconfig to $kube_dir/config"
         
-        # Test kubectl connectivity
+        # Test kubectl connectivity with retries
         log_verbose "Testing kubectl connectivity..."
-        if KUBECONFIG="$agent_config" kubectl cluster-info &> /dev/null; then
-            log "✅ kubectl configured successfully for agent node"
-            return 0
-        else
-            log_warn "⚠️  kubectl configuration found but connection test failed"
-            log_warn "The agent may still be connecting to the cluster"
-            return 1
+        local test_count=0
+        local max_test=15  # Try for 30 seconds
+        
+        while [ $test_count -lt $max_test ]; do
+            if KUBECONFIG="$agent_config" kubectl cluster-info &> /dev/null; then
+                log "✅ kubectl configured successfully for agent node"
+                return 0
+            fi
+            
+            if [ $((test_count % 5)) -eq 0 ] && [ $test_count -gt 0 ]; then
+                log_verbose "⏳ kubectl connectivity test ongoing... (${test_count}/${max_test})"
+            fi
+            
+            sleep 2
+            test_count=$((test_count + 1))
+        done
+        
+        # If direct test failed, try sourcing bashrc
+        log_verbose "Direct kubectl test failed, trying after sourcing bashrc..."
+        if [ -f "$user_home/.bashrc" ]; then
+            # Source bashrc and test again in a subshell
+            if (source "$user_home/.bashrc" && kubectl cluster-info &> /dev/null); then
+                log "✅ kubectl configured successfully for agent node (after sourcing bashrc)"
+                log_verbose "kubectl works after sourcing ~/.bashrc"
+                return 0
+            fi
         fi
+        
+        log_warn "⚠️  kubectl configuration found but connection test failed"
+        log_warn "The agent may still be connecting to the cluster"
+        log_warn "kubectl should work once the agent fully connects"
+        log_warn "To test manually: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && kubectl get nodes"
+        return 1
     else
-        log_warn "⚠️  K3s agent config not found at $agent_config"
-        log_warn "This is normal during initial startup - the config will be created when the agent connects"
+        log_warn "⚠️  K3s agent config not found at $agent_config after ${max_wait}s"
+        log_warn "This indicates the agent cannot connect to the K3s server"
+        echo ""
+        
+        # Extract server hostname for debugging
+        local server_host
+        server_host=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|' 2>/dev/null || echo '<server-hostname>')
+        
+        log_warn "� DEBUGGING AGENT CONNECTION FAILURE:"
+        echo ""
+        log_warn "Connection Details:"
+        log_warn "  • Server URL: ${K3S_URL:-'Not set'}"
+        log_warn "  • Server Host: $server_host"
+        log_warn "  • Agent Status: $(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')"
+        echo ""
+        
+        log_warn "Network Tests:"
+        # Test basic connectivity
+        if ping -c 1 "$server_host" >/dev/null 2>&1; then
+            log_warn "  • Ping to server: ✅ SUCCESS"
+        else
+            log_warn "  • Ping to server: ❌ FAILED"
+        fi
+        
+        # Test port 6443 connectivity
+        if command -v nc >/dev/null 2>&1; then
+            if nc -z "$server_host" 6443 >/dev/null 2>&1; then
+                log_warn "  • Port 6443 access: ✅ SUCCESS"
+            else
+                log_warn "  • Port 6443 access: ❌ FAILED (K3s API server port blocked)"
+            fi
+        else
+            log_warn "  • Port 6443 access: ⚠️  Cannot test (nc not available)"
+        fi
+        
+        # Check Tailscale connectivity if available
+        if command -v tailscale >/dev/null 2>&1; then
+            local tailscale_status
+            tailscale_status=$(tailscale status 2>/dev/null | head -1 || echo "Not connected")
+            log_warn "  • Tailscale Status: $tailscale_status"
+            
+            local my_tailscale_ip
+            my_tailscale_ip=$(tailscale ip -4 2>/dev/null || echo "unknown")
+            log_warn "  • My Tailscale IP: $my_tailscale_ip"
+        fi
+        
+        echo ""
+        log_warn "📱 ANDROID USERS: Even with ports allowed, check for:"
+        log_warn "  1. � Additional Linux Terminal App notifications"
+        log_warn "  2. 🔗 Network connectivity changes (WiFi/cellular switch)"
+        log_warn "  3. 🏠 VPN interference (if using other VPNs)"
+        echo ""
+        
+        log_warn "🔧 TROUBLESHOOTING STEPS:"
+        log_warn "  1. Check agent logs for specific errors:"
+        log_warn "     sudo journalctl -u k3s-agent -f --no-pager"
+        echo ""
+        log_warn "  2. Test direct server connectivity:"
+        log_warn "     curl -k https://$server_host:6443/"
+        echo ""
+        log_warn "  3. Verify Tailscale network:"
+        log_warn "     tailscale status"
+        log_warn "     tailscale ping $server_host"
+        echo ""
+        log_warn "  4. Check K3s server status (run on server):"
+        log_warn "     sudo systemctl status k3s"
+        log_warn "     sudo kubectl get nodes"
+        echo ""
+        log_warn "  5. If all else fails, restart both server and agent:"
+        log_warn "     sudo systemctl restart k3s-agent"
         return 1
     fi
+}
+
+# Function to uninstall any existing K3s installation for clean agent setup
+uninstall_existing_k3s() {
+    log_step "Uninstalling any existing K3s installation for clean agent setup..."
+
+    # Stop and disable geolocation monitoring if it exists
+    log_verbose "Stopping geolocation monitoring service..."
+    sudo systemctl stop k3s-geolocation-monitor 2>/dev/null || true
+    sudo systemctl disable k3s-geolocation-monitor 2>/dev/null || true
+    sudo rm -f /usr/local/bin/k3s-geolocation-monitor 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/k3s-geolocation-monitor.service 2>/dev/null || true
+
+    # Use official K3s uninstall scripts
+    log_verbose "Running official K3s uninstall scripts..."
+
+    if [ -f /usr/local/bin/k3s-uninstall.sh ]; then
+        log "Found existing K3s server installation, uninstalling..."
+        if [ "$VERBOSE" = true ]; then
+            sudo /usr/local/bin/k3s-uninstall.sh
+        else
+            sudo /usr/local/bin/k3s-uninstall.sh 2>&1 | while read -r line; do
+                log_verbose "$line"
+            done
+        fi
+        log "✅ K3s server uninstall completed"
+    elif [ -f /usr/local/bin/k3s-agent-uninstall.sh ]; then
+        log "Found existing K3s agent installation, uninstalling..."
+        if [ "$VERBOSE" = true ]; then
+            sudo /usr/local/bin/k3s-agent-uninstall.sh
+        else
+            sudo /usr/local/bin/k3s-agent-uninstall.sh 2>&1 | while read -r line; do
+                log_verbose "$line"
+            done
+        fi
+        log "✅ K3s agent uninstall completed"
+    else
+        # Manual cleanup if no uninstall scripts exist
+        log_verbose "No K3s uninstall scripts found, performing manual cleanup..."
+
+        # Stop services
+        sudo systemctl stop k3s-agent 2>/dev/null || true
+        sudo systemctl stop k3s 2>/dev/null || true
+        sudo systemctl disable k3s-agent 2>/dev/null || true
+        sudo systemctl disable k3s 2>/dev/null || true
+
+        # Remove files and directories
+        sudo rm -rf /var/lib/rancher/k3s 2>/dev/null || true
+        sudo rm -rf /etc/rancher/k3s 2>/dev/null || true
+        sudo rm -f /usr/local/bin/k3s* 2>/dev/null || true
+        sudo rm -f /etc/systemd/system/k3s* 2>/dev/null || true
+
+        sudo systemctl daemon-reload
+        log "Manual K3s cleanup completed"
+    fi
+
+    # Remove any kubectl configuration
+    local user_home
+    if [ "$USER" = "root" ]; then
+        user_home="/root"
+    else
+        user_home="/home/$USER"
+    fi
+    
+    # Remove KUBECONFIG from .bashrc if it exists
+    if [ -f "$user_home/.bashrc" ] && grep -q "KUBECONFIG.*k3s.yaml" "$user_home/.bashrc"; then
+        log_verbose "Removing KUBECONFIG from ~/.bashrc"
+        # Create a backup and remove the K3s kubectl configuration lines
+        cp "$user_home/.bashrc" "$user_home/.bashrc.k3s-backup"
+        grep -v "KUBECONFIG.*k3s.yaml\|# K3s kubectl configuration" "$user_home/.bashrc.k3s-backup" > "$user_home/.bashrc"
+    fi
+    
+    # Remove .kube directory if it contains K3s config
+    if [ -d "$user_home/.kube" ] && [ -f "$user_home/.kube/config" ]; then
+        log_verbose "Removing kubectl config directory"
+        rm -rf "$user_home/.kube" 2>/dev/null || true
+    fi
+
+    log "K3s uninstall completed - ready for fresh agent installation"
 }
 
 install_k3s_agent() {
     log_step "Installing K3s as agent (worker node)..."
 
+    # Install debugging utilities for network troubleshooting
+    install_debug_utilities
+
+    # Always uninstall any existing K3s installation for clean agent setup
+    if command -v k3s &> /dev/null; then
+        uninstall_existing_k3s
+    fi
+
     # In agent mode, check and reinstall Tailscale if already configured
     if [ "$LOCAL_MODE" = false ]; then
         check_and_reinstall_tailscale_for_agent
-    fi
-
-    # Check if K3s is already installed
-    if command -v k3s &> /dev/null; then
-        log "K3s is already installed, checking configuration..."
-
-        # Check if this is running as an agent
-        if sudo systemctl is-active --quiet k3s-agent 2>/dev/null; then
-            log "K3s agent service is already running"
-            show_agent_completion_info
-            return 0
-        elif sudo systemctl is-active --quiet k3s 2>/dev/null; then
-            log_error "K3s is already installed and running as a server (master node)"
-            log_error "Cannot install agent on a node that's already configured as a server"
-            log_error "Use cleanup mode or reinstall K3s to change the node type"
-            return 1
-        else
-            log "K3s is installed but not running, will start as agent"
-        fi
     fi
 
     # Extract master IP from K3S_URL for registry configuration
@@ -2312,6 +3017,7 @@ install_k3s_agent() {
     if [ -n "$K3S_URL" ]; then
         # Extract hostname/IP from URL like https://192.168.1.100:6443 or https://thinkstation:6443
         MASTER_HOST=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|')
+        log_verbose "Debug: Extracted MASTER_HOST='$MASTER_HOST' from K3S_URL='$K3S_URL'"
         if [ -n "$MASTER_HOST" ]; then
             # Try to resolve hostname to IP if it's not already an IP
             if [[ "$MASTER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -2320,6 +3026,7 @@ install_k3s_agent() {
             else
                 # It's a hostname, try to resolve it
                 RESOLVED_IP=$(getent hosts "$MASTER_HOST" 2>/dev/null | awk '{print $1}' | head -1)
+                log_verbose "Debug: getent returned RESOLVED_IP='$RESOLVED_IP'"
                 if [ -n "$RESOLVED_IP" ]; then
                     REGISTRY_HOST="$RESOLVED_IP"
                     log_verbose "Resolved hostname $MASTER_HOST to IP: $REGISTRY_HOST:5000"
@@ -2330,7 +3037,9 @@ install_k3s_agent() {
                 fi
             fi
             log_verbose "Configuring Docker for insecure registry at $REGISTRY_HOST:5000"
-            if setup_docker_insecure_registry "$REGISTRY_HOST:5000"; then
+            log_verbose "Debug: REGISTRY_HOST='$REGISTRY_HOST'"
+            log_verbose "Debug: Calling setup_docker_insecure_registry with: '$REGISTRY_HOST'"
+            if setup_docker_insecure_registry "$REGISTRY_HOST"; then
                 log_verbose "✅ Docker registry configuration completed"
             else
                 log_error "❌ Docker registry configuration failed - this is critical for agent functionality"
@@ -2431,11 +3140,12 @@ install_k3s_agent() {
         fi
     fi
 
-    # Wait a moment for the agent to start and connect
-    log_verbose "Waiting for K3s agent to connect to cluster..."
-    sleep 5
+    # Wait for the agent to start connecting to the cluster
+    log_verbose "Waiting for K3s agent to begin connecting to cluster..."
+    log_verbose "This process can take 30-60 seconds for initial connection..."
+    sleep 10
 
-    # Configure kubectl for agent node
+    # Configure kubectl for agent node (this will wait for the config file to be created)
     setup_kubectl_for_agent
 
     # Test connectivity to K3s server after installation
@@ -2517,7 +3227,30 @@ show_agent_completion_info() {
     echo ""
 
     # Check if we can get node status from the cluster
+    local kubectl_working=false
+    
     if command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1; then
+        kubectl_working=true
+    else
+        # Try sourcing bashrc to pick up KUBECONFIG environment variable
+        log_verbose "kubectl not working, trying after sourcing bashrc..."
+        local user_home
+        if [ "$USER" = "root" ]; then
+            user_home="/root"
+        else
+            user_home="/home/$USER"
+        fi
+        
+        if [ -f "$user_home/.bashrc" ]; then
+            # Test kubectl in a subshell with sourced bashrc
+            if (source "$user_home/.bashrc" && command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1); then
+                kubectl_working=true
+                log_verbose "kubectl works after sourcing ~/.bashrc"
+            fi
+        fi
+    fi
+    
+    if [ "$kubectl_working" = true ]; then
         log "Cluster Connection: ✅ Connected"
 
         # Try to get this node's status
@@ -2542,6 +3275,9 @@ show_agent_completion_info() {
                 log "Node Label: ✅ device-type=phone (ready for phone-targeted deployments)"
             else
                 log "Node Label: ⚠️  device-type not set (deployments may not target this node)"
+                log "   To set labels from the server node, run:"
+                log "   kubectl label node $HOSTNAME device-type=phone"
+                log "   kubectl label node $HOSTNAME node-role.kubernetes.io/phone=true"
             fi
         fi
 
@@ -2562,19 +3298,21 @@ show_agent_completion_info() {
         echo ""
         log "kubectl Configuration:"
         log "⚠️  kubectl is not working properly on this agent node"
+        log "⚠️  Tried automatic configuration and sourcing bashrc, but connection failed"
         echo ""
         log "To fix kubectl on this agent node:"
-        log "  1. Set KUBECONFIG environment variable:"
+        log "  1. Wait a few minutes for the agent to fully connect to the cluster"
+        log "  2. Set KUBECONFIG environment variable manually:"
         log "     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
         echo ""
-        log "  2. Or reload your shell to pick up the configuration:"
+        log "  3. Or reload your shell to pick up the configuration:"
         log "     source ~/.bashrc"
         echo ""
-        log "  3. Test kubectl:"
+        log "  4. Test kubectl:"
         log "     kubectl get nodes"
         echo ""
-        log "  Note: kubectl was configured automatically, but you may need to"
-        log "        restart your shell or run 'source ~/.bashrc' to pick up the changes."
+        log "  Note: kubectl was configured automatically, but the agent may still be"
+        log "        connecting to the cluster. Try again in a few minutes."
     fi
 
     # Network information
@@ -2614,9 +3352,10 @@ show_agent_completion_info() {
     log "Next Steps:"
     echo ""
     log "kubectl Usage on Agent Node:"
-    log "  • kubectl is configured to work on this agent node"
-    log "  • If you get connection errors, run: source ~/.bashrc"
+    log "  • kubectl is automatically configured and tested on this agent node"
+    log "  • If you get connection errors later, try: source ~/.bashrc"
     log "  • Or manually set: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+    log "  • Wait a few minutes if the agent is still connecting to the cluster"
     echo ""
     log "Cluster Management:"
     log "  • Check cluster status from server node: kubectl get nodes"
