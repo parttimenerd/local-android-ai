@@ -1442,7 +1442,10 @@ install_k3s_server() {
     if setup_local_registry; then
         log "✅ Registry setup completed"
     else
-        log_warn "Registry setup failed - continuing without registry"
+        log_error "❌ Registry setup failed - this is critical for cluster functionality"
+        log_error "The Docker registry is required for proper image distribution across nodes"
+        log_error "Without it, agent nodes cannot access locally built images"
+        exit $EXIT_CONFIG_FAILED
     fi
 
     # Deploy the reverse geocoder service (critical for node location labeling)
@@ -2282,13 +2285,29 @@ install_k3s_agent() {
     # Extract master IP from K3S_URL for registry configuration
     log_verbose "Configuring Docker for insecure registry access..."
     if [ -n "$K3S_URL" ]; then
-        # Extract IP from URL like https://192.168.1.100:6443 -> 192.168.1.100
-        MASTER_IP=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|')
-        if [ -n "$MASTER_IP" ] && [[ "$MASTER_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            log_verbose "Configuring Docker for insecure registry at $MASTER_IP:5000"
-            setup_docker_insecure_registry "$MASTER_IP:5000"
+        # Extract hostname/IP from URL like https://192.168.1.100:6443 or https://thinkstation:6443
+        MASTER_HOST=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|')
+        if [ -n "$MASTER_HOST" ]; then
+            # Try to resolve hostname to IP if it's not already an IP
+            if [[ "$MASTER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                REGISTRY_HOST="$MASTER_HOST"
+                log_verbose "Using IP address for registry: $REGISTRY_HOST:5000"
+            else
+                # It's a hostname, try to resolve it
+                RESOLVED_IP=$(getent hosts "$MASTER_HOST" 2>/dev/null | awk '{print $1}' | head -1)
+                if [ -n "$RESOLVED_IP" ]; then
+                    REGISTRY_HOST="$RESOLVED_IP"
+                    log_verbose "Resolved hostname $MASTER_HOST to IP: $REGISTRY_HOST:5000"
+                else
+                    # Use hostname directly if resolution fails
+                    REGISTRY_HOST="$MASTER_HOST"
+                    log_verbose "Using hostname for registry (could not resolve): $REGISTRY_HOST:5000"
+                fi
+            fi
+            log_verbose "Configuring Docker for insecure registry at $REGISTRY_HOST:5000"
+            setup_docker_insecure_registry "$REGISTRY_HOST:5000"
         else
-            log_warn "Could not extract valid IP from K3S_URL: $K3S_URL, skipping registry configuration"
+            log_warn "Could not extract valid host from K3S_URL: $K3S_URL, skipping registry configuration"
         fi
     else
         log_warn "K3S_URL not set, skipping registry configuration"

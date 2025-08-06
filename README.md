@@ -610,3 +610,9 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 5.8.2025
 - worked on properly setting up the agent's tailscale
 - worked on fixing the automatic geocoder deployment (it now works)
+
+6.8.2025
+- fixed geocoder service performance optimization with Germany+France first loading (355ms startup)
+- implemented build-time GeoNames data caching to eliminate runtime downloads
+- fixed kubectl permission issues in setup.sh health checks (added sudo)
+- fixed agent registry configuration to handle hostnames (not just IPs) in K3S_URL 
