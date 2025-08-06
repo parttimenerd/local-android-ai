@@ -1773,8 +1773,18 @@ main
 EOF
 
     # Make the script executable
-    sudo chmod +x "$service_script"
-    log_verbose "Made geolocation monitor script executable"
+    if sudo chmod +x "$service_script"; then
+        log_verbose "Made geolocation monitor script executable"
+    else
+        log_error "Failed to make geolocation monitor script executable"
+        return 1
+    fi
+
+    # Verify script was created
+    if [ ! -f "$service_script" ]; then
+        log_error "Geolocation monitor script was not created successfully"
+        return 1
+    fi
 
     # Create systemd service file
     local service_file="/etc/systemd/system/k3s-geolocation-monitor.service"
@@ -1810,8 +1820,19 @@ SyslogIdentifier=k3s-geolocation
 WantedBy=multi-user.target
 EOF
 
+    # Verify service file was created
+    if [ ! -f "$service_file" ]; then
+        log_error "Systemd service file was not created successfully"
+        return 1
+    fi
+
     # Reload systemd and enable the service
-    sudo systemctl daemon-reload
+    if sudo systemctl daemon-reload; then
+        log_verbose "Systemd daemon reloaded successfully"
+    else
+        log_error "Failed to reload systemd daemon"
+        return 1
+    fi
 
     if sudo systemctl enable k3s-geolocation-monitor.service; then
         log_verbose "Enabled geolocation monitor service"
@@ -1825,18 +1846,22 @@ EOF
             if sudo systemctl is-active --quiet k3s-geolocation-monitor.service; then
                 log_verbose "Geolocation service is running"
             else
-                log_warn "Geolocation service may have failed to start"
+                log_error "Geolocation service failed to start properly"
+                return 1
             fi
         else
-            log_warn "Failed to start geolocation monitoring service"
+            log_error "Failed to start geolocation monitoring service"
+            return 1
         fi
     else
-        log_warn "Failed to enable geolocation monitoring service"
+        log_error "Failed to enable geolocation monitoring service"
+        return 1
     fi
 
     log "Geolocation monitoring service setup completed"
     log "Service will check phone app every 20 seconds and update node labels"
     log "View logs with: sudo journalctl -u k3s-geolocation-monitor -f"
+    return 0
 }
 
 # Function to label the current node as a phone for deployment targeting
@@ -2305,12 +2330,25 @@ install_k3s_agent() {
                 fi
             fi
             log_verbose "Configuring Docker for insecure registry at $REGISTRY_HOST:5000"
-            setup_docker_insecure_registry "$REGISTRY_HOST:5000"
+            if setup_docker_insecure_registry "$REGISTRY_HOST:5000"; then
+                log_verbose "✅ Docker registry configuration completed"
+            else
+                log_error "❌ Docker registry configuration failed - this is critical for agent functionality"
+                log_error "Agent nodes require access to the master's Docker registry for image distribution"
+                log_error "Without registry access, applications cannot be deployed to this agent node"
+                exit $EXIT_CONFIG_FAILED
+            fi
         else
-            log_warn "Could not extract valid host from K3S_URL: $K3S_URL, skipping registry configuration"
+            log_error "❌ Could not extract valid host from K3S_URL: $K3S_URL"
+            log_error "Registry configuration failed - agent nodes require registry access"
+            log_error "Please ensure K3S_URL is correctly formatted (e.g., https://master-host:6443)"
+            exit $EXIT_CONFIG_FAILED
         fi
     else
-        log_warn "K3S_URL not set, skipping registry configuration"
+        log_error "❌ K3S_URL not set - registry configuration failed"
+        log_error "Agent nodes require K3S_URL to configure Docker registry access"
+        log_error "Please provide K3S_URL parameter for agent setup"
+        exit $EXIT_CONFIG_FAILED
     fi
 
     log_verbose "Checking GitHub connectivity for K3s download..."
@@ -2422,7 +2460,14 @@ install_k3s_agent() {
     fi
 
     # Set up geolocation monitoring service
-    setup_geolocation_service
+    if setup_geolocation_service; then
+        log "✅ Geolocation monitoring service setup completed"
+    else
+        log_error "❌ Geolocation monitoring service setup failed - this is critical for agent functionality"
+        log_error "The geolocation service is required for proper node location labeling and monitoring"
+        log_error "Without it, the agent node will not report location data to the cluster"
+        exit $EXIT_CONFIG_FAILED
+    fi
 
     # Show agent setup completion information
     show_agent_completion_info
