@@ -335,44 +335,100 @@ setup_docker_insecure_registry() {
     local registry_port="${2:-5000}"
     local registry_address="${master_ip}:${registry_port}"
 
+    # Validate input parameters
+    if [ -z "$master_ip" ]; then
+        log_error "Master IP address is required for Docker registry configuration"
+        return 1
+    fi
+
     log_verbose "Debug: Received master_ip='$master_ip', registry_port='$registry_port'"
     log_verbose "Debug: Constructed registry_address='$registry_address'"
+    
+    # Pre-flight check: Ensure Docker is installed and running
+    if ! command -v docker &>/dev/null; then
+        log_error "Docker is not installed - cannot configure registry"
+        return 1
+    fi
+    
+    if ! sudo systemctl is-active docker >/dev/null 2>&1; then
+        log_warn "Docker service is not running, attempting to start it..."
+        if ! sudo systemctl start docker; then
+            log_error "Failed to start Docker service"
+            return 1
+        fi
+        
+        # Wait for Docker to be ready
+        for i in {1..30}; do
+            if docker info >/dev/null 2>&1; then
+                log_verbose "Docker service started successfully"
+                break
+            fi
+            if [ $i -eq 30 ]; then
+                log_error "Docker service failed to start properly"
+                return 1
+            fi
+            sleep 1
+        done
+    fi
     log "Configuring Docker daemon for insecure registry: $registry_address"
 
     # Install jq if not present (required for JSON manipulation)
     if ! command -v jq &>/dev/null; then
         log_verbose "Installing jq for JSON manipulation..."
         sudo apt-get update -qq && sudo apt-get install -y jq || {
-            log_warn "Failed to install jq, falling back to text manipulation"
+            log_warn "Failed to install jq, falling back to simpler approach"
         }
     fi
+
+    # Create Docker configuration directory if it doesn't exist
+    sudo mkdir -p /etc/docker
 
     # Create or update Docker daemon configuration
     local daemon_config="/etc/docker/daemon.json"
     local temp_config="/tmp/docker-daemon-setup.json"
+    local backup_config="/etc/docker/daemon.json.backup"
 
-    # Check if daemon.json exists
+    # Backup existing configuration
     if [ -f "$daemon_config" ]; then
-        # Parse existing configuration and add insecure registry
+        log_verbose "Backing up existing Docker daemon configuration"
+        sudo cp "$daemon_config" "$backup_config"
+    fi
+
+    # Check if daemon.json exists and process it
+    if [ -f "$daemon_config" ]; then
+        log_verbose "Processing existing Docker daemon configuration"
+        
+        # Use jq if available for proper JSON manipulation
         if command -v jq &>/dev/null; then
-            # Use jq if available for proper JSON manipulation
-            sudo jq --arg registry "$registry_address" \
-                '.["insecure-registries"] += [$registry] | .["insecure-registries"] |= unique' \
-                "$daemon_config" | sudo tee "$temp_config" >/dev/null
-        else
-            # Fallback: simple text manipulation (less robust)
-            if grep -q "insecure-registries" "$daemon_config"; then
-                # Add to existing insecure-registries array
-                sudo sed "s/\"insecure-registries\"[[:space:]]*:[[:space:]]*\[\([^]]*\)\]/\"insecure-registries\": [\1, \"$registry_address\"]/g" \
-                    "$daemon_config" | sudo tee "$temp_config" >/dev/null
-            else
-                # Add insecure-registries to existing config
-                sudo sed 's/{/{\n  "insecure-registries": ["'"$registry_address"'"],/' \
-                    "$daemon_config" | sudo tee "$temp_config" >/dev/null
+            log_verbose "Using jq for JSON manipulation"
+            
+            # Check if insecure-registries already contains our registry
+            if sudo jq -e --arg registry "$registry_address" '.["insecure-registries"]? // [] | index($registry)' "$daemon_config" >/dev/null 2>&1; then
+                log "Registry $registry_address already configured in Docker daemon"
+                return 0
             fi
+            
+            # Add registry to insecure-registries array
+            if sudo jq --arg registry "$registry_address" \
+                'if .["insecure-registries"] then .["insecure-registries"] += [$registry] | .["insecure-registries"] |= unique else . + {"insecure-registries": [$registry]} end' \
+                "$daemon_config" | sudo tee "$temp_config" >/dev/null; then
+                log_verbose "Successfully updated configuration with jq"
+            else
+                log_error "Failed to update configuration with jq"
+                return 1
+            fi
+        else
+            # Fallback: create new configuration
+            log_warn "jq not available, creating new configuration"
+            sudo tee "$temp_config" >/dev/null << EOF
+{
+  "insecure-registries": ["$registry_address"]
+}
+EOF
         fi
     else
         # Create new daemon.json
+        log_verbose "Creating new Docker daemon configuration"
         sudo tee "$temp_config" >/dev/null << EOF
 {
   "insecure-registries": ["$registry_address"]
@@ -381,76 +437,108 @@ EOF
     fi
 
     # Debug: Show what was written to temp config
-    log_verbose "Debug: Contents of temp config file:"
-    log_verbose "$(cat "$temp_config" 2>/dev/null || echo 'Failed to read temp config')"
+    if [ "$VERBOSE" = true ]; then
+        log_verbose "Debug: Contents of temp config file:"
+        log_verbose "$(cat "$temp_config" 2>/dev/null || echo 'Failed to read temp config')"
+    fi
     
-    # Validate JSON and apply
+    # Validate JSON if jq is available
     if command -v jq &>/dev/null; then
-        log_verbose "Debug: Validating JSON with jq..."
-        if jq . "$temp_config" >/dev/null 2>&1; then
-            log_verbose "Debug: JSON validation passed"
-            sudo cp "$temp_config" "$daemon_config"
-            sudo chmod 644 "$daemon_config"
-            log "✅ Docker daemon configuration updated"
-
-            # Restart Docker daemon
-            log "Restarting Docker daemon..."
-            if sudo systemctl restart docker; then
-                log "✅ Docker daemon restarted successfully"
-
-                # Wait for Docker to be ready
-                for i in {1..30}; do
-                    if docker info >/dev/null 2>&1; then
-                        log "✅ Docker daemon is ready"
-                        break
-                    fi
-                    if [ $i -eq 30 ]; then
-                        log_error "Docker daemon failed to restart properly"
-                        return 1
-                    fi
-                    sleep 1
-                done
-            else
-                log_error "Failed to restart Docker daemon"
-                return 1
-            fi
-        else
-            log_error "Debug: JSON validation failed"
-            log_error "Debug: jq error output:"
+        log_verbose "Validating JSON configuration"
+        if ! jq . "$temp_config" >/dev/null 2>&1; then
+            log_error "Generated JSON configuration is invalid"
+            log_error "jq validation output:"
             jq . "$temp_config" 2>&1 || true
+            
+            # Restore backup if it exists
+            if [ -f "$backup_config" ]; then
+                log_warn "Restoring backup configuration"
+                sudo cp "$backup_config" "$daemon_config"
+            fi
             return 1
         fi
-    else
-        log_verbose "Debug: jq not available, skipping JSON validation"
-        sudo cp "$temp_config" "$daemon_config"
-        sudo chmod 644 "$daemon_config"
-        log "✅ Docker daemon configuration updated"
-
-        # Restart Docker daemon
-        log "Restarting Docker daemon..."
-        if sudo systemctl restart docker; then
-            log "✅ Docker daemon restarted successfully"
-
-            # Wait for Docker to be ready
-            for i in {1..30}; do
-                if docker info >/dev/null 2>&1; then
-                    log "✅ Docker daemon is ready"
-                    break
-                fi
-                if [ $i -eq 30 ]; then
-                    log_error "Docker daemon failed to restart properly"
-                    return 1
-                fi
-                sleep 1
-            done
-        else
-            log_error "Failed to restart Docker daemon"
-            return 1
-        fi
+        log_verbose "JSON validation passed"
     fi
 
-    # Cleanup
+    # Apply the new configuration
+    sudo cp "$temp_config" "$daemon_config"
+    sudo chmod 644 "$daemon_config"
+    log "✅ Docker daemon configuration updated"
+
+    # Restart Docker daemon with better error handling
+    log "Restarting Docker daemon..."
+    
+    # Check Docker status before restart
+    local docker_was_running=false
+    if sudo systemctl is-active docker >/dev/null 2>&1; then
+        docker_was_running=true
+    fi
+    
+    if sudo systemctl restart docker; then
+        log "✅ Docker daemon restart command completed"
+        
+        # Wait for Docker to be ready with more detailed monitoring
+        log_verbose "Waiting for Docker daemon to be ready..."
+        for i in {1..60}; do
+            if sudo systemctl is-active docker >/dev/null 2>&1; then
+                # Service is active, now check if Docker API is responding
+                if docker info >/dev/null 2>&1; then
+                    log "✅ Docker daemon is ready and responding"
+                    break
+                else
+                    log_verbose "Docker service active but API not responding yet (${i}/60)"
+                fi
+            else
+                log_verbose "Docker service not active yet (${i}/60)"
+            fi
+            
+            if [ $i -eq 60 ]; then
+                log_error "Docker daemon failed to become ready within 60 seconds"
+                log_error "Checking Docker service status:"
+                sudo systemctl status docker || true
+                log_error "Checking Docker daemon logs:"
+                sudo journalctl -u docker --no-pager --lines=20 || true
+                
+                # Attempt to restore backup configuration
+                if [ -f "$backup_config" ]; then
+                    log_warn "Attempting to restore backup Docker configuration"
+                    sudo cp "$backup_config" "$daemon_config"
+                    sudo systemctl restart docker || true
+                fi
+                return 1
+            fi
+            sleep 1
+        done
+    else
+        log_error "Failed to restart Docker daemon"
+        log_error "Checking Docker service status:"
+        sudo systemctl status docker || true
+        log_error "Checking Docker daemon logs:"
+        sudo journalctl -u docker --no-pager --lines=10 || true
+        
+        # Attempt to restore backup configuration
+        if [ -f "$backup_config" ]; then
+            log_warn "Attempting to restore backup Docker configuration"
+            sudo cp "$backup_config" "$daemon_config"
+            if sudo systemctl restart docker; then
+                log_warn "Docker restored with backup configuration"
+            fi
+        fi
+        return 1
+    fi
+
+    # Test the registry configuration
+    log_verbose "Testing Docker registry configuration..."
+    if docker info 2>/dev/null | grep -q "$registry_address"; then
+        log "✅ Registry $registry_address successfully configured in Docker daemon"
+    else
+        log_warn "Registry configuration may not be active yet, but Docker is running"
+    fi
+
+    # Cleanup temporary files
     sudo rm -f "$temp_config" 2>/dev/null || true
+    
+    return 0
 }
 
 # Function to setup local Docker registry
@@ -2989,6 +3077,21 @@ install_k3s_agent() {
             fi
             log_verbose "Configuring Docker for insecure registry at $REGISTRY_HOST:5000"
             log_verbose "Debug: REGISTRY_HOST='$REGISTRY_HOST'"
+            
+            # Test connectivity to registry before configuring Docker
+            log_verbose "Testing connectivity to registry at $REGISTRY_HOST:5000..."
+            if command -v nc &>/dev/null; then
+                if nc -z -w5 "$REGISTRY_HOST" 5000 2>/dev/null; then
+                    log_verbose "✅ Registry at $REGISTRY_HOST:5000 is reachable"
+                else
+                    log_warn "⚠️  Registry at $REGISTRY_HOST:5000 is not currently reachable"
+                    log_warn "This may be normal if the registry is not yet running on the master"
+                    log_warn "Proceeding with Docker configuration anyway..."
+                fi
+            else
+                log_verbose "nc (netcat) not available, skipping connectivity test"
+            fi
+            
             log_verbose "Debug: Calling setup_docker_insecure_registry with: '$REGISTRY_HOST'"
             if setup_docker_insecure_registry "$REGISTRY_HOST"; then
                 log_verbose "✅ Docker registry configuration completed"
@@ -2996,6 +3099,14 @@ install_k3s_agent() {
                 log_error "❌ Docker registry configuration failed - this is critical for agent functionality"
                 log_error "Agent nodes require access to the master's Docker registry for image distribution"
                 log_error "Without registry access, applications cannot be deployed to this agent node"
+                echo ""
+                log_error "Troubleshooting steps:"
+                log_error "  1. Check if Docker service is running: sudo systemctl status docker"
+                log_error "  2. Check Docker daemon logs: sudo journalctl -u docker --no-pager --lines=20"
+                log_error "  3. Verify master registry is accessible: nc -zv $REGISTRY_HOST 5000"
+                log_error "  4. Check Docker daemon config: sudo cat /etc/docker/daemon.json"
+                log_error "  5. Try manual Docker restart: sudo systemctl restart docker"
+                echo ""
                 exit $EXIT_CONFIG_FAILED
             fi
         else
