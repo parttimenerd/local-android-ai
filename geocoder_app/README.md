@@ -35,7 +35,7 @@ This geocoder service is designed specifically for the [k3s-on-phone](../) proje
 **Usage in cluster:**
 ```bash
 # The location monitoring service uses this geocoder
-ssh phone-node "curl -s localhost:8080/coordinates" | jq '.latitude,.longitude' | \
+ssh phone-node "curl -s localhost:8005/location" | jq '.latitude,.longitude' | \
   xargs -I {} curl -s "http://reverse-geocoder:8090/api/reverse-geocode?lat={}&lon={}"
 ```
 

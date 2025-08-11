@@ -287,6 +287,87 @@ public class PhoneServerClient {
     }
     
     /**
+     * Check server capabilities using the /capabilities endpoint.
+     * 
+     * @return CompletableFuture<ServerCapabilities> with available features
+     */
+    public CompletableFuture<ServerCapabilities> getServerCapabilities() {
+        if (!phoneServerAvailable) {
+            return CompletableFuture.completedFuture(new ServerCapabilities(false, false, false));
+        }
+        
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(BASE_URL + "/capabilities"))
+                        .timeout(TIMEOUT)
+                        .GET()
+                        .build();
+                
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                
+                if (response.statusCode() == 200) {
+                    String responseBody = response.body();
+                    
+                    // Parse capabilities from JSON response
+                    boolean aiAvailable = parseCapabilityAvailable(responseBody, "ai");
+                    boolean cameraAvailable = parseCapabilityAvailable(responseBody, "camera");
+                    boolean locationAvailable = parseCapabilityAvailable(responseBody, "location");
+                    
+                    return new ServerCapabilities(aiAvailable, cameraAvailable, locationAvailable);
+                }
+                return new ServerCapabilities(false, false, false);
+            } catch (Exception e) {
+                System.err.println("Failed to check server capabilities: " + e.getMessage());
+                return new ServerCapabilities(false, false, false);
+            }
+        });
+    }
+    
+    /**
+     * Parse capability availability from capabilities JSON response.
+     */
+    private boolean parseCapabilityAvailable(String json, String capability) {
+        try {
+            // Look for "capability": { "available": true/false }
+            String capabilitySection = extractJsonSection(json, "\"" + capability + "\"");
+            if (capabilitySection != null) {
+                return capabilitySection.contains("\"available\"") && 
+                       capabilitySection.contains("true") &&
+                       !capabilitySection.contains("\"available\"\\s*:\\s*false");
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+    
+    /**
+     * Extract a JSON section starting from a key.
+     */
+    private String extractJsonSection(String json, String key) {
+        int startIndex = json.indexOf(key);
+        if (startIndex == -1) return null;
+        
+        int braceIndex = json.indexOf('{', startIndex);
+        if (braceIndex == -1) return null;
+        
+        int braceCount = 0;
+        int endIndex = braceIndex;
+        
+        for (int i = braceIndex; i < json.length(); i++) {
+            if (json.charAt(i) == '{') braceCount++;
+            if (json.charAt(i) == '}') braceCount--;
+            if (braceCount == 0) {
+                endIndex = i + 1;
+                break;
+            }
+        }
+        
+        return json.substring(braceIndex, endIndex);
+    }
+    
+    /**
      * Simple JSON parsing utilities for extracting values without external dependencies
      */
     private double parseJsonDouble(String json, String key) {
@@ -326,6 +407,27 @@ public class PhoneServerClient {
             // Ignore parsing errors
         }
         return "UNKNOWN";
+    }
+    
+    /**
+     * Data class for server capabilities information
+     */
+    public static class ServerCapabilities {
+        public final boolean aiAvailable;
+        public final boolean cameraAvailable;
+        public final boolean locationAvailable;
+        
+        public ServerCapabilities(boolean aiAvailable, boolean cameraAvailable, boolean locationAvailable) {
+            this.aiAvailable = aiAvailable;
+            this.cameraAvailable = cameraAvailable;
+            this.locationAvailable = locationAvailable;
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("ServerCapabilities{ai=%s, camera=%s, location=%s}", 
+                    aiAvailable, cameraAvailable, locationAvailable);
+        }
     }
     
     /**

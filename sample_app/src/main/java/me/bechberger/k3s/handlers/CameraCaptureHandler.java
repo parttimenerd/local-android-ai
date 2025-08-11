@@ -11,6 +11,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Handler for camera capture API endpoint.
@@ -43,7 +44,21 @@ public class CameraCaptureHandler implements HttpHandler {
                 sendResponse(exchange, 503, "Android K3s Phone Server not available");
                 return;
             }
-            
+
+            // Check server capabilities first
+            try {
+                PhoneServerClient.ServerCapabilities capabilities = phoneClient.getServerCapabilities()
+                        .get(2, TimeUnit.SECONDS);
+                
+                if (!capabilities.cameraAvailable) {
+                    sendResponse(exchange, 503, "Camera functionality not available on this phone server");
+                    return;
+                }
+            } catch (Exception capEx) {
+                sendResponse(exchange, 500, "Failed to check server capabilities: " + capEx.getMessage());
+                return;
+            }
+
             // Read request body (camera configuration)
             String requestBody = "";
             try (BufferedReader reader = new BufferedReader(

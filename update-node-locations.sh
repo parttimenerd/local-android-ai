@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_VERSION="1.0.0"
 DEFAULT_INTERVAL=30
-DEFAULT_GEO_PORT=8080
+DEFAULT_GEO_PORT=8005
 INTERVAL=${INTERVAL:-$DEFAULT_INTERVAL}
 RUN_ONCE=false
 VERBOSE=false
@@ -147,7 +147,7 @@ query_node_location() {
     # Try to get location data via SSH and curl from the Android app
     local location_data
     location_data=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" \
-        "curl -s --connect-timeout 3 --max-time 5 http://localhost:$port/coordinates 2>/dev/null" 2>/dev/null || true)
+        "curl -s --connect-timeout 3 --max-time 5 http://localhost:$port/location 2>/dev/null" 2>/dev/null || true)
     
     if [ -z "$location_data" ]; then
         log_verbose "No location data from $node (app may not be running on port $port)"
@@ -246,7 +246,7 @@ update_all_locations() {
         log_warn "No successful location updates. Check that:"
         log_warn "  1. SSH access to phone nodes is working"
         log_warn "  2. Android geolocation app is running on port $DEFAULT_GEO_PORT"
-        log_warn "  3. App is serving location data at /coordinates endpoint"
+        log_warn "  3. App is serving location data at /location endpoint"
         return 1
     fi
     

@@ -63,36 +63,49 @@ public class PhoneDataHandler implements HttpHandler {
             PhoneData phoneData = phoneClient.getPhoneData()
                     .get(3, TimeUnit.SECONDS);
 
-            // Try to get AI description - fetch fresh if requested
+            // Check server capabilities first to avoid unnecessary requests
+            PhoneServerClient.ServerCapabilities capabilities = phoneClient.getServerCapabilities()
+                    .get(2, TimeUnit.SECONDS);
+            
+            System.out.println("Server capabilities: " + capabilities);
+
+            // Try to get AI description only if AI is available
             String aiDescription = null;
-            if (refreshAI) {
-                try {
-                    System.out.println("Fetching fresh AI description via /ai/capture...");
-                    aiDescription = phoneClient.getAIDescription()
-                            .get(10, TimeUnit.SECONDS); // Longer timeout for fresh AI
-                } catch (Exception aiEx) {
-                    // AI description is optional, don't fail the whole request
-                    System.out.println("Fresh AI description not available: " + aiEx.getMessage());
+            if (capabilities.aiAvailable) {
+                if (refreshAI) {
+                    try {
+                        System.out.println("Fetching fresh AI description via /ai/capture...");
+                        aiDescription = phoneClient.getAIDescription()
+                                .get(10, TimeUnit.SECONDS); // Longer timeout for fresh AI
+                    } catch (Exception aiEx) {
+                        System.out.println("Fresh AI description failed: " + aiEx.getMessage());
+                    }
+                } else {
+                    try {
+                        aiDescription = phoneClient.getAIDescription()
+                                .get(5, TimeUnit.SECONDS);
+                    } catch (Exception aiEx) {
+                        System.out.println("AI description failed: " + aiEx.getMessage());
+                    }
                 }
             } else {
-                try {
-                    aiDescription = phoneClient.getAIDescription()
-                            .get(5, TimeUnit.SECONDS);
-                } catch (Exception aiEx) {
-                    // AI description is optional, don't fail the whole request
-                    System.out.println("AI description not available: " + aiEx.getMessage());
-                }
-            }            // Try to get camera image (optional)
+                System.out.println("AI capabilities not available on server");
+            }
+
+            // Try to get camera image only if camera is available
             String cameraImage = null;
-            try {
-                cameraImage = phoneClient.captureImage()
-                        .get(3, TimeUnit.SECONDS);
-            } catch (Exception camEx) {
-                // Camera is optional, don't fail the whole request
-                System.out.println("Camera capture not available: " + camEx.getMessage());
+            if (capabilities.cameraAvailable) {
+                try {
+                    cameraImage = phoneClient.captureImage()
+                            .get(3, TimeUnit.SECONDS);
+                } catch (Exception camEx) {
+                    System.out.println("Camera capture failed: " + camEx.getMessage());
+                }
+            } else {
+                System.out.println("Camera capabilities not available on server");
             }
             
-            String response = buildPhoneDataJson(phoneData, aiDescription, cameraImage);
+            String response = buildPhoneDataJson(phoneData, aiDescription, cameraImage, capabilities);
             sendResponse(exchange, 200, response);
             
         } catch (Exception e) {
@@ -105,11 +118,18 @@ public class PhoneDataHandler implements HttpHandler {
         }
     }
     
-    private String buildPhoneDataJson(PhoneData phoneData, String aiDescription, String cameraImage) {
+    private String buildPhoneDataJson(PhoneData phoneData, String aiDescription, String cameraImage, PhoneServerClient.ServerCapabilities capabilities) {
         StringBuilder json = new StringBuilder();
         json.append("{\n");
         json.append("  \"available\": true,\n");
         json.append("  \"timestamp\": ").append(System.currentTimeMillis()).append(",\n");
+        
+        // Include server capabilities for frontend decision making
+        json.append("  \"capabilities\": {\n");
+        json.append("    \"ai\": ").append(capabilities.aiAvailable).append(",\n");
+        json.append("    \"camera\": ").append(capabilities.cameraAvailable).append(",\n");
+        json.append("    \"location\": ").append(capabilities.locationAvailable).append("\n");
+        json.append("  },\n");
         
         if (phoneData != null) {
             LocationData location = phoneData.location;

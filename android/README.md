@@ -1,17 +1,22 @@
-# K3s Phone Server Android App
+# K3s Phone Server Android App - Simplified Version
 
-⚠️ **EARLY PROTOTYPE - USE AT YOUR OWN RISK** ⚠️
+⚠️ **SIMPLIFIED FOR STABILITY** ⚠️
 
-Android application providing web server with location, orientation, and AI services for K3s integration.
+Android application providing web server with location and orientation services for K3s integration. **AI functionality has been removed** for improved stability and reduced complexity.
 
 ## Features
 
-- **Web Server**: HTTP API on port 8005
+- **Web Server**: HTTP API on ports 8005 and 8080
 - **Location Services**: GPS location via `/location`
 - **Orientation**: Device compass via `/orientation`  
-- **AI Vision**: Image analysis via `/ai/analyze` and `/ai/capture`
-- **Camera**: Image capture via `/capture`
-- **AI Availability**: Check capabilities via `/has-ai`
+- **Health Checks**: Server status via `/status` and `/health`
+
+## Removed Features (For Stability)
+
+- ~~**AI Vision**: Image analysis (removed)~~
+- ~~**AI Camera**: Image capture and analysis (removed)~~
+- ~~**Camera**: Basic image capture (removed)~~
+- ~~**Large AI models**: No more 42MB downloads (removed)~~
 
 ## API Endpoints
 
@@ -19,20 +24,31 @@ Android application providing web server with location, orientation, and AI serv
 ```
 GET /status
 ```
-Returns server information and health status.
-
-### AI Availability Check
-```
-GET /has-ai
-```
-Returns AI capability information:
+Returns server information and features:
 ```json
 {
-  "available": true,
-  "capabilities": {
-    "vision": true,
-    "language": false,
-    "features": ["image_classification", "object_detection"]
+  "status": "running",
+  "server": "K3s Phone Server", 
+  "version": "1.0.0-simplified",
+  "features": {
+    "location": true,
+    "orientation": true,
+    "ai": false
+  }
+}
+```
+
+### Health Check
+```
+GET /health
+```
+Returns service health status:
+```json
+{
+  "status": "healthy",
+  "services": {
+    "location": "available",
+    "orientation": "available"
   }
 }
 ```
@@ -65,37 +81,6 @@ Returns device orientation:
   "roll": 5.0,
   "accuracy": "HIGH",
   "timestamp": 1641234567890
-}
-```
-
-### AI Image Analysis
-```
-POST /ai/analyze
-Content-Type: application/json
-
-{
-  "task": "describe this image",
-  "imageBase64": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAA..."
-}
-```
-
-### AI Camera Capture
-```
-POST /ai/capture
-Content-Type: application/json
-
-{
-  "task": "describe your surroundings"
-}
-```
-
-### Camera Capture
-```
-POST /capture
-Content-Type: application/json
-
-{
-  "camera": "back"
 }
 ```
 

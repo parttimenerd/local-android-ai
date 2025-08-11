@@ -220,6 +220,7 @@
                 aiRefreshInterval: null,
                 lastUpdateTime: null,
                 lastAiUpdate: 0,
+                lastPhoneDataCapabilities: null,
                 
                 onInit: function() {
                     // Create device model for responsive features
@@ -363,6 +364,13 @@
                     const aiDescriptionText = this.byId("aiDescriptionText");
                     const aiTimestampText = this.byId("aiTimestampText");
                     
+                    // Check capabilities to determine what features to show
+                    const capabilities = phoneData.capabilities || {};
+                    console.log("Server capabilities:", capabilities);
+                    
+                    // Store capabilities for AI refresh decisions
+                    this.lastPhoneDataCapabilities = capabilities;
+                    
                     // Update location data
                     if (phoneData.location) {
                         const loc = phoneData.location;
@@ -395,8 +403,8 @@
                         compassText.setText("");
                     }
                     
-                    // Update camera feed
-                    if (phoneData.camera && phoneData.camera.image) {
+                    // Update camera feed - only show if camera capability is available
+                    if (capabilities.camera && phoneData.camera && phoneData.camera.image) {
                         cameraSection.setVisible(true);
                         if (cameraImage) {
                             cameraImage.src = phoneData.camera.image;
@@ -405,16 +413,22 @@
                         }
                     } else {
                         cameraSection.setVisible(false);
+                        if (!capabilities.camera) {
+                            console.log("Camera features not available on this server");
+                        }
                     }
                     
-                    // Update AI description
-                    if (phoneData.aiDescription && phoneData.aiDescription.description) {
+                    // Update AI description - only show if AI capability is available
+                    if (capabilities.ai && phoneData.aiDescription && phoneData.aiDescription.description) {
                         aiSection.setVisible(true);
                         aiDescriptionText.setText(phoneData.aiDescription.description);
                         const timestamp = new Date(phoneData.aiDescription.timestamp).toLocaleTimeString();
                         aiTimestampText.setText(`Generated: ${timestamp}`);
                     } else {
                         aiSection.setVisible(false);
+                        if (!capabilities.ai) {
+                            console.log("AI features not available on this server");
+                        }
                     }
                 },
                 
@@ -693,9 +707,20 @@
                     }
                     
                     this.aiRefreshInterval = setInterval(() => {
-                        console.log("Auto-refreshing AI description and camera...");
-                        this.loadPhoneData(true); // Force fresh AI via refreshAI=true
-                    }, 60000); // Refresh AI every 60 seconds (1 minute)
+                        // Check if we should refresh AI features
+                        if (this.shouldRefreshAI()) {
+                            console.log("Auto-refreshing AI description and camera...");
+                            this.loadPhoneData(true); // Force fresh AI via refreshAI=true
+                        } else {
+                            console.log("Skipping AI refresh - no AI capabilities available");
+                        }
+                    }, 60000); // Check every 60 seconds (1 minute)
+                },
+                
+                shouldRefreshAI: function() {
+                    // Only refresh AI if we have recent data indicating AI capabilities are available
+                    return this.lastPhoneDataCapabilities && 
+                           (this.lastPhoneDataCapabilities.ai || this.lastPhoneDataCapabilities.camera);
                 },
                 
                 onRefreshPress: function() {

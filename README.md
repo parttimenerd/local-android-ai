@@ -10,8 +10,34 @@ Kubernetes cluster deployment on Android devices using Debian in KVM via Android
 
 ⚠️ **EXPERIMENTAL PROJECT**: This is a rough prototype for educational and experimental purposes only. Features may not work as expected, may break without notice, and are only suitable for exploration.
 
-Deploy a multi-node K3s cluster across Android phones using:
-- K3s lightweight Kubernetes distribution
+Deploy a multi-node K3s cluster across Android phones u**How it works:**
+- **Server-side script**: `/usr/local/bin/update-node-locations.sh`# Test phone app API directly
+curl -s http://phone-hostname:8005/location
+
+# Check phone location labels with city information
+kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/altitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
+
+# Test location monitoring script
+./test-simplified-location.sh
+
+# SSH connectivity test
+# Test SSH connectivity to phone nodes
+ssh phone-hostname "curl -s http://localhost:8005/location"erying**: Direct connection to phone Android apps on port 8005
+- **No complex authentication**: Uses simple SSH keys and kubectl commands
+- **Systemd service**: `location-monitor.service` for continuous monitoring
+
+**Prerequisites:**
+```bash
+# Set up SSH keys (run on server)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+ssh-copy-id user@phone-hostname
+
+# Test SSH connectivity
+ssh phone-hostname "echo 'SSH working'"
+
+# Test Android app
+curl http://phone-hostname:8005/location
+```eight Kubernetes distribution
 - Tailscale mesh VPN for secure networking  
 - Java sample application with cluster location mapping and city information
 - Automated Docker registry setup and image distribution
@@ -38,8 +64,8 @@ The project now uses a **much simpler, more reliable approach** for location mon
 ```
 ┌─────────────────┐    SSH    ┌──────────────────┐    HTTP    ┌─────────────────┐
 │   K3s Server    │◄─────────►│   Phone Node     │◄──────────►│  Android App    │
-│ update-node-    │           │ device-type=     │            │  (port 8080)    │
-│ locations.sh    │           │ phone            │            │ /coordinates    │
+│ update-node-    │           │ device-type=     │            │  (port 8005)    │
+│ locations.sh    │           │ phone            │            │ /location       │
 └─────────────────┘           └──────────────────┘            └─────────────────┘
         │                              
         │ kubectl label                
@@ -391,9 +417,15 @@ Registry integration is **automatic during setup**:
 
 ### Android Phone Server App
 
-Optional Android app providing additional services like GPS location, device orientation, AI vision, and camera capture via HTTP API on port 8005.
+Simplified Android app providing GPS location and device orientation services via HTTP API on port 8005.
 
-See [android/README.md](android/README.md) for installation and usage details.
+**Key Features:**
+- GPS location data for K3s node labeling
+- Device orientation/compass data
+- Simple, stable implementation without AI complexity
+- Lightweight with minimal dependencies
+
+See [android/README.md](android/README.md) and [android/SIMPLIFIED_API.md](android/SIMPLIFIED_API.md) for installation and usage details.
 
 ## Detailed Setup
 
@@ -598,7 +630,7 @@ The server node runs a monitoring script that queries all phone nodes via SSH ev
 
 **How it works:**
 - **Server-side script**: `/usr/local/bin/update-node-locations.sh`
-- **SSH querying**: Direct connection to phone Android apps on port 8080
+- **SSH querying**: Direct connection to phone Android apps on port 8005
 - **No complex authentication**: Uses simple SSH keys and kubectl commands
 - **Systemd service**: `location-monitor.service` for continuous monitoring
 
@@ -612,7 +644,7 @@ ssh-copy-id user@phone-hostname
 ssh phone-hostname "echo 'SSH working'"
 
 # Test Android app
-curl http://phone-hostname:8080/coordinates
+curl http://phone-hostname:8005/location
 ```
 
 This ensures applications only run on phone devices, not on server/desktop nodes that might join the cluster.
@@ -660,7 +692,7 @@ sudo journalctl -u location-monitor -f
 sudo /usr/local/bin/update-node-locations.sh --once --verbose
 
 # Test phone app API directly
-curl -s http://phone-hostname:8080/coordinates
+curl -s http://phone-hostname:8005/location
 
 # Check phone location labels with city information
 kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/altitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
@@ -669,7 +701,7 @@ kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.
 ./test-simplified-location.sh
 
 # SSH connectivity test
-ssh phone-hostname "curl -s http://localhost:8080/coordinates"
+ssh phone-hostname "curl -s http://localhost:8005/location"
 ```
 
 ### Testing & Diagnostics
@@ -682,7 +714,7 @@ sudo systemctl status location-monitor
 sudo /usr/local/bin/update-node-locations.sh --once --verbose
 
 # Test SSH connectivity to phone nodes
-ssh phone-hostname "curl -s http://localhost:8080/coordinates"
+ssh phone-hostname "curl -s http://localhost:8005/location"
 
 # Check node labels
 kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
@@ -818,16 +850,18 @@ This project is licensed under the Apache 2.0 License.
 
 ### Third-Party Licenses
 
-#### Gemma AI Model
-The Android app includes the Gemma language model for advanced AI capabilities. The Gemma model is provided under and subject to the **Gemma Terms of Use** found at [ai.google.dev/gemma/terms](https://ai.google.dev/gemma/terms).
+The simplified Android app now uses minimal dependencies:
 
-**Important**: By using the Android app with AI features, you agree to comply with the Gemma Terms of Use. Please review the license carefully before use.
-
-#### Other Components
+#### Core Components
 - K3s: Apache 2.0 License
 - Tailscale (with headscale support being planned)  
-- TensorFlow Lite models: Apache 2.0 License
-- MediaPipe: Apache 2.0 License
+
+#### Removed AI Components
+- ~~Gemma AI Model~~ - Removed for simplicity and stability
+- ~~TensorFlow Lite models~~ - No longer included
+- ~~MediaPipe~~ - Removed with AI functionality
+
+The simplified app focuses on core location and orientation services without AI complexity.
 
 # Roadmap
 
@@ -836,6 +870,9 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 - [x] deploy the application to the cluster with replication
 - [ ] add another phone and improve deploy scripts
 - [ ] test and fix phone app
+  - [x] start with simple app that just gives location (✅ Completed - AI removed)
+  - [ ] add taking photos (Optional - may add back later)
+  - [ ] add LLM stuff (Optional - may add back later)
 - [x] use phone app to automatically update location labels in node
 - [x] **simplified location monitoring with SSH-based approach**
 - [x] **unified script interface - all commands integrated into setup.sh**

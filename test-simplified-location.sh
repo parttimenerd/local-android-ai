@@ -108,8 +108,8 @@ if command -v curl >/dev/null 2>&1; then
     mock_coordinates='{"latitude": 48.1351, "longitude": 11.5820, "altitude": 520, "city": "Munich"}'
     
     log "   Mock coordinates: $mock_coordinates"
-    log "   To simulate Android app, serve this on port 8080 at /coordinates endpoint"
-    log "   Example: echo '$mock_coordinates' | python3 -m http.server 8080"
+    log "   To simulate Android app, serve this on port 8005 at /location endpoint"
+    log "   Example: echo '$mock_coordinates' | python3 -m http.server 8005"
 else
     log_warn "⚠️  curl not available for testing"
 fi
@@ -131,7 +131,7 @@ fi
 
 echo ""
 log "Next steps:"
-log "1. Ensure Android geolocation app runs on port 8080"
+log "1. Ensure Android geolocation app runs on port 8005"
 log "2. Test manual update: /usr/local/bin/update-node-locations.sh --once --verbose"
 log "3. Start continuous monitoring: sudo systemctl start location-monitor"
 log "4. Set up SSH keys for passwordless access to phone nodes"
@@ -139,6 +139,6 @@ log "4. Set up SSH keys for passwordless access to phone nodes"
 echo ""
 log "Architecture summary:"
 log "• Server runs location updater script (queries via SSH)"
-log "• Android apps serve geolocation on port 8080"
+log "• Android apps serve geolocation on port 8005"
 log "• No complex services needed on agent nodes"
 log "• Simple kubectl label updates for location data"

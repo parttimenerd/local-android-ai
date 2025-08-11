@@ -8,23 +8,11 @@
     tools:context=".MainActivity">
 
     <TextView
-        android:id="@+id/textTitle"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:text="K3s Phone Server"
-        android:textSize="24sp"
-        android:textStyle="bold"
-        android:gravity="center"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
         android:id="@+id/textDescription"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="Web server providing location, orientation, and AI services for K3s integration"
+        android:text="Web server providing location and orientation services for integration"
         android:textSize="14sp"
         android:gravity="center"
         app:layout_constraintEnd_toEndOf="parent"
@@ -35,7 +23,7 @@
         android:id="@+id/buttonStartServer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
+        android:layout_marginTop="16dp"
         android:text="Start Server"
         android:textSize="18sp"
         app:layout_constraintEnd_toEndOf="parent"
@@ -66,6 +54,251 @@
                 android:padding="16dp"
                 android:background="@drawable/status_background"
                 android:layout_marginBottom="16dp" />
+
+            <!-- API Testing Section -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="API Testing"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:padding="8dp" />
+
+                <Button
+                    android:id="@+id/buttonToggleApiTesting"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▼ Show"
+                    android:textSize="12sp"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_marginEnd="8dp" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/apiTestingSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/status_background"
+                android:padding="12dp"
+                android:layout_marginBottom="16dp"
+                android:visibility="gone">
+
+                <!-- Status/Health endpoints -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <Button
+                        android:id="@+id/buttonTestStatus"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="/status"
+                        android:textSize="12sp"
+                        android:layout_marginEnd="4dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                    <Button
+                        android:id="@+id/buttonTestHealth"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="/health"
+                        android:textSize="12sp"
+                        android:layout_marginStart="4dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                </LinearLayout>
+
+                <!-- Capabilities endpoint -->
+                <Button
+                    android:id="@+id/buttonTestCapabilities"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="/capabilities"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="8dp"
+                    style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                <!-- Location/Orientation endpoints -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <Button
+                        android:id="@+id/buttonTestLocation"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="/location"
+                        android:textSize="12sp"
+                        android:layout_marginEnd="4dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                    <Button
+                        android:id="@+id/buttonTestOrientation"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="/orientation"
+                        android:textSize="12sp"
+                        android:layout_marginStart="4dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                </LinearLayout>
+
+                <!-- Camera endpoints -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="8dp">
+
+                    <Button
+                        android:id="@+id/buttonTestCaptureRear"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="/capture (rear)"
+                        android:textSize="10sp"
+                        android:layout_marginEnd="2dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                    <Button
+                        android:id="@+id/buttonTestCaptureFront"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="/capture (front)"
+                        android:textSize="10sp"
+                        android:layout_marginStart="2dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                </LinearLayout>
+
+                <!-- API Response Display -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginBottom="4dp"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Response:"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/buttonExpandResponse"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📏"
+                        android:textSize="12sp"
+                        android:padding="4dp"
+                        android:minHeight="0dp"
+                        android:minWidth="0dp"
+                        android:layout_marginEnd="4dp"
+                        android:contentDescription="Toggle response size"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                    <Button
+                        android:id="@+id/buttonCopyApiResponse"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📋"
+                        android:textSize="12sp"
+                        android:padding="4dp"
+                        android:minHeight="0dp"
+                        android:minWidth="0dp"
+                        android:layout_marginEnd="4dp"
+                        android:contentDescription="Copy response to clipboard"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                    <Button
+                        android:id="@+id/buttonClearApiResponse"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Clear"
+                        android:textSize="10sp"
+                        android:padding="4dp"
+                        android:minHeight="0dp"
+                        android:minWidth="0dp"
+                        style="@style/Widget.Material3.Button.OutlinedButton" />
+
+                </LinearLayout>
+
+                <ScrollView
+                    android:id="@+id/scrollViewApiResponse"
+                    android:layout_width="match_parent"
+                    android:layout_height="250dp"
+                    android:background="#f5f5f5"
+                    android:padding="8dp"
+                    android:scrollbars="none"
+                    android:clickable="true"
+                    android:focusable="true">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical">
+
+                        <TextView
+                            android:id="@+id/textApiResponseHeader"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text=""
+                            android:textSize="10sp"
+                            android:fontFamily="monospace"
+                            android:textColor="#666666"
+                            android:layout_marginBottom="8dp"
+                            android:visibility="gone" />
+
+                        <ImageView
+                            android:id="@+id/imageApiResponse"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:adjustViewBounds="true"
+                            android:scaleType="fitCenter"
+                            android:maxHeight="200dp"
+                            android:visibility="gone"
+                            android:contentDescription="API response image" />
+
+                        <TextView
+                            android:id="@+id/textApiResponse"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="Click an endpoint button to test the API"
+                            android:textSize="11sp"
+                            android:fontFamily="monospace"
+                            android:textColor="#333333"
+                            android:textIsSelectable="true"
+                            android:lineSpacingMultiplier="1.2" />
+
+                    </LinearLayout>
+
+                </ScrollView>
+
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -102,18 +335,19 @@
                 android:nestedScrollingEnabled="false" />
 
             <TextView
-                android:id="@+id/textLicense"
+                android:id="@+id/prototypeFooter"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="📄 License Notice: Gemma AI model is subject to Gemma Terms of Use (ai.google.dev/gemma/terms)"
+                android:text="Prototype for the k3s-on-phone project - github.com/parttimenerd/k3s-on-phone"
                 android:textSize="11sp"
-                android:textColor="#666666"
+                android:textColor="#0066cc"
                 android:padding="12dp"
                 android:background="@drawable/status_background"
                 android:clickable="true"
                 android:focusable="true"
-                android:autoLink="web" />
+                android:textStyle="italic"
+                android:gravity="center" />
 
         </LinearLayout>
 

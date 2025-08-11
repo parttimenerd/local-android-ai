@@ -104,6 +104,7 @@ dependencies {
     // LiveData and ViewModel for UI updates
     implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
     implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.7.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.7.0'
     
     // Testing
     testImplementation 'junit:junit:4.13.2'

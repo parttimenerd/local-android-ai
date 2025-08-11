@@ -1,6 +1,5 @@
 package com.k3s.phoneserver.services
 
-import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
@@ -8,6 +7,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import androidx.core.content.ContextCompat
+import com.k3s.phoneserver.manager.AppPermissionManager
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import kotlin.coroutines.resume
@@ -16,9 +16,10 @@ class LocationService(private val context: Context) {
 
     private val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
     private var lastKnownLocation: Location? = null
+    private val permissionManager = AppPermissionManager.getInstance()
 
     suspend fun getCurrentLocation(): Location? {
-        if (!hasLocationPermission()) {
+        if (!permissionManager.hasLocationPermissions(context)) {
             Timber.w("Location permission not granted")
             return null
         }
@@ -90,7 +91,7 @@ class LocationService(private val context: Context) {
     }
 
     private fun getLastKnownLocation(): Location? {
-        if (!hasLocationPermission()) return null
+        if (!permissionManager.hasLocationPermissions(context)) return null
 
         try {
             val providers = listOf(
@@ -99,34 +100,19 @@ class LocationService(private val context: Context) {
                 LocationManager.PASSIVE_PROVIDER
             )
 
-            var bestLocation: Location? = null
-            for (provider in providers) {
+            return providers.mapNotNull { provider ->
                 if (locationManager.isProviderEnabled(provider)) {
-                    val location = locationManager.getLastKnownLocation(provider)
-                    if (location != null && (bestLocation == null || location.accuracy < bestLocation.accuracy)) {
-                        bestLocation = location
-                    }
-                }
-            }
-            
-            lastKnownLocation = bestLocation
-            return bestLocation
+                    locationManager.getLastKnownLocation(provider)
+                } else null
+            }.maxByOrNull { it.time }
+
         } catch (e: SecurityException) {
             Timber.e(e, "Security exception getting last known location")
             return null
         }
     }
 
-    private fun hasLocationPermission(): Boolean {
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED ||
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+    // Removed hasLocationPermission method - now handled by AppPermissionManager
 
     fun cleanup() {
         // No ongoing listeners to clean up in this implementation
