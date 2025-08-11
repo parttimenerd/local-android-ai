@@ -1,18 +1,43 @@
 # Reverse Geocoder Service
 
-A standalone reverse geocoding service using local GeoNames data for converting GPS coordinates to city names. Designed for high-performance, offline operation in K3s clusters.
+A memory-optimized standalone reverse geocoding service using local GeoNames data for converting GPS coordinates to city names. Designed for ultra-low resource usage in K3s phone clusters.
 
 ## Overview
 
-The reverse geocoder service provides a REST API for converting GPS coordinates (latitude/longitude) into human-readable location names (cities). It operates entirely offline using a comprehensive local GeoNames database, eliminating external dependencies and ensuring consistent performance.
+The reverse geocoder service provides a REST API for converting GPS coordinates (latitude/longitude) into human-readable location names (cities). It operates entirely offline using an optimized local GeoNames database, eliminating external dependencies while maintaining minimal memory footprint.
+
+## Memory Optimization
+
+- **Ultra-Low Memory**: ~0.8 MB memory usage for German cities (10,390+ cities)
+- **Smart Filtering**: Only includes cities and administrative centers with ASCII names
+- **Auto-Sized**: Memory requirements automatically detected and K8s configs updated
+- **Extensible**: Easy to add more countries with automatic memory scaling
+- **No Population Data**: City records optimized to essential data only (name, country, coordinates)
 
 ## Architecture
 
 - **Standalone Service**: Runs independently on the cluster master node
 - **High Availability**: Deployed as a Kubernetes service accessible from all cluster nodes  
-- **Local-Only Resolution**: Uses comprehensive GeoNames database with 30,632+ cities
+- **Memory Optimized**: Custom-filtered GeoNames database with only essential city data
 - **Zero External Dependencies**: No internet required for geocoding operations
-- **Comprehensive Testing**: 20+ unit tests with parametric testing for German and French cities
+- **Auto-Configuration**: Memory limits automatically calculated and applied
+- **K3s Phone Integration**: Optimized for Android phone clusters with limited resources
+
+## Integration with k3s-on-phone
+
+This geocoder service is designed specifically for the [k3s-on-phone](../) project:
+
+- **Simplified Location Monitoring**: Replaces complex node-labeler services
+- **Server-Side Operation**: Runs on the K3s server node, not on individual phones
+- **SSH-Based Querying**: Used by `update-node-locations.sh` to get city names for phone coordinates
+- **Minimal Resource Usage**: Optimized for phone cluster environments
+
+**Usage in cluster:**
+```bash
+# The location monitoring service uses this geocoder
+ssh phone-node "curl -s localhost:8080/coordinates" | jq '.latitude,.longitude' | \
+  xargs -I {} curl -s "http://reverse-geocoder:8090/api/reverse-geocode?lat={}&lon={}"
+```
 
 ## API Endpoints
 
@@ -57,31 +82,67 @@ GET /api/reverse-geocode?lat={latitude}&lon={longitude}&method={method}
 
 ## Local Database Coverage
 
-The service includes comprehensive offline coverage with 30,632+ cities from 14 countries:
+The service is optimized for minimal memory usage with intelligent country selection:
 
-- **Germany (DE)**: 6,830 cities including Berlin, Munich, Hamburg, Cologne, Frankfurt
-- **France (FR)**: 8,726 cities including Paris, Lyon, Marseille, Nice, Strasbourg  
-- **United Kingdom (GB)**: 3,806 cities including London, Manchester, Birmingham
-- **United States (US)**: 1,998 cities including New York, Los Angeles, Chicago
-- **Italy (IT)**: 309 major cities and towns
-- **Spain (ES)**: 2,854 cities and settlements
-- **Netherlands (NL)**: 1,192 cities including Amsterdam, Rotterdam
-- **Belgium (BE)**: 1,730 cities including Brussels, Antwerp
-- **Austria (AT)**: 187 cities including Vienna, Salzburg
-- **Switzerland (CH)**: 1,107 cities including Zurich, Geneva, Bern
-- **Denmark (DK)**: 421 cities including Copenhagen
-- **Sweden (SE)**: 805 cities including Stockholm, Gothenburg
-- **Norway (NO)**: 508 cities including Oslo, Bergen
-- **Finland (FI)**: 159 cities including Helsinki
+### Current Configuration (Memory Optimized)
+- **Germany (DE)**: 10,390 cities including Berlin, Munich, Hamburg, Cologne, Frankfurt
+  - Memory usage: ~0.8 MB
+  - ASCII names only for consistent memory usage
+  - Includes cities, administrative centers, and populated places
+
+### Adding More Countries
+To extend coverage, simply update the Java configuration and re-run memory detection:
+
+1. **Edit the country list:**
+   ```java
+   // In ReverseGeocodingService.java
+   private static final Set<String> DEFAULT_COUNTRIES = Set.of("DE", "AT", "CH");
+   ```
+
+2. **Auto-configure memory:**
+   ```bash
+   ./configure-memory.sh  # Detects new requirements automatically
+   ```
+
+**Available for extension**: AT, BE, CH, DE, DK, ES, FI, FR, GB, IT, NL, NO, PL, SE, US
+
+**Memory scaling**: Approximately 0.5-2 MB per country depending on population density.
 
 ## Deployment
 
+### Automatic Memory Configuration
+The service includes an intelligent memory configuration system that automatically determines optimal resource requirements:
+
+```bash
+# Automatically detect memory requirements and update K8s configs
+./configure-memory.sh
+```
+
+This script:
+- **Analyzes actual memory usage** by running the geocoder service
+- **Calculates optimal resource limits** with safety margins
+- **Updates Kubernetes deployment files** automatically
+- **Provides deployment recommendations** based on current configuration
+
+**Example output:**
+```
+📊 Memory Configuration Summary
+• Cities loaded: 10,390 (German cities)
+• Data size: 0.8 MB
+• Kubernetes request: 107Mi  
+• Kubernetes limit: 214Mi
+• JVM heap: 74MB
+```
+
 ### Build and Deploy
 ```bash
-# Build the Docker image
+# 1. Configure memory requirements automatically
+./configure-memory.sh
+
+# 2. Build the Docker image
 ./build.sh
 
-# Deploy to Kubernetes
+# 3. Deploy to Kubernetes  
 ./deploy.sh
 ```
 

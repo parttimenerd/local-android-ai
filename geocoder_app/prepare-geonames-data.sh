@@ -20,15 +20,61 @@ GEONAMES_BASE_URL="https://download.geonames.org/export/dump/"
 DATA_DIR="$SCRIPT_DIR/geonames-data"
 RESOURCES_DIR="$SCRIPT_DIR/src/main/resources/geonames-data"
 
-# Countries to support (ISO 2-letter codes)
-COUNTRIES=("DE" "US" "GB" "FR" "IT" "ES" "NL" "BE" "AT" "CH" "DK" "SE" "NO" "FI" "PL")
+# Extract countries from Java source code automatically
+JAVA_FILE="$SCRIPT_DIR/src/main/java/me/bechberger/k3s/geocoder/ReverseGeocodingService.java"
 
-echo -e "${GREEN}[INFO]${NC} Preparing GeoNames data for build-time caching..."
-echo -e "${GREEN}[INFO]${NC} This will download and extract data for ${#COUNTRIES[@]} countries"
+if [ ! -f "$JAVA_FILE" ]; then
+    echo -e "${RED}[ERROR]${NC} Could not find Java source file: $JAVA_FILE"
+    exit 1
+fi
+
+echo -e "${YELLOW}[INFO]${NC} Extracting countries from Java source code..."
+
+# Parse DEFAULT_COUNTRIES from the Java file
+# Look for the line with DEFAULT_COUNTRIES = Set.of("...") and extract country codes
+COUNTRIES_LINE=$(grep -n "DEFAULT_COUNTRIES.*Set\.of" "$JAVA_FILE" | head -1)
+if [ -z "$COUNTRIES_LINE" ]; then
+    echo -e "${RED}[ERROR]${NC} Could not find DEFAULT_COUNTRIES definition in Java file"
+    exit 1
+fi
+
+# Extract the countries from the Set.of("DE", "AT", ...) pattern
+COUNTRIES_STRING=$(echo "$COUNTRIES_LINE" | sed 's/.*Set\.of(\([^)]*\)).*/\1/' | tr -d ' "')
+if [ -z "$COUNTRIES_STRING" ]; then
+    echo -e "${RED}[ERROR]${NC} Could not parse countries from Java file"
+    exit 1
+fi
+
+# Convert comma-separated string to array
+IFS=',' read -ra COUNTRIES <<< "$COUNTRIES_STRING"
+
+echo -e "${GREEN}[INFO]${NC} Automatically detected countries from Java code: ${COUNTRIES[*]}"
+echo -e "${GREEN}[INFO]${NC} JAR will include data for ${#COUNTRIES[@]} countries (auto-synced with Java)"
 
 # Create directories
 mkdir -p "$DATA_DIR"
 mkdir -p "$RESOURCES_DIR"
+
+# Clean up old resources that are not in the current COUNTRIES list
+echo -e "${YELLOW}[CLEANUP]${NC} Removing old country data not in current COUNTRIES list..."
+if [ -d "$RESOURCES_DIR" ]; then
+    for old_file in "$RESOURCES_DIR"/*.txt; do
+        if [ -f "$old_file" ]; then
+            country_code=$(basename "$old_file" .txt)
+            found=false
+            for country in "${COUNTRIES[@]}"; do
+                if [ "$country" = "$country_code" ]; then
+                    found=true
+                    break
+                fi
+            done
+            if [ "$found" = false ]; then
+                echo -e "  ${YELLOW}Removing${NC} old country data: $country_code.txt"
+                rm -f "$old_file"
+            fi
+        fi
+    done
+fi
 
 # Function to download and extract a country's data
 process_country() {

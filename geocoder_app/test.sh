@@ -100,14 +100,14 @@ echo -e "${GREEN}[INFO]${NC}  DNS Name: $DNS_NAME"
 echo -e "${GREEN}[INFO]${NC}  Port: $SERVICE_PORT"
 echo ""
 
-# Test cases
+# Test cases - Using German cities only
 declare -a tests=(
     "http://$DNS_NAME:$SERVICE_PORT/health|Health endpoint"
-    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=51.5074&lon=-0.1278&method=hybrid|London, UK (hybrid method)"
-    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=40.7128&lon=-74.0060&method=geonames|New York, USA (geonames method)"
-    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=48.8566&lon=2.3522&method=nominatim|Paris, France (nominatim method)"
-    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=35.6762&lon=139.6503|Tokyo, Japan (default method)"
-    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=-33.8688&lon=151.2093|Sydney, Australia"
+    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=52.5200&lon=13.4050&method=geonames|Berlin, Germany (geonames method)"
+    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=48.1351&lon=11.5820&method=geonames|Munich, Germany (geonames method)"
+    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=53.5511&lon=9.9937&method=geonames|Hamburg, Germany (geonames method)"
+    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=50.9375&lon=6.9603|Cologne, Germany (default method)"
+    "http://$DNS_NAME:$SERVICE_PORT/api/reverse-geocode?lat=50.1109&lon=8.6821|Frankfurt, Germany (default method)"
 )
 
 # Run tests

@@ -19,20 +19,20 @@ public class GeocoderServer {
     private static ReverseGeocodingService.ReverseGeocoder geocoder;
     
     /**
-     * Initialize the geocoder (for testing)
+     * Initialize the geocoder (optimized for memory usage)
      */
     public static void initializeGeocoder() throws Exception {
         if (geocoder == null) {
-            geocoder = ReverseGeocodingService.getGlobalGeocoder();
+            geocoder = ReverseGeocodingService.getDefaultGeocoder();
         }
     }
     
     public static void main(String[] args) {
         try {
-            System.out.println("🌍 Starting Reverse Geocoder Service on port " + PORT);
+            System.out.println("🌍 Starting Optimized Reverse Geocoder Service on port " + PORT);
             
-            // Initialize the geocoder with global city data
-            System.out.println("📊 Loading geocoding data...");
+            // Initialize the geocoder with German cities only (memory optimized)
+            System.out.println("📊 Loading geocoding data (German cities only for memory optimization)...");
             initializeGeocoder();
             System.out.println("✅ Geocoding data loaded successfully");
             

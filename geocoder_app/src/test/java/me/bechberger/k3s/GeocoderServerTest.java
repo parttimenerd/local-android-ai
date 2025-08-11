@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Unit tests for the GeocoderServer HTTP endpoints
- * Tests focus on German and French cities with parametric test approach
+ * Tests focus on German cities with parametric test approach
  */
 public class GeocoderServerTest {
 
@@ -31,23 +31,21 @@ public class GeocoderServerTest {
     private static String baseUrl;
 
     /**
-     * Test data for German and French cities
+     * Test data for German cities only
      */
-    static Stream<Arguments> germanAndFrenchCities() {
+    static Stream<Arguments> germanCities() {
         return Stream.of(
-            // German cities
+            // German cities with coordinates well within Germany
             Arguments.of("Berlin", 52.5200, 13.4050, new String[]{"berlin", "germany", "de"}),
             Arguments.of("Munich", 48.1351, 11.5820, new String[]{"munich", "münchen", "germany", "de"}),
             Arguments.of("Hamburg", 53.5511, 9.9937, new String[]{"hamburg", "germany", "de"}),
             Arguments.of("Cologne", 50.9375, 6.9603, new String[]{"cologne", "köln", "germany", "de"}),
             Arguments.of("Frankfurt", 50.1109, 8.6821, new String[]{"frankfurt", "germany", "de"}),
-            
-            // French cities  
-            Arguments.of("Paris", 48.8566, 2.3522, new String[]{"paris", "france", "fr"}),
-            Arguments.of("Lyon", 45.7640, 4.8357, new String[]{"lyon", "france", "fr"}),
-            Arguments.of("Marseille", 43.2965, 5.3698, new String[]{"marseille", "france", "fr"}),
-            Arguments.of("Nice", 43.7102, 7.2620, new String[]{"nice", "france", "fr"}),
-            Arguments.of("Strasbourg", 48.5734, 7.7521, new String[]{"strasbourg", "france", "fr"})
+            Arguments.of("Stuttgart", 48.7758, 9.1829, new String[]{"stuttgart", "germany", "de"}),
+            Arguments.of("Düsseldorf", 51.2277, 6.7735, new String[]{"düsseldorf", "dusseldorf", "germany", "de"}),
+            Arguments.of("Dresden", 51.0504, 13.7373, new String[]{"dresden", "germany", "de"}),
+            Arguments.of("Leipzig", 51.3397, 12.3731, new String[]{"leipzig", "germany", "de"}),
+            Arguments.of("Hannover", 52.3759, 9.7320, new String[]{"hannover", "hanover", "germany", "de"})
         );
     }
 
@@ -118,7 +116,7 @@ public class GeocoderServerTest {
     }
 
     @ParameterizedTest(name = "Test reverse geocoding for {0} ({1}, {2})")
-    @MethodSource("germanAndFrenchCities")
+    @MethodSource("germanCities")
     void testReverseGeocodeEndpoint_Cities(String cityName, double latitude, double longitude, String[] expectedTerms) throws Exception {
         String url = baseUrl + "/api/reverse-geocode?lat=" + latitude + "&lon=" + longitude + "&method=geonames";
         
@@ -253,8 +251,8 @@ public class GeocoderServerTest {
 
     @Test
     void testReverseGeocodeEndpoint_DefaultMethod() throws Exception {
-        // Test without specifying method (should default to geonames) - using Paris coordinates
-        String url = baseUrl + "/api/reverse-geocode?lat=48.8566&lon=2.3522";
+        // Test without specifying method (should default to geonames) - using Berlin coordinates
+        String url = baseUrl + "/api/reverse-geocode?lat=52.5200&lon=13.4050";
         
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))

@@ -78,7 +78,7 @@ USAGE:
 ARGUMENTS:
     HOSTNAME                    Set the hostname for this node (not allowed with --local)
     cleanup                     Remove not-ready nodes from cluster
-    test-geocoder               Test the geocoder service with sample city coordinates
+    test-geocoder               Test the geocoder service with sample German city coordinates
 
 OPTIONS:
     -t, --tailscale-key KEY     Tailscale authentication key (validated before use)
@@ -118,7 +118,7 @@ EXAMPLES:
     # Force K3s reinstall (uninstall K3s, reinstall fresh, keep Docker)
     ./setup.sh my-phone-01 -t tskey-auth-xxxxx --force
 
-    # Test geocoder service with sample world cities
+    # Test geocoder service with sample German cities
     ./setup.sh test-geocoder -v
 
 DESCRIPTION:
@@ -148,8 +148,14 @@ NOTES:
     - If network connectivity issues occur, restarting and reinstalling
       Debian on your phone may be needed (known issue with Android Linux Terminal)
     - Cleanup mode must be run from the K3s server (master) node
-    - For dead node cleanup, use ./clean.sh
-    - For complete cluster reset, use ./reset.sh
+
+ADDITIONAL COMMANDS:
+    ./setup.sh clean         - Clean up dead/NotReady nodes from cluster
+    ./setup.sh status        - Show comprehensive cluster status and diagnostics
+    ./setup.sh reset         - Completely reset the entire cluster (destructive)
+    ./setup.sh test-location - Test the simplified location monitoring system
+    
+    For registry management, use ./registry.sh
 
 TROUBLESHOOTING:
     Common issues and solutions:
@@ -898,30 +904,30 @@ test_geocoder_comprehensive() {
         return 1
     fi
 
-    # Test 2: API endpoint basic connectivity
-    log_verbose "2. Testing API endpoint connectivity..."
+    # Test 2: API endpoint basic connectivity with German coordinates
+    log_verbose "2. Testing API endpoint connectivity with German city..."
     local api_test_url="${api_url}/api/reverse-geocode?lat=52.52&lon=13.40&method=geonames"
     local api_response
     api_response=$(curl -s --connect-timeout 10 --max-time 15 "$api_test_url" 2>/dev/null)
     
     if [ $? -eq 0 ] && [ -n "$api_response" ]; then
-        log_verbose "✅ API endpoint responding"
+        log_verbose "✅ API endpoint responding for German cities"
     else
-        log_error "❌ API endpoint not responding"
+        log_error "❌ API endpoint not responding for German cities"
         return 1
     fi
 
-    # Test 3: Comprehensive city resolution test
-    log_verbose "3. Testing city resolution with diverse coordinates..."
+    # Test 3: Comprehensive city resolution test with German cities
+    log_verbose "3. Testing city resolution with German coordinates..."
     
-    # Define comprehensive test cases with expected results
+    # Define German city test cases - geocoder is optimized for German cities only
     declare -A test_coordinates=(
         ["Berlin_Germany"]="52.52,13.40"
-        ["London_UK"]="51.51,-0.13"
-        ["Tokyo_Japan"]="35.68,139.76"
-        ["New_York_USA"]="40.71,-74.01"
-        ["Sydney_Australia"]="-33.87,151.21"
-        ["Moscow_Russia"]="55.75,37.62"
+        ["Munich_Germany"]="48.14,11.58"
+        ["Hamburg_Germany"]="53.55,9.99"
+        ["Cologne_Germany"]="50.94,6.96"
+        ["Frankfurt_Germany"]="50.11,8.68"
+        ["Stuttgart_Germany"]="48.78,9.18"
     )
 
     local test_count=0
@@ -957,20 +963,20 @@ test_geocoder_comprehensive() {
         fi
     done
 
-    # Test 4: Method parameter validation
-    log_verbose "4. Testing different geocoding methods..."
+    # Test 4: Method parameter validation with German city
+    log_verbose "4. Testing different geocoding methods with German coordinates..."
     local berlin_lat="52.52"
     local berlin_lon="13.40"
     
-    # Test geonames method (primary)
+    # Test geonames method (primary) with Berlin coordinates
     local geonames_url="${api_url}/api/reverse-geocode?lat=${berlin_lat}&lon=${berlin_lon}&method=geonames"
     local geonames_response
     geonames_response=$(curl -s --connect-timeout 10 --max-time 15 "$geonames_url" 2>/dev/null)
     
     if [ $? -eq 0 ] && echo "$geonames_response" | grep -q '"location"'; then
-        log_verbose "✅ Geonames method working"
+        log_verbose "✅ Geonames method working with German cities"
     else
-        log_verbose "⚠️  Geonames method not responding properly"
+        log_verbose "⚠️  Geonames method not responding properly for German cities"
     fi
 
     # Test 5: Error handling
@@ -988,17 +994,18 @@ test_geocoder_comprehensive() {
     # Summarize results
     echo ""
     log "Geocoder Test Results:"
-    log "  Total coordinate tests: $test_count"
+    log "  Total German city tests: $test_count"
     log "  Successful resolutions: $success_count"
     log "  Success rate: $(( (success_count * 100) / test_count ))%"
     
-    # Determine overall success
-    if [ $success_count -ge $((test_count * 2 / 3)) ]; then  # At least 2/3 success rate
-        log "✅ Geocoder service is functional and ready"
+    # Determine overall success - expect high success rate for German cities
+    if [ $success_count -ge $((test_count * 5 / 6)) ]; then  # At least 83% success rate (5/6 cities)
+        log "✅ Geocoder service is functional and ready for German cities"
         return 0
     else
-        log_error "❌ Geocoder service test failed - insufficient success rate"
-        log_error "Expected at least 67% success rate, got $(( (success_count * 100) / test_count ))%"
+        log_error "❌ Geocoder service test failed - insufficient success rate for German cities"
+        log_error "Expected at least 83% success rate, got $(( (success_count * 100) / test_count ))%"
+        log_error "Note: This geocoder is optimized for German cities only"
         return 1
     fi
 }
@@ -1045,15 +1052,15 @@ test_geocoder_city_resolution() {
         fi
     fi
 
-    # Test cities with well-known coordinates
-    log "Testing city resolution with sample coordinates..."
+    # Test German cities with well-known coordinates
+    log "Testing city resolution with sample German coordinates..."
 
-    # Define test cities with their coordinates
+    # Define test German cities with their coordinates
     declare -A test_cities=(
         ["Berlin"]="52.52,13.40"
-        ["London"]="51.51,-0.13"
-        ["Tokyo"]="35.68,139.76"
-        ["New York"]="40.71,-74.01"
+        ["Munich"]="48.14,11.58"
+        ["Hamburg"]="53.55,9.99"
+        ["Frankfurt"]="50.11,8.68"
     )
 
     local success_count=0
@@ -1089,14 +1096,14 @@ test_geocoder_city_resolution() {
     # Summarize results
     local total=${#test_cities[@]}
     if [ $success_count -eq $total ]; then
-        log "✅ All city resolutions successful ($success_count/$total)"
+        log "✅ All German city resolutions successful ($success_count/$total)"
         return 0
     elif [ $success_count -gt 0 ]; then
-        log_warn "⚠️  Some city resolutions successful ($success_count/$total)"
-        # Still return success if at least one city resolves
+        log_warn "⚠️  Some German city resolutions successful ($success_count/$total)"
+        # Still return success if at least one German city resolves
         return 0
     else
-        log_error "❌ All city resolutions failed (0/$total)"
+        log_error "❌ All German city resolutions failed (0/$total)"
         log_error "Geocoder service is not functional - this indicates cluster issues"
         log_error "Exiting setup as the geocoder is a critical component for cluster functionality"
         exit $EXIT_CONFIG_FAILED
@@ -1317,60 +1324,9 @@ deploy_geocoder_service() {
         if [ "$VERBOSE" = true ]; then
             log_verbose "Running deploy.sh with verbose output..."
             log_verbose "=== DEPLOY.SH OUTPUT START ==="
-            if ./deploy.sh; then
+            if sudo ./deploy.sh; then
                 log_verbose "=== DEPLOY.SH OUTPUT END ==="
                 log "✅ Reverse geocoder service deployed successfully"
-
-                # Wait for deployment to be ready with verbose monitoring
-                log_verbose "Waiting for geocoder service to be ready..."
-                log_verbose "Monitoring deployment progress..."
-                
-                # Show deployment status while waiting
-                local wait_count=0
-                local max_wait=120
-                while [ $wait_count -lt $max_wait ]; do
-                    local ready_replicas
-                    ready_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
-                    local desired_replicas
-                    desired_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
-                    
-                    log_verbose "Deployment status: $ready_replicas/$desired_replicas replicas ready (${wait_count}s/${max_wait}s)"
-                    
-                    if [ "$ready_replicas" = "$desired_replicas" ] && [ "$ready_replicas" != "0" ]; then
-                        log "✅ Reverse geocoder service is ready after ${wait_count}s"
-                        break
-                    fi
-                    
-                    # Show pod status and logs periodically
-                    if [ $((wait_count % 15)) -eq 0 ] && [ $wait_count -gt 0 ]; then
-                        log_verbose "=== Pod status check (${wait_count}s) ==="
-                        sudo kubectl get pods -l app=reverse-geocoder -o wide || true
-                        
-                        log_verbose "=== Pod logs (last 10 lines) ==="
-                        sudo kubectl logs deployment/reverse-geocoder --tail=10 2>/dev/null || log_verbose "No logs available yet"
-                        log_verbose "=== End status check ==="
-                    fi
-                    
-                    sleep 2
-                    wait_count=$((wait_count + 2))
-                done
-                
-                # Final check
-                if [ $wait_count -ge $max_wait ]; then
-                    log_error "Geocoder service deployment timeout after ${max_wait}s"
-                    log_error "=== Final deployment diagnostics ==="
-                    log_error "Deployment status:"
-                    sudo kubectl get deployment reverse-geocoder -o wide || true
-                    log_error "Pod status:"
-                    sudo kubectl get pods -l app=reverse-geocoder -o wide || true
-                    log_error "Pod details:"
-                    sudo kubectl describe pods -l app=reverse-geocoder || true
-                    log_error "Recent pod logs:"
-                    sudo kubectl logs deployment/reverse-geocoder --tail=20 || log_error "No logs available"
-                    log_error "=== End diagnostics ==="
-                    cd "$current_dir"
-                    return 1
-                fi
 
                 # Comprehensive test of geocoder functionality
                 if ! test_geocoder_comprehensive; then
@@ -1388,34 +1344,15 @@ deploy_geocoder_service() {
             fi
         else
             log_verbose "Running deploy.sh with output suppressed..."
-            if ./deploy.sh >/dev/null 2>&1; then
+            if sudo ./deploy.sh >/dev/null 2>&1; then
                 log "✅ Reverse geocoder service deployed successfully"
 
-                # Wait for deployment to be ready
-                log_verbose "Waiting for geocoder service to be ready..."
-                if kubectl wait --for=condition=available deployment/reverse-geocoder --timeout=120s >/dev/null 2>&1; then
-                    log "✅ Reverse geocoder service is ready"
-
-                    # Comprehensive test of geocoder functionality (with reduced verbosity)
-                    if test_geocoder_comprehensive >/dev/null 2>&1; then
-                        log "✅ Geocoder functionality test passed"
-                    else
-                        log_error "Geocoder service deployed but failed functionality tests"
-                        log_error "Run with -v/--verbose to see test details"
-                        cd "$current_dir"
-                        return 1
-                    fi
+                # Comprehensive test of geocoder functionality (with reduced verbosity)
+                if test_geocoder_comprehensive >/dev/null 2>&1; then
+                    log "✅ Geocoder functionality test passed"
                 else
-                    log_error "Geocoder service deployment timeout - deployment failed to become ready"
-                    
-                    # Check for image issues even in non-verbose mode
-                    if kubectl get pods -l app=reverse-geocoder | grep -q "ErrImageNeverPull\|ImagePullBackOff\|ErrImagePull"; then
-                        log_error "❌ IMAGE ISSUE: K3s cannot find Docker image 'reverse-geocoder:latest'"
-                        log_error "Run with -v/--verbose for detailed troubleshooting steps"
-                    else
-                        log_error "❌ DEPLOYMENT ISSUE: Run with -v/--verbose for details"
-                    fi
-                    
+                    log_error "Geocoder service deployed but failed functionality tests"
+                    log_error "Run with -v/--verbose to see test details"
                     cd "$current_dir"
                     return 1
                 fi
@@ -1440,137 +1377,7 @@ deploy_geocoder_service() {
 }
 
 # Function to deploy the node-labeler service
-deploy_node_labeler_service() {
-    log_verbose "[DEBUG] deploy_node_labeler_service() function called"
-    log_verbose "[DEBUG] Current working directory: $(pwd)"
 
-    log_step "Deploying node-labeler service for agent node management..."
-    log "🏷️  This service allows agent nodes to label themselves without kubectl"
-
-    # Ensure kubectl is available and cluster is accessible
-    if ! command -v kubectl &> /dev/null; then
-        log_error "kubectl command not found - cannot deploy node-labeler service"
-        return 1
-    fi
-
-    # Test cluster connectivity
-    log_verbose "Testing Kubernetes cluster connectivity..."
-    if ! sudo kubectl cluster-info &> /dev/null; then
-        log_error "Cannot connect to Kubernetes cluster"
-        log_error "Make sure K3s server is running and kubectl is configured properly"
-        return 1
-    fi
-    log_verbose "✅ Kubernetes cluster is accessible"
-
-    # Check if we're in the right directory structure
-    local current_dir
-    current_dir=$(pwd)
-    local node_labeler_dir=""
-
-    # Look for the node-labeler-service directory
-    log_verbose "Looking for node-labeler-service directory..."
-    if [ -d "./node-labeler-service" ]; then
-        node_labeler_dir="./node-labeler-service"
-        log_verbose "Found node-labeler-service in current directory"
-    elif [ -d "../node-labeler-service" ]; then
-        node_labeler_dir="../node-labeler-service"
-        log_verbose "Found node-labeler-service in parent directory"
-    elif [ -d "/home/$USER/code/experiments/k3s-on-phone/node-labeler-service" ]; then
-        node_labeler_dir="/home/$USER/code/experiments/k3s-on-phone/node-labeler-service"
-        log_verbose "Found node-labeler-service in expected path"
-    else
-        log_error "Node-labeler service directory not found - this is required for agent functionality"
-        log_error "Searched in: ./node-labeler-service, ../node-labeler-service"
-        log_error "Please ensure the node-labeler-service directory exists in the project"
-        return 1
-    fi
-
-    log_verbose "Found node-labeler service directory at: $node_labeler_dir"
-
-    # Change to node-labeler directory
-    cd "$node_labeler_dir" || {
-        log_error "Cannot access node-labeler directory at $node_labeler_dir"
-        log_error "Check directory permissions and existence"
-        return 1
-    }
-
-    # Check if the node-labeler service already exists
-    log_verbose "Checking if node-labeler-service deployment already exists..."
-    if sudo kubectl get deployment node-labeler-service -n kube-system >/dev/null 2>&1; then
-        log_verbose "Found existing node-labeler-service deployment"
-        if [ "$FORCE_MODE" = true ]; then
-            log "Force mode: Removing existing node-labeler deployment for rebuild..."
-            sudo kubectl delete deployment node-labeler-service -n kube-system >/dev/null 2>&1 || true
-            sudo kubectl delete service node-labeler-service -n kube-system >/dev/null 2>&1 || true
-        else
-            log "Node-labeler service already deployed, checking status..."
-            if sudo kubectl get deployment node-labeler-service -n kube-system -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
-                log "✅ Node-labeler service is already running"
-                cd "$current_dir"
-                return 0
-            else
-                log "⚠️  Node-labeler service exists but not ready, redeploying..."
-            fi
-        fi
-    else
-        log_verbose "No existing node-labeler-service deployment found, proceeding with deployment"
-    fi
-
-    # Build and deploy the service using the build-deploy script
-    if [ -x "./build-deploy.sh" ]; then
-        log "🛠️ Building and deploying node-labeler service..."
-        
-        if [ "$VERBOSE" = true ]; then
-            log_verbose "Running build-deploy.sh with verbose output..."
-            if ./build-deploy.sh --namespace kube-system; then
-                log "✅ Node-labeler service deployed successfully"
-            else
-                log_error "❌ Node-labeler service deployment failed"
-                cd "$current_dir"
-                return 1
-            fi
-        else
-            log_verbose "Running build-deploy.sh with output suppressed..."
-            if ./build-deploy.sh --namespace kube-system >/dev/null 2>&1; then
-                log "✅ Node-labeler service deployed successfully"
-            else
-                log_error "❌ Node-labeler service deployment failed"
-                cd "$current_dir"
-                return 1
-            fi
-        fi
-    else
-        log_error "No build-deploy script found for node-labeler at ./build-deploy.sh"
-        log_error "The node-labeler service requires a build-deploy script"
-        log_error "Please ensure build-deploy.sh exists and is executable in the node-labeler-service directory"
-        cd "$current_dir"
-        return 1
-    fi
-
-    # Wait for deployment to be ready
-    log_verbose "Waiting for node-labeler service to be ready..."
-    local retries=30
-    while [ $retries -gt 0 ]; do
-        if sudo kubectl get deployment node-labeler-service -n kube-system -o jsonpath='{.status.readyReplicas}' | grep -q "1"; then
-            break
-        fi
-        sleep 2
-        retries=$((retries - 1))
-    done
-
-    if [ $retries -eq 0 ]; then
-        log_error "Node-labeler service failed to become ready"
-        cd "$current_dir"
-        return 1
-    fi
-
-    log "✅ Node-labeler service is ready and functional"
-    log "🏷️  Agent nodes can now label themselves using the service"
-
-    # Return to original directory
-    cd "$current_dir"
-    return 0
-}
 
 install_k3s_server() {
     log_step "Installing K3s as server (master node)..."
@@ -1669,17 +1476,11 @@ install_k3s_server() {
         exit $EXIT_CONFIG_FAILED
     fi
 
-    # Deploy the node-labeler service (critical for agent node labeling)
-    if ! deploy_node_labeler_service; then
-        log_error "❌ Node-labeler service deployment failed - this is critical for cluster functionality"
-        log_error "The node-labeler service is required for agent nodes to label themselves"
-        log_error "Without it, agent nodes cannot set device-type and other labels automatically"
-        exit $EXIT_CONFIG_FAILED
-    fi
-
-
-
     show_agent_setup_info
+    
+    # Install location monitoring for the server
+    log_step "Installing location monitoring for server node..."
+    install_location_monitoring
 }
 
 # Function to set up geolocation monitoring service
@@ -2241,203 +2042,353 @@ EOF
 }
 
 # Function to check if node-labeler service is available
-check_node_labeler_service() {
-    log_verbose "Checking for node-labeler service availability..."
+
+
+# Function to set device type via node-labeler service
+
+
+# Function to install simple location monitoring script (for server)
+install_location_monitoring() {
+    log_step "Setting up simple location monitoring..."
     
-    # Get Kubernetes API credentials
-    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-    if [ ! -f "$kubeconfig" ]; then
-        log_verbose "Kubeconfig not found at $kubeconfig"
+    # Create the location updater script embedded in setup.sh
+    local script_path="/usr/local/bin/update-node-locations.sh"
+    
+    log_verbose "Creating location updater script at $script_path"
+    
+    sudo tee "$script_path" > /dev/null << 'LOCATION_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Simple Node Location Updater
+# Queries geolocation from Android apps via SSH and updates node labels
+DEFAULT_INTERVAL=30
+DEFAULT_GEO_PORT=8080
+INTERVAL=${INTERVAL:-$DEFAULT_INTERVAL}
+RUN_ONCE=false
+VERBOSE=false
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+# Logging functions
+log() { echo -e "${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"; }
+log_verbose() { [ "$VERBOSE" = true ] && echo -e "${YELLOW}[VERBOSE]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" >&2; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"; }
+
+show_help() {
+    cat << EOF
+Node Location Updater
+
+Queries geolocation from Android phone nodes via SSH and updates Kubernetes node labels.
+
+USAGE: $0 [OPTIONS]
+
+OPTIONS:
+    --interval SECONDS      Update interval in seconds (default: $DEFAULT_INTERVAL)
+    --once                  Run once and exit (don't loop)
+    --port PORT            Android app geolocation port (default: $DEFAULT_GEO_PORT)
+    --verbose              Enable verbose logging
+    --help                 Show this help
+
+EXAMPLES:
+    $0                     # Run with default 30s interval
+    $0 --interval 60       # Run with 60s interval
+    $0 --once             # Run once and exit
+
+REQUIREMENTS:
+    - kubectl must be available and configured
+    - SSH access to phone nodes (passwordless via keys)
+    - Android geolocation app running on port $DEFAULT_GEO_PORT
+EOF
+}
+
+# Parse command line arguments
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --interval) INTERVAL="$2"; shift 2 ;;
+            --once) RUN_ONCE=true; shift ;;
+            --port) DEFAULT_GEO_PORT="$2"; shift 2 ;;
+            --verbose) VERBOSE=true; shift ;;
+            --help) show_help; exit 0 ;;
+            *) echo "Unknown option: $1"; show_help; exit 1 ;;
+        esac
+    done
+}
+
+# Check if kubectl is available and working
+check_kubectl() {
+    if ! command -v kubectl >/dev/null 2>&1; then
+        log_error "kubectl not found. Please install kubectl and configure access to the cluster."
+        exit 1
+    fi
+    
+    if ! kubectl cluster-info >/dev/null 2>&1; then
+        log_error "kubectl cannot connect to cluster. Please check your kubeconfig."
+        exit 1
+    fi
+    
+    log_verbose "kubectl is available and cluster is accessible"
+}
+
+# Get list of phone nodes
+get_phone_nodes() {
+    local nodes
+    # Get nodes with device-type=phone label, fall back to all nodes if none found
+    nodes=$(kubectl get nodes -l device-type=phone -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
+    
+    if [ -z "$nodes" ]; then
+        log_verbose "No nodes with device-type=phone found, checking all nodes..."
+        # Fall back to all nodes and filter for likely phone hostnames
+        nodes=$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -E '(phone|android|mobile)' || true)
+    fi
+    
+    if [ -z "$nodes" ]; then
+        log_warn "No phone nodes found. Make sure nodes are labeled with device-type=phone"
         return 1
     fi
     
-    # Extract server URL and token from kubeconfig
-    local k3s_url k3s_token
-    k3s_url=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
-    k3s_token=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
+    echo "$nodes"
+}
+
+# Query geolocation from a node via SSH
+query_node_location() {
+    local node="$1"
+    local port="$2"
     
-    if [ -z "$k3s_url" ] || [ -z "$k3s_token" ]; then
-        log_verbose "Could not extract API credentials from kubeconfig"
+    log_verbose "Querying location from node: $node (port: $port)"
+    
+    # Try to get location data via SSH and curl from the Android app
+    local location_data
+    location_data=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" \
+        "curl -s --connect-timeout 3 --max-time 5 http://localhost:$port/coordinates 2>/dev/null" 2>/dev/null || true)
+    
+    if [ -z "$location_data" ]; then
+        log_verbose "No location data from $node (app may not be running on port $port)"
         return 1
     fi
     
-    # Check if node-labeler service exists in kube-system namespace
-    local service_response
-    service_response=$(curl -s -k \
-        -H "Authorization: Bearer $k3s_token" \
-        "${k3s_url}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
+    # Parse JSON response (basic parsing without jq dependency)
+    local latitude longitude altitude city
+    latitude=$(echo "$location_data" | grep -o '"latitude":[^,}]*' | cut -d':' -f2 | tr -d ' "' || true)
+    longitude=$(echo "$location_data" | grep -o '"longitude":[^,}]*' | cut -d':' -f2 | tr -d ' "' || true)
+    altitude=$(echo "$location_data" | grep -o '"altitude":[^,}]*' | cut -d':' -f2 | tr -d ' "' || true)
+    city=$(echo "$location_data" | grep -o '"city":"[^"]*"' | cut -d':' -f2 | tr -d '"' || true)
     
-    if [ $? -eq 0 ] && echo "$service_response" | grep -q '"kind":"Service"'; then
-        log_verbose "✅ Node-labeler service found in cluster"
+    if [ -z "$latitude" ] || [ -z "$longitude" ]; then
+        log_warn "Invalid location data from $node: $location_data"
+        return 1
+    fi
+    
+    log_verbose "Retrieved coordinates from $node: lat=$latitude, lng=$longitude, alt=$altitude, city=$city"
+    echo "$latitude,$longitude,$altitude,$city"
+}
+
+# Update node labels with location data
+update_node_labels() {
+    local node="$1"
+    local location_data="$2"
+    
+    IFS=',' read -r latitude longitude altitude city <<< "$location_data"
+    
+    log_verbose "Updating labels for node $node..."
+    
+    # Build label update command
+    local labels=()
+    labels+=("phone.location/latitude=$latitude")
+    labels+=("phone.location/longitude=$longitude")
+    labels+=("phone.location/updated=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
+    labels+=("phone.location/status=active")
+    
+    if [ -n "$altitude" ] && [ "$altitude" != "null" ]; then
+        labels+=("phone.location/altitude=$altitude")
+    fi
+    
+    if [ -n "$city" ] && [ "$city" != "null" ]; then
+        # Replace spaces and special chars for k8s label compatibility
+        local city_clean
+        city_clean=$(echo "$city" | sed 's/[^a-zA-Z0-9-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        labels+=("phone.location/city=$city_clean")
+    fi
+    
+    # Also ensure device-type=phone label is set
+    labels+=("device-type=phone")
+    labels+=("node-role.kubernetes.io/phone=true")
+    
+    # Apply all labels at once
+    log_verbose "Applying ${#labels[@]} labels to node $node"
+    if kubectl label node "$node" "${labels[@]}" --overwrite >/dev/null 2>&1; then
+        log "✅ Updated location for $node: lat=$latitude, lng=$longitude"
+        if [ -n "$city" ] && [ "$city" != "null" ]; then
+            log "   City: $city"
+        fi
         return 0
     else
-        log_verbose "❌ Node-labeler service not found in cluster"
+        log_error "Failed to update labels for node $node"
         return 1
     fi
 }
 
-# Function to set device type via node-labeler service
-set_device_type_via_service() {
-    local device_type="$1"
-    local token="$2"
-    local node_name="$3"
-    
-    log_verbose "Setting device type '$device_type' for node '$node_name' via service..."
-    
-    # Get Kubernetes API credentials
-    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-    if [ ! -f "$kubeconfig" ]; then
-        log_verbose "Kubeconfig not found at $kubeconfig"
+# Update locations for all phone nodes
+update_all_locations() {
+    local nodes
+    if ! nodes=$(get_phone_nodes); then
         return 1
     fi
     
-    # Extract server URL and token from kubeconfig
-    local k3s_url k3s_token
-    k3s_url=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
-    k3s_token=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
+    local total_nodes=0
+    local success_count=0
     
-    if [ -z "$k3s_url" ] || [ -z "$k3s_token" ]; then
-        log_verbose "Could not extract API credentials from kubeconfig"
+    for node in $nodes; do
+        total_nodes=$((total_nodes + 1))
+        
+        log_verbose "Processing node: $node"
+        
+        local location_data
+        if location_data=$(query_node_location "$node" "$DEFAULT_GEO_PORT"); then
+            if update_node_labels "$node" "$location_data"; then
+                success_count=$((success_count + 1))
+            fi
+        else
+            log_warn "Could not retrieve location from $node"
+        fi
+    done
+    
+    log "Processed $total_nodes nodes, $success_count successful updates"
+    
+    if [ $success_count -eq 0 ] && [ $total_nodes -gt 0 ]; then
+        log_warn "No successful location updates. Check that:"
+        log_warn "  1. SSH access to phone nodes is working"
+        log_warn "  2. Android geolocation app is running on port $DEFAULT_GEO_PORT"
+        log_warn "  3. App is serving location data at /coordinates endpoint"
         return 1
     fi
     
-    # Get node-labeler service endpoint from kube-system namespace
-    local service_response service_ip service_port
-    service_response=$(curl -s -k \
-        -H "Authorization: Bearer $k3s_token" \
-        "${k3s_url}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
+    return 0
+}
+
+# Main function
+main() {
+    parse_args "$@"
     
-    if [ $? -ne 0 ] || ! echo "$service_response" | grep -q '"kind":"Service"'; then
-        log_verbose "Failed to get node-labeler service details"
-        return 1
+    log "Node Location Updater starting..."
+    log "Update interval: ${INTERVAL}s, Port: $DEFAULT_GEO_PORT, Run once: $RUN_ONCE"
+    
+    # Check prerequisites
+    check_kubectl
+    
+    if [ "$RUN_ONCE" = true ]; then
+        log "Running single location update..."
+        update_all_locations
+        exit $?
     fi
     
-    # Extract service IP and port
-    service_ip=$(echo "$service_response" | grep -o '"clusterIP":"[^"]*"' | cut -d'"' -f4)
-    service_port=$(echo "$service_response" | grep -o '"port":[0-9]*' | head -1 | cut -d':' -f2)
+    # Continuous mode
+    log "Starting continuous location monitoring (press Ctrl+C to stop)..."
     
-    if [ -z "$service_ip" ] || [ -z "$service_port" ]; then
-        log_verbose "Could not determine service endpoint"
-        return 1
-    fi
+    # Trap for graceful shutdown
+    trap 'log "Shutting down location updater..."; exit 0' INT TERM
     
-    # Call node-labeler service to set device type
-    local labeler_url="http://${service_ip}:${service_port}"
-    local request_data="{\"deviceType\":\"$device_type\"}"
+    while true; do
+        update_all_locations || log_warn "Update cycle failed, continuing..."
+        
+        log_verbose "Waiting ${INTERVAL}s until next update..."
+        sleep "$INTERVAL"
+    done
+}
+
+# Run main function if script is executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
+LOCATION_SCRIPT
+
+    # Make the script executable
+    sudo chmod +x "$script_path"
     
-    log_verbose "Calling node-labeler service at $labeler_url"
-    local response
-    response=$(curl -s --connect-timeout 10 --max-time 15 \
-        -X POST \
-        -H "Content-Type: application/json" \
-        -H "Authorization: Bearer $k3s_token" \
-        -d "$request_data" \
-        "${labeler_url}/api/v1/node/${node_name}/device-type" 2>/dev/null)
+    # Create systemd service for automatic location monitoring (optional)
+    local service_file="/etc/systemd/system/location-monitor.service"
     
-    if [ $? -eq 0 ] && echo "$response" | grep -q '"success":true'; then
-        log_verbose "✅ Node labeling request successful"
-        return 0
+    log_verbose "Creating location monitoring systemd service..."
+    sudo tee "$service_file" > /dev/null << EOF
+[Unit]
+Description=K3s Node Location Monitor
+After=network.target k3s.service
+Wants=k3s.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=$script_path --interval 60 --verbose
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Enable but don't start the service (let user decide)
+    sudo systemctl daemon-reload
+    sudo systemctl enable location-monitor
+    
+    log "✅ Location monitoring setup complete"
+    log "   Script installed at: $script_path"
+    log "   Systemd service: location-monitor (enabled but not started)"
+    log ""
+    log "   To start monitoring manually:"
+    log "     $script_path --once                 # Run once"
+    log "     $script_path --interval 30          # Run every 30s"
+    log ""
+    log "   To start as system service:"
+    log "     sudo systemctl start location-monitor"
+    log ""
+    log "   Prerequisites for phone nodes:"
+    log "     1. SSH passwordless access from server to phone nodes"
+    log "     2. Android geolocation app running on port 8080"
+    log "     3. App serving JSON data at /coordinates endpoint"
+    
+    return 0
+}
+
+# Function to simply label the current node as a phone
+simple_label_node_as_phone() {
+    log_step "Labeling current node as a phone..."
+    
+    local node_name
+    node_name=$(hostname)
+    
+    log_verbose "Applying phone labels to node: $node_name"
+    
+    # Simple labeling with kubectl
+    if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
+        kubectl label node "$node_name" device-type=phone --overwrite >/dev/null 2>&1 || true
+        kubectl label node "$node_name" node-role.kubernetes.io/phone=true --overwrite >/dev/null 2>&1 || true
+        
+        # Verify labels were applied
+        if kubectl get node "$node_name" -o jsonpath='{.metadata.labels.device-type}' 2>/dev/null | grep -q "phone"; then
+            log "✅ Node $node_name successfully labeled as phone"
+        else
+            log_warn "Failed to verify phone label on node $node_name"
+        fi
     else
-        log_verbose "❌ Node labeling request failed"
-        log_verbose "Response: ${response:-'No response'}"
-        return 1
+        log_warn "kubectl not available, skipping node labeling"
     fi
 }
 
 # Function to label the current node as a phone for deployment targeting
 label_node_as_phone() {
-    log_step "Labeling node as 'phone' for deployment targeting..."
-
-    local node_name
-    node_name=$(hostname)
-
-    # Always use the node-labeler service (required for proper agent labeling)
-    log_verbose "Using node-labeler service for labeling (required)..."
-    
-    # Check if node-labeler service is available
-    if ! check_node_labeler_service; then
-        log_error "❌ Node-labeler service not available in cluster"
-        log_error "❌ This service is required for agent nodes to label themselves"
-        log_error "❌ Make sure the node-labeler service was deployed on the server"
-        echo ""
-        log_error "To fix this issue:"
-        log_error "1. On the server node, ensure node-labeler service is deployed"
-        log_error "2. Check service status: kubectl get deployment node-labeler-service -n kube-system"
-        log_error "3. Check service logs: kubectl logs deployment/node-labeler-service -n kube-system"
-        return 1
-    fi
-
-    log_verbose "Node labeler service is available, proceeding with service-based labeling..."
-    
-    # Set device type via service (this is the primary and required method)
-    if set_device_type_via_service "phone" "$K3S_TOKEN" "$node_name"; then
-        log "✅ Device labels set successfully via node labeler service"
-        log "✅ Node $node_name labeled as device-type=phone"
-        log "🏷️  Using node-labeler service for all labeling operations"
-        return 0
-    else
-        log_error "❌ Failed to set device type via node labeler service"
-        log_error "❌ Node labeling is required for proper agent functionality"
-        echo ""
-        log_error "Troubleshooting steps:"
-        log_error "1. Check if node-labeler service is running: kubectl get pods -n kube-system -l app=node-labeler-service"
-        log_error "2. Check service logs: kubectl logs deployment/node-labeler-service -n kube-system"
-        log_error "3. Verify service endpoint: kubectl get service node-labeler-service -n kube-system"
-        log_error "4. Check network connectivity between agent and service"
-        return 1
-    fi
+    # Use the simplified labeling approach
+    simple_label_node_as_phone
 }
 
-# Function to label node via direct Kubernetes API (fallback method)
-label_node_via_api() {
-    local node_name="$1"
-    
-    log_verbose "Attempting to label node '$node_name' via direct Kubernetes API..."
-    
-    # Get Kubernetes API credentials
-    local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-    if [ ! -f "$kubeconfig" ]; then
-        log_verbose "Kubeconfig not found at $kubeconfig"
-        return 1
-    fi
-    
-    # Extract server URL and token from kubeconfig
-    local k3s_url k3s_token
-    k3s_url=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
-    k3s_token=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
-    
-    if [ -z "$k3s_url" ] || [ -z "$k3s_token" ]; then
-        log_verbose "Could not extract API credentials from kubeconfig"
-        return 1
-    fi
-    
-    # Create patch data for node labels
-    local patch_data='{
-        "metadata": {
-            "labels": {
-                "device-type": "phone",
-                "node-role.kubernetes.io/phone": "true"
-            }
-        }
-    }'
-    
-    # Apply labels using Kubernetes API
-    local response
-    response=$(curl -s -k -X PATCH \
-        -H "Authorization: Bearer $k3s_token" \
-        -H "Content-Type: application/merge-patch+json" \
-        -d "$patch_data" \
-        "${k3s_url}/api/v1/nodes/$node_name" 2>/dev/null)
-    
-    if [ $? -eq 0 ] && ! echo "$response" | grep -q '"code":[45][0-9][0-9]'; then
-        log_verbose "✅ Direct API labeling successful"
-        return 0
-    else
-        log_verbose "❌ Direct API labeling failed"
-        log_verbose "Response: ${response:-'No response'}"
-        return 1
-    fi
-}
+
 
 # Function to check geolocation provider connectivity and basic functionality
 check_geolocation_provider() {
@@ -3151,33 +3102,17 @@ install_k3s_agent() {
     # Test connectivity to K3s server after installation
     test_k3s_server_connectivity_post_install
 
-    # Label the node as a phone for deployment targeting
-    label_node_as_phone
+    # Simple phone node labeling
+    simple_label_node_as_phone
 
-    # Check if reverse geolocation provider is available and functional
-    if ! check_geolocation_provider; then
-        log_warn "Geocoder service not accessible from agent node"
-        log_warn "Geolocation monitoring will have limited functionality"
-    else
-        # Run comprehensive tests on the geocoder service
-        log_verbose "Running comprehensive geocoder tests from agent node..."
-        if test_geocoder_comprehensive; then
-            log "✅ Geocoder service fully functional from agent node"
-        else
-            log_warn "⚠️  Geocoder service has limited functionality from agent node"
-            log_warn "Some geolocation features may not work properly"
-        fi
-    fi
+    log "✅ Agent node setup complete with simplified location monitoring"
+    log "   Location updates will be handled by the server-side location monitor"
+    log "   Ensure Android geolocation app is running on port 8080"
 
-    # Set up geolocation monitoring service
-    if setup_geolocation_service; then
-        log "✅ Geolocation monitoring service setup completed"
-    else
-        log_error "❌ Geolocation monitoring service setup failed - this is critical for agent functionality"
-        log_error "The geolocation service is required for proper node location labeling and monitoring"
-        log_error "Without it, the agent node will not report location data to the cluster"
-        exit $EXIT_CONFIG_FAILED
-    fi
+    # Note: Geolocation monitoring is now handled by the server via SSH
+    log "📍 Location monitoring: Server-side SSH approach (no agent service needed)"
+    log "   The server will query this agent's Android app directly via SSH"
+    log "   No additional geolocation service is installed on agent nodes"
 
     # Show agent setup completion information
     show_agent_completion_info
@@ -3406,11 +3341,19 @@ show_agent_setup_info() {
     log "K3s Server Setup Complete!"
     log "=============================================="
     echo ""
+    log "✅ Simplified SSH-based location monitoring installed"
+    log "   Server-side location updates via SSH (no complex services)"
+    log "   Location monitoring service: location-monitor.service"
+    echo ""
     log "K3s Token (for agent nodes): $token"
     log "Server URL: $server_url"
     echo ""
     log "To get the token manually anytime:"
     echo "sudo cat /var/lib/rancher/k3s/server/node-token"
+    echo ""
+    log "To check location monitoring:"
+    echo "sudo systemctl status location-monitor"
+    echo "sudo /usr/local/bin/update-node-locations.sh --help"
     echo ""
     log "To add agent nodes, use one of the following methods:"
     echo ""
@@ -3459,6 +3402,31 @@ $token
 $server_url
 \`\`\`
 
+## Simplified Location Monitoring
+
+This cluster uses **simplified SSH-based location monitoring**:
+
+- ✅ **Server-side location updates**: No complex services on agent nodes
+- ✅ **SSH-based querying**: Direct connection to Android apps
+- ✅ **No authentication issues**: Simple SSH keys + kubectl commands
+- ✅ **Systemd service**: \`location-monitor.service\` on server
+- ✅ **Easy debugging**: Transparent operation with clear logs
+
+### Location Monitoring Commands (Server)
+\`\`\`bash
+# Check location monitoring status
+sudo systemctl status location-monitor
+
+# Manual location update
+sudo /usr/local/bin/update-node-locations.sh --once --verbose
+
+# View location monitoring logs
+sudo journalctl -u location-monitor -f
+
+# Test connectivity to phone nodes
+ssh phone-hostname "curl -s http://localhost:8080/coordinates"
+\`\`\`
+
 ## Setup Methods
 
 ⚠️ **Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, close the Linux Terminal App tab and reinstall Debian.
@@ -3483,6 +3451,39 @@ $cmd_download3
 ## Notes
 - Option 1 auto-generates unique hostnames using timestamp-based naming
 - For manual setup (Options 2-3), replace \`AGENT_HOSTNAME\` with your desired hostname
+
+## Location Monitoring Setup (After Agent Installation)
+
+For automatic location updates, set up SSH connectivity from server to agent nodes:
+
+### 1. Generate SSH Key (on server, if not exists)
+\`\`\`bash
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+\`\`\`
+
+### 2. Copy SSH Key to Each Agent Node
+\`\`\`bash
+ssh-copy-id user@agent-hostname
+\`\`\`
+
+### 3. Test SSH Connectivity
+\`\`\`bash
+ssh agent-hostname "echo 'SSH working'"
+\`\`\`
+
+### 4. Test Android App Endpoint
+\`\`\`bash
+ssh agent-hostname "curl -s http://localhost:8080/coordinates"
+\`\`\`
+
+### 5. Verify Location Updates
+\`\`\`bash
+# Run manual update
+sudo /usr/local/bin/update-node-locations.sh --once --verbose
+
+# Check node labels
+kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
+\`\`\`
 EOF
 
     if [ "$LOCAL_MODE" = false ] && [ -z "$TAILSCALE_AUTH_KEY" ]; then
@@ -3814,6 +3815,55 @@ parse_arguments() {
             esac
         done
         return 0
+    fi
+
+    # Check for integrated script commands
+    if [ "$1" = "clean" ]; then
+        echo "🧹 Running cluster cleanup..."
+        # Source and run the clean script functionality
+        if [ -f "$(dirname "$0")/clean.sh" ]; then
+            bash "$(dirname "$0")/clean.sh" "${@:2}"
+        else
+            log_error "clean.sh not found in script directory"
+            exit $EXIT_FAILURE
+        fi
+        exit $?
+    fi
+
+    if [ "$1" = "status" ]; then
+        echo "📊 Showing cluster status..."
+        # Source and run the status script functionality
+        if [ -f "$(dirname "$0")/status.sh" ]; then
+            bash "$(dirname "$0")/status.sh" "${@:2}"
+        else
+            log_error "status.sh not found in script directory"
+            exit $EXIT_FAILURE
+        fi
+        exit $?
+    fi
+
+    if [ "$1" = "reset" ]; then
+        echo "🔄 Resetting cluster (WARNING: This is destructive!)..."
+        # Source and run the reset script functionality
+        if [ -f "$(dirname "$0")/reset.sh" ]; then
+            bash "$(dirname "$0")/reset.sh" "${@:2}"
+        else
+            log_error "reset.sh not found in script directory"
+            exit $EXIT_FAILURE
+        fi
+        exit $?
+    fi
+
+    if [ "$1" = "test-location" ]; then
+        echo "📍 Testing simplified location monitoring..."
+        # Source and run the test-simplified-location script functionality
+        if [ -f "$(dirname "$0")/test-simplified-location.sh" ]; then
+            bash "$(dirname "$0")/test-simplified-location.sh" "${@:2}"
+        else
+            log_error "test-simplified-location.sh not found in script directory"
+            exit $EXIT_FAILURE
+        fi
+        exit $?
     fi
 
     # Check if first argument is '--local'

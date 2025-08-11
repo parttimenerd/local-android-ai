@@ -68,7 +68,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>me.bechberger.k3s.GeocoderServer</mainClass>
+                            <mainClass>me.bechberger.k3s.geocoder.GeocoderServer</mainClass>
                         </manifest>
                     </archive>
                 </configuration>

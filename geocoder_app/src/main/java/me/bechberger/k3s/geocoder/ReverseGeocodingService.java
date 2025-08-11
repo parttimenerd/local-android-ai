@@ -1,28 +1,47 @@
 package me.bechberger.k3s.geocoder;
 
 import java.io.*;
-import java.net.*;
-import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.zip.*;
 
 /**
  * Reverse geocoding service using GeoNames data.
- * Downloads and caches city data for multiple countries to resolve coordinates to city names.
+ * Optimized for minimal memory usage - currently loads German cities only with English names.
+ * Easily extensible to support additional countries.
  */
 public class ReverseGeocodingService {
     
-    public record City(String name, String country, double lat, double lon, int population) {}
+    // Minimal City record - optimized for heap size (no population stored)
+    public record City(String name, String country, double lat, double lon) {}
     
-    private static final String GEONAMES_BASE_URL = "https://download.geonames.org/export/dump/";
     private static final String DATA_DIR = "geonames-data";
     private static final Map<String, List<City>> COUNTRY_CACHE = new ConcurrentHashMap<>();
     
-    // Countries to support (ISO 2-letter codes)
-    private static final Set<String> SUPPORTED_COUNTRIES = Set.of(
-        "DE", "US", "GB", "FR", "IT", "ES", "NL", "BE", "AT", "CH", "DK", "SE", "NO", "FI", "PL"
+    // Default countries to support (ISO 2-letter codes) - optimized for memory usage
+    // Currently only Germany is loaded by default to minimize memory footprint
+    // Add more countries here as needed: "US", "GB", "FR", "IT", "ES", "NL", "BE", "AT", "CH", "DK", "SE", "NO", "FI", "PL"
+    private static final Set<String> DEFAULT_COUNTRIES = Set.of("DE");
+    
+    // City feature codes to include (major cities and administrative centers only for memory optimization)
+    // Balanced set to get good coverage while maintaining low memory usage
+    // See: http://www.geonames.org/export/codes.html
+    private static final Set<String> CITY_FEATURE_CODES = Set.of(
+        "PPL",     // populated place
+        "PPLA",    // seat of a first-order administrative division
+        "PPLA2",   // seat of a second-order administrative division  
+        "PPLA3",   // seat of a third-order administrative division
+        "PPLA4",   // seat of a fourth-order administrative division
+        "PPLC",    // capital of a political entity
+        "PPLG",    // seat of government of a political entity
+        "PPLF"     // farm village (for better rural coverage)
     );
+    
+    // Reduced minimum population threshold to get better coverage
+    // Administrative centers are always included regardless of population
+    private static final int MIN_POPULATION = 1000;
+    
+    // Maximum city name length for memory optimization
+    private static final int MAX_NAME_LENGTH = 50;
     
     public static class ReverseGeocoder {
         private final List<City> cities;
@@ -68,23 +87,49 @@ public class ReverseGeocodingService {
     }
     
     /**
-     * Get reverse geocoder with cities from multiple countries
+     * Get reverse geocoder with cities from default countries (optimized for memory usage)
      */
-    public static ReverseGeocoder getGlobalGeocoder() {
+    public static ReverseGeocoder getDefaultGeocoder() {
+        return getGeocoderForCountries(DEFAULT_COUNTRIES);
+    }
+    
+    /**
+     * Get reverse geocoder with cities from specified countries
+     */
+    public static ReverseGeocoder getGeocoderForCountries(Set<String> countries) {
         List<City> allCities = new ArrayList<>();
         
-        for (String countryCode : SUPPORTED_COUNTRIES) {
+        for (String countryCode : countries) {
             try {
                 List<City> cities = loadCountryCities(countryCode);
                 allCities.addAll(cities);
-                System.out.println("Loaded " + cities.size() + " cities from " + countryCode);
+                System.out.printf("Loaded %d cities from %s%n", cities.size(), countryCode);
             } catch (Exception e) {
-                System.err.println("Failed to load cities for " + countryCode + ": " + e.getMessage());
+                System.err.printf("Failed to load cities for %s: %s%n", countryCode, e.getMessage());
             }
         }
         
-        System.out.println("Total cities loaded: " + allCities.size());
+        System.out.printf("Total cities loaded: %d (estimated memory: %.1f MB)%n", 
+            allCities.size(), estimateMemoryUsage(allCities.size()));
         return new ReverseGeocoder(allCities);
+    }
+    
+    /**
+     * Legacy method - now uses default countries only
+     * @deprecated Use getDefaultGeocoder() or getGeocoderForCountries() instead
+     */
+    @Deprecated
+    public static ReverseGeocoder getGlobalGeocoder() {
+        System.out.println("Warning: getGlobalGeocoder() is deprecated and now loads only default countries for memory optimization");
+        return getDefaultGeocoder();
+    }
+    
+    /**
+     * Estimate memory usage for loaded cities (optimized without population field)
+     */
+    private static double estimateMemoryUsage(int cityCount) {
+        // Optimized estimate: ~80 bytes per city record (name + country + lat + lon, no population)
+        return (cityCount * 80.0) / (1024 * 1024);
     }
     
     /**
@@ -96,7 +141,7 @@ public class ReverseGeocodingService {
     }
     
     /**
-     * Load cities for a specific country
+     * Load cities for a specific country from packaged resources
      */
     public static List<City> loadCountryCities(String countryCode) throws IOException {
         // Check cache first
@@ -104,84 +149,74 @@ public class ReverseGeocodingService {
             return COUNTRY_CACHE.get(countryCode);
         }
         
-        // Create data directory
-        Path dataDir = Path.of(DATA_DIR);
-        if (!Files.exists(dataDir)) {
-            Files.createDirectories(dataDir);
-        }
+        // Load cities from packaged resource file
+        String resourcePath = "/" + DATA_DIR + "/" + countryCode + ".txt";
+        System.out.printf("Loading cities from resource: %s%n", resourcePath);
         
-        String zipFile = dataDir.resolve(countryCode + ".zip").toString();
-        String txtFile = dataDir.resolve(countryCode + ".txt").toString();
-        
-        // Download if not already there
-        if (!Files.exists(Path.of(zipFile))) {
-            System.out.println("Downloading GeoNames " + countryCode + ".zip...");
-            try {
-                String url = GEONAMES_BASE_URL + countryCode + ".zip";
-                try (InputStream in = URI.create(url).toURL().openStream()) {
-                    Files.copy(in, Path.of(zipFile), StandardCopyOption.REPLACE_EXISTING);
-                }
-                System.out.println("Downloaded " + countryCode + ".zip");
-            } catch (Exception e) {
-                System.err.println("Failed to download " + countryCode + ".zip: " + e.getMessage());
-                throw new IOException("Could not download GeoNames data for " + countryCode, e);
-            }
-        }
-        
-        // Unzip if needed
-        if (!Files.exists(Path.of(txtFile))) {
-            System.out.println("Extracting " + countryCode + ".txt...");
-            try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile))) {
-                ZipEntry entry;
-                while ((entry = zis.getNextEntry()) != null) {
-                    if (entry.getName().equals(countryCode + ".txt")) {
-                        Files.copy(zis, Path.of(txtFile), StandardCopyOption.REPLACE_EXISTING);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // Load cities from file
-        System.out.println("Loading cities from " + countryCode + ".txt...");
         List<City> cities = new ArrayList<>();
+        int totalLines = 0;
+        int filteredLines = 0;
         
-        try (BufferedReader reader = new BufferedReader(new FileReader(txtFile))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] parts = line.split("\t");
-                if (parts.length < 15) continue;
-                
-                // Only include populated places
-                if (!parts[6].equals("P")) continue;
-                
-                String featureCode = parts[7];
-                // Include various types of populated places
-                if (!Set.of("PPL", "PPLA", "PPLA2", "PPLA3", "PPLA4", "PPLC", "PPLF", "PPLG", "PPLL", "PPLR", "PPLS", "STLMT").contains(featureCode)) {
-                    continue;
-                }
-                
-                try {
-                    String name = parts[1];
-                    double lat = Double.parseDouble(parts[4]);
-                    double lon = Double.parseDouble(parts[5]);
-                    int population = parts[14].isEmpty() ? 0 : Integer.parseInt(parts[14]);
+        try (InputStream inputStream = ReverseGeocodingService.class.getResourceAsStream(resourcePath)) {
+            if (inputStream == null) {
+                throw new IOException("Resource not found: " + resourcePath + ". Available countries might be limited.");
+            }
+            
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    totalLines++;
+                    String[] parts = line.split("\t");
+                    if (parts.length < 15) continue;
                     
-                    // Only include places with some population or major cities
-                    if (population > 1000 || Set.of("PPLA", "PPLA2", "PPLC").contains(featureCode)) {
-                        cities.add(new City(name, countryCode, lat, lon, population));
+                    // Only include populated places (feature class P)
+                    if (!"P".equals(parts[6])) continue;
+                    
+                    String featureCode = parts[7];
+                    // Only include major cities and administrative centers for memory optimization
+                    if (!CITY_FEATURE_CODES.contains(featureCode)) {
+                        continue;
                     }
-                } catch (NumberFormatException e) {
-                    // Skip invalid entries
-                    continue;
+                    
+                    try {
+                        // Use ASCII name (parts[2]) for consistent English naming, fallback to main name
+                        String asciiName = parts[2].trim();
+                        String mainName = parts[1].trim();
+                        String cityName = !asciiName.isEmpty() ? asciiName : mainName;
+                        
+                        // Skip entries with non-ASCII characters or too long names for memory optimization
+                        if (!isAsciiName(cityName) || cityName.length() > MAX_NAME_LENGTH) {
+                            continue;
+                        }
+                        
+                        // Limit city name length for memory optimization
+                        if (cityName.length() > 50) {
+                            cityName = cityName.substring(0, 50);
+                        }
+                        
+                        double lat = Double.parseDouble(parts[4]);
+                        double lon = Double.parseDouble(parts[5]);
+                        int population = parts[14].isEmpty() ? 0 : Integer.parseInt(parts[14]);
+                        
+                        // Include cities based on population or administrative importance (but don't store population)
+                        boolean isAdminCenter = CITY_FEATURE_CODES.contains(featureCode);
+                        if (population >= MIN_POPULATION || isAdminCenter) {
+                            cities.add(new City(cityName, countryCode, lat, lon));
+                            filteredLines++;
+                        }
+                    } catch (NumberFormatException e) {
+                        // Skip invalid entries
+                        continue;
+                    }
                 }
             }
         }
         
-        // Sort by population (largest first) to prefer major cities
-        cities.sort((a, b) -> Integer.compare(b.population(), a.population()));
+        // Sort by name for consistent ordering (since we don't store population)
+        cities.sort(Comparator.comparing(City::name));
         
-        System.out.println("Loaded " + cities.size() + " cities from " + countryCode);
+        System.out.printf("Processed %d lines, filtered to %d cities from %s%n", 
+            totalLines, filteredLines, countryCode);
         
         // Cache the result
         COUNTRY_CACHE.put(countryCode, cities);
@@ -190,42 +225,43 @@ public class ReverseGeocodingService {
     }
     
     /**
-     * Test the reverse geocoding service
+     * Check if a name contains only ASCII characters for memory optimization
+     */
+    private static boolean isAsciiName(String name) {
+        return name.chars().allMatch(c -> c < 128);
+    }
+    
+    /**
+     * Test the reverse geocoding service (memory optimized)
      */
     public static void main(String[] args) throws Exception {
-        // Test with some known coordinates
+        // Test with some known German coordinates
         double berlinLat = 52.5200, berlinLon = 13.4050;
-        double londonLat = 51.5074, londonLon = -0.1278;
-        double nyLat = 40.7128, nyLon = -74.0060;
+        double munichLat = 48.1351, munichLon = 11.5820;
+        double hamburgLat = 53.5511, hamburgLon = 9.9937;
         
-        System.out.println("Testing reverse geocoding with local GeoNames data...");
+        System.out.println("Testing memory-optimized reverse geocoding with German cities...");
         
-        // Test with local data
-        System.out.println("\nLocal data:");
-        ReverseGeocoder deGeocoder = getCountryGeocoder("DE");
-        City nearest = deGeocoder.findNearestWithinRadius(berlinLat, berlinLon, 50);
+        // Test with default geocoder (German cities only)
+        System.out.println("\nDefault geocoder (German cities, memory optimized):");
+        ReverseGeocoder defaultGeocoder = getDefaultGeocoder();
+        
+        City nearest = defaultGeocoder.findNearestWithinRadius(berlinLat, berlinLon, 50);
         if (nearest != null) {
-            System.out.println("Berlin area: " + nearest.name() + " (pop: " + nearest.population() + ")");
+            System.out.printf("Berlin area: %s%n", nearest.name());
         }
         
-        ReverseGeocoder gbGeocoder = getCountryGeocoder("GB");
-        nearest = gbGeocoder.findNearestWithinRadius(londonLat, londonLon, 50);
+        nearest = defaultGeocoder.findNearestWithinRadius(munichLat, munichLon, 50);
         if (nearest != null) {
-            System.out.println("London area: " + nearest.name() + " (pop: " + nearest.population() + ")");
+            System.out.printf("Munich area: %s%n", nearest.name());
         }
         
-        // Test with global geocoder
-        System.out.println("\nGlobal geocoder:");
-        ReverseGeocoder globalGeocoder = getGlobalGeocoder();
-        
-        nearest = globalGeocoder.findNearestWithinRadius(berlinLat, berlinLon, 50);
+        nearest = defaultGeocoder.findNearestWithinRadius(hamburgLat, hamburgLon, 50);
         if (nearest != null) {
-            System.out.println("Berlin: " + nearest.name() + ", " + nearest.country());
+            System.out.printf("Hamburg area: %s%n", nearest.name());
         }
         
-        nearest = globalGeocoder.findNearestWithinRadius(londonLat, londonLon, 50);
-        if (nearest != null) {
-            System.out.println("London: " + nearest.name() + ", " + nearest.country());
-        }
+        System.out.println("\nGeocoder supports easy extension to other countries when needed.");
+        System.out.printf("Example: getGeocoderForCountries(Set.of(\"DE\", \"AT\")) would add Austrian cities.%n");
     }
 }

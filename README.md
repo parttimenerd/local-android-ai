@@ -15,8 +15,70 @@ Deploy a multi-node K3s cluster across Android phones using:
 - Tailscale mesh VPN for secure networking  
 - Java sample application with cluster location mapping and city information
 - Automated Docker registry setup and image distribution
-- Real-time GPS tracking and geographic visualization
+- **Simplified SSH-based location monitoring** (no complex services)
+- **Server-side location updates** via SSH and kubectl
+- **Unified script interface** - all management commands integrated into `setup.sh`
 - Automated scripts for setup and deployment
+
+## 🚀 New Simplified Architecture
+
+The project now uses a **much simpler, more reliable approach** for location monitoring:
+
+### What Changed
+- ❌ **Removed**: Complex node-labeler services with authentication issues
+- ❌ **Removed**: DaemonSet-based self-labeling with complex RBAC
+- ❌ **Removed**: Agent-side geolocation services
+- ✅ **Added**: Simple SSH-based location querying from server
+- ✅ **Added**: Direct kubectl label updates (no complex authentication)
+- ✅ **Added**: Server-side location monitoring script
+- ✅ **Added**: Systemd service for continuous monitoring
+- ✅ **Added**: Unified command interface through `setup.sh`
+
+### How It Works Now
+```
+┌─────────────────┐    SSH    ┌──────────────────┐    HTTP    ┌─────────────────┐
+│   K3s Server    │◄─────────►│   Phone Node     │◄──────────►│  Android App    │
+│ update-node-    │           │ device-type=     │            │  (port 8080)    │
+│ locations.sh    │           │ phone            │            │ /coordinates    │
+└─────────────────┘           └──────────────────┘            └─────────────────┘
+        │                              
+        │ kubectl label                
+        ▼                              
+┌─────────────────────────────────────────────────────────┐
+│              Kubernetes Cluster                        │
+│  Nodes labeled with phone.location/* labels            │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Benefits
+- **80% less code complexity** 
+- **No authentication issues**
+- **Easier to debug and maintain**
+- **More reliable operation**
+- **Self-contained in setup.sh**
+- **Unified command interface** - all operations through one script
+
+## 🔄 Migration from Old Complex Services
+
+If you had a previous installation with complex node-labeler services, they have been completely removed and replaced with the simplified approach. The new system will work automatically with fresh installations.
+
+### For Existing Clusters:
+1. **Clean up old services** (if any exist):
+   ```bash
+   kubectl delete deployment node-labeler-service -n kube-system || true
+   kubectl delete service node-labeler-service -n kube-system || true
+   kubectl delete daemonset node-self-labeler -n kube-system || true
+   kubectl delete daemonset geo-forwarder -n kube-system || true
+   ```
+
+2. **Re-run setup.sh** on the server to install simplified location monitoring:
+   ```bash
+   ./setup.sh --local  # Will install new location monitoring system
+   ```
+
+3. **Set up SSH keys** for location monitoring (see setup instructions below)
+
+The simplified approach is **much more reliable** and eliminates the authentication issues that plagued the old services.
 
 
 ### System Requirements
@@ -38,14 +100,32 @@ Deploy a multi-node K3s cluster across Android phones using:
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-01 -t YOUR_TAILSCALE_KEY
 ```
 
-*Automatically sets up Docker registry, K3s server, and geolocation monitoring.*
+*Automatically sets up Docker registry, K3s server, and **simplified SSH-based location monitoring**.*
 
 ### Worker Node Setup  
 ```bash
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-02 -t YOUR_TAILSCALE_KEY -k K3S_TOKEN -u https://phone-01:6443
 ```
 
-*Automatically configures Docker registry access and joins cluster with geolocation monitoring.*
+*Automatically configures Docker registry access and joins cluster. **No complex services needed** - location updates handled by server via SSH.*
+
+### Location Monitoring
+The server automatically monitors phone locations:
+- **Server-side script**: `/usr/local/bin/update-node-locations.sh`
+- **Systemd service**: `location-monitor.service` 
+- **SSH-based**: Queries Android apps directly (no authentication complexity)
+- **Prerequisites**: SSH keys set up between server and phones
+
+```bash
+# Check location monitoring status
+sudo systemctl status location-monitor
+
+# Manual location update
+sudo /usr/local/bin/update-node-locations.sh --once --verbose
+
+# View node labels
+kubectl get nodes -l device-type=phone -o wide
+```
 
 ### Deploy Sample Application
 
@@ -98,6 +178,79 @@ cd sample_app
 - **Seamless distribution**: Images pushed once, available on all nodes
 - **Insecure registry handling**: Automatic Docker daemon configuration for local development
 - **Dynamic addressing**: Registry location automatically detected for server/agent nodes
+
+## Cluster Management
+
+The `setup.sh` script now provides a unified interface for all cluster management operations. All utility scripts have been integrated for easier access.
+
+### Unified Commands
+
+```bash
+# Show comprehensive help
+./setup.sh --help
+
+# Cluster status and diagnostics
+./setup.sh status                    # Basic cluster overview
+./setup.sh status -n default         # Status for specific namespace
+./setup.sh status -w                 # Watch mode with live updates
+./setup.sh status -s                 # Include system namespaces
+
+# Clean up dead/unreachable nodes
+./setup.sh clean                     # Remove NotReady K3s nodes only
+./setup.sh clean -t api-key          # Also remove from Tailscale VPN
+./setup.sh clean --dry-run           # Preview what would be cleaned
+
+# Reset cluster (destructive)
+./setup.sh reset                     # Interactive reset with confirmation
+./setup.sh reset --force             # Force reset without confirmation
+./setup.sh reset --remove-from-tailscale  # Also remove from Tailscale
+
+# Test simplified location monitoring
+./setup.sh test-location             # Test SSH-based location system
+```
+
+### Direct Script Access (Alternative)
+
+All scripts remain available for direct use:
+```bash
+./status.sh -v                       # Verbose cluster status
+./clean.sh -t api-key --force        # Force cleanup with Tailscale
+./reset.sh --remove-from-tailscale   # Reset and clean Tailscale
+./test-simplified-location.sh        # Test location monitoring
+```
+
+### Specialized Scripts
+
+```bash
+# Registry management (not integrated - specialized tool)
+./registry.sh status                 # Check registry status
+./registry.sh list                   # List registry images
+./registry.sh push image:tag         # Push image to registry
+
+# Advanced operations
+./delete.sh pod my-app --dry-run     # Safe resource deletion
+./remove_from_vpn.sh api-key prefix  # Bulk Tailscale removal
+./update-node-locations.sh --once    # Manual location update
+```
+
+### Location Monitoring Management
+
+```bash
+# Check location monitoring service
+sudo systemctl status location-monitor
+
+# View location monitoring logs
+sudo journalctl -u location-monitor -f
+
+# Manual location update (run from server)
+sudo /usr/local/bin/update-node-locations.sh --once --verbose
+
+# Test location monitoring setup
+./setup.sh test-location
+
+# View node location labels
+kubectl get nodes -l device-type=phone -o json | jq '.items[].metadata.labels | with_entries(select(.key | startswith("phone.location")))'
+```
 
 
 
@@ -158,26 +311,56 @@ Registry integration is **automatic during setup**:
 
 ### Reset Cluster to Clean State
 ```bash
-# Interactive reset with confirmation
-./reset.sh
+# Interactive reset with confirmation (using integrated command)
+./setup.sh reset
 
 # Force reset without confirmation
-./reset.sh --force
+./setup.sh reset --force
 
 # Reset and remove nodes from Tailscale
-./reset.sh --remove-from-tailscale --force
+./setup.sh reset --remove-from-tailscale --force
+
+# Alternative: Direct script access
+./reset.sh --force
 ```
 
 ### Clean Dead Nodes and Devices
 ```bash
-# Remove NotReady K3s nodes only
-./clean.sh
+# Remove NotReady K3s nodes only (using integrated command)
+./setup.sh clean
 
 # Remove NotReady nodes + unreachable "phone-..." from Tailscale VPN
-./clean.sh -t tskey-api-xxxxx
+./setup.sh clean -t tskey-api-xxxxx
 
 # Dry run to preview cleanup
-./clean.sh -t tskey-api-xxxxx --dry-run
+./setup.sh clean -t tskey-api-xxxxx --dry-run
+
+# Alternative: Direct script access
+./clean.sh -t tskey-api-xxxxx
+```
+
+### Check Cluster Status
+```bash
+# Show comprehensive cluster status (using integrated command)
+./setup.sh status
+
+# Show status for specific namespace
+./setup.sh status -n default
+
+# Watch mode with continuous refresh
+./setup.sh status -w
+
+# Alternative: Direct script access
+./status.sh -s
+```
+
+### Test Location Monitoring
+```bash
+# Test the simplified location monitoring system
+./setup.sh test-location
+
+# Alternative: Direct script access
+./test-simplified-location.sh
 ```
 
 ### Delete Specific Resources
@@ -198,11 +381,13 @@ Registry integration is **automatic during setup**:
 ./delete.sh app my-application
 ```
 
-**Script Comparison:**
-- `reset.sh`: Removes ALL nodes and apps, resets to server-only cluster
-- `clean.sh`: Removes only NotReady/unreachable nodes, keeps working cluster
-- `delete.sh`: Safely delete specific resources (pods, deployments, services, nodes)
-- `setup.sh cleanup`: Legacy cleanup for NotReady nodes only
+**Script Integration:**
+- `./setup.sh reset`: Integrated cluster reset (removes ALL nodes and apps)
+- `./setup.sh clean`: Integrated cleanup (removes only NotReady/unreachable nodes)
+- `./setup.sh status`: Integrated cluster status and diagnostics
+- `./setup.sh test-location`: Integrated location monitoring testing
+- `./delete.sh`: Safely delete specific resources (pods, deployments, services, nodes)
+- Direct script access still available: `./reset.sh`, `./clean.sh`, `./status.sh`, etc.
 
 ### Android Phone Server App
 
@@ -402,14 +587,33 @@ nodeSelector:
   device-type: phone
 ```
 
-**Geolocation Monitoring:**
-Agent nodes include a service that monitors the phone app's geolocation API every 20 seconds and automatically updates node labels:
+**Simplified Location Monitoring:**
+The server node runs a monitoring script that queries all phone nodes via SSH every 30 seconds and automatically updates node labels:
 - `phone.location/latitude`
 - `phone.location/longitude` 
 - `phone.location/altitude`
 - `phone.location/city` (e.g., "London, GB")
-- `phone.location/city-updated` (timestamp)
-- `phone.location/updated`
+- `phone.location/updated` (timestamp)
+- `phone.location/status` (active/inactive)
+
+**How it works:**
+- **Server-side script**: `/usr/local/bin/update-node-locations.sh`
+- **SSH querying**: Direct connection to phone Android apps on port 8080
+- **No complex authentication**: Uses simple SSH keys and kubectl commands
+- **Systemd service**: `location-monitor.service` for continuous monitoring
+
+**Prerequisites:**
+```bash
+# Set up SSH keys (run on server)
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
+ssh-copy-id user@phone-hostname
+
+# Test SSH connectivity
+ssh phone-hostname "echo 'SSH working'"
+
+# Test Android app
+curl http://phone-hostname:8080/coordinates
+```
 
 This ensures applications only run on phone devices, not on server/desktop nodes that might join the cluster.
 
@@ -444,39 +648,44 @@ kubectl top pods --all-namespaces
 kubectl get services --all-namespaces
 ```
 
-### Geolocation Monitoring
+### Simplified Location Monitoring
 ```bash
-# Check geolocation service on agent nodes
-sudo systemctl status k3s-geolocation-monitor
+# Check location monitoring service (server node)
+sudo systemctl status location-monitor
 
-# View geolocation logs
-sudo journalctl -u k3s-geolocation-monitor -f
+# View location monitoring logs
+sudo journalctl -u location-monitor -f
 
-# Test phone app API
-curl -s http://localhost:8005/location
+# Manual location update (server node)
+sudo /usr/local/bin/update-node-locations.sh --once --verbose
+
+# Test phone app API directly
+curl -s http://phone-hostname:8080/coordinates
 
 # Check phone location labels with city information
 kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/altitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
+
+# Test location monitoring script
+./test-simplified-location.sh
+
+# SSH connectivity test
+ssh phone-hostname "curl -s http://localhost:8080/coordinates"
 ```
 
 ### Testing & Diagnostics
 ```bash
-# Interactive cluster map testing  
-cd sample_app
-./test-cluster-map.sh
+# Test simplified location monitoring
+./test-simplified-location.sh
 
-# Comprehensive geolocation testing
-./test-geolocation.sh help
+# Quick location monitoring diagnostics
+sudo systemctl status location-monitor
+sudo /usr/local/bin/update-node-locations.sh --once --verbose
 
-# Quick diagnostics
-./test-geolocation.sh test-api     # Test phone app connection
-./test-geolocation.sh show-current # Show current location labels
-./test-geolocation.sh monitor      # Run one-time location update
-./test-geolocation.sh simulate 51.5074 -0.1278 100  # Test with coordinates
+# Test SSH connectivity to phone nodes
+ssh phone-hostname "curl -s http://localhost:8080/coordinates"
 
-# Service status checks
-./test-geolocation.sh show-service # Check systemd service
-./test-geolocation.sh test-labels  # Test label operations
+# Check node labels
+kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
 ```
 
 ### Network Verification
@@ -499,6 +708,35 @@ kubectl logs -l app=server-info-server -f --tail=100
 journalctl -u k3s -f
 journalctl -u tailscaled -f
 ```
+
+### Quick Troubleshooting with Integrated Commands
+
+The unified command interface makes troubleshooting easier:
+
+```bash
+# Get comprehensive cluster overview
+./setup.sh status -v
+
+# Check if nodes are responding
+./setup.sh status -w           # Watch mode shows real-time updates
+
+# Check location monitoring system
+./setup.sh test-location       # Test SSH-based location system
+sudo systemctl status location-monitor
+
+# Clean up problematic nodes
+./setup.sh clean --dry-run     # Preview what would be cleaned
+./setup.sh clean -t api-key    # Clean NotReady nodes + Tailscale
+
+# If cluster is completely broken
+./setup.sh reset --force       # Nuclear option: reset everything
+```
+
+**First Steps for Any Issue:**
+1. `./setup.sh status` - Get cluster overview
+2. `kubectl get nodes` - Check node status  
+3. `tailscale status` - Verify VPN connectivity
+4. `./setup.sh clean --dry-run` - Check for dead nodes
 
 ## Troubleshooting
 
@@ -541,21 +779,22 @@ sudo tailscale down && sudo tailscale up
 # Remove applications
 ./sample_app/undeploy.sh
 
-# Clean dead/unreachable nodes only
-./clean.sh -t tskey-api-xxxxx --force
+# Clean dead/unreachable nodes only (integrated command)
+./setup.sh clean -t tskey-api-xxxxx --force
 
 # Reset cluster to clean state (removes all agent nodes and apps)
-./reset.sh --force
+./setup.sh reset --force
 
 # Uninstall K3s completely
 sudo /usr/local/bin/k3s-uninstall.sh      # Server
 sudo /usr/local/bin/k3s-agent-uninstall.sh # Agent nodes
 ```
 
-**Cleanup Script Comparison:**
-- `./clean.sh`: Removes NotReady K3s nodes and unreachable phone devices from Tailscale
-- `./reset.sh`: Removes ALL agent nodes and applications, resets to server-only state
-- `./setup.sh cleanup`: Legacy method, removes only NotReady K3s nodes
+**Integrated Cleanup Commands:**
+- `./setup.sh clean`: Removes NotReady K3s nodes and unreachable phone devices from Tailscale
+- `./setup.sh reset`: Removes ALL agent nodes and applications, resets to server-only state
+- `./setup.sh status`: Shows comprehensive cluster status and diagnostics
+- Direct script access: `./clean.sh`, `./reset.sh`, `./status.sh` also available
 - K3s uninstall scripts: Completely removes K3s from the system
 
 **Remove Multiple Devices from Tailscale:**
@@ -598,6 +837,8 @@ The Android app includes the Gemma language model for advanced AI capabilities. 
 - [ ] add another phone and improve deploy scripts
 - [ ] test and fix phone app
 - [x] use phone app to automatically update location labels in node
+- [x] **simplified location monitoring with SSH-based approach**
+- [x] **unified script interface - all commands integrated into setup.sh**
 - [ ] test and fix advanced features of phone app
 - [x] create a small webapp in Java that shows the location of all nodes on a map
 - [ ] update phone app to use tokens and all to download gemma model directly

@@ -81,10 +81,10 @@ spec:
               key: phone.server.enabled
         resources:
           requests:
-            memory: "64Mi"
+            memory: "71Mi"
             cpu: "50m"
           limits:
-            memory: "128Mi"
+            memory: "106Mi"
             cpu: "200m"
         livenessProbe:
           httpGet:

@@ -30,6 +30,18 @@ if [ ! -f "Dockerfile" ] || [ ! -f "pom.xml" ]; then
     exit 1
 fi
 
+# Step 1: Configure memory requirements automatically
+echo -e "${YELLOW}[MEMORY]${NC} Configuring optimal memory settings..."
+if [ -f "./configure-memory.sh" ]; then
+    if ./configure-memory.sh; then
+        echo -e "${GREEN}[SUCCESS]${NC} Memory configuration completed"
+    else
+        echo -e "${YELLOW}[WARN]${NC} Memory configuration failed, continuing with existing settings"
+    fi
+else
+    echo -e "${YELLOW}[WARN]${NC} configure-memory.sh not found, using existing memory settings"
+fi
+
 # Check if Docker is available
 if ! command -v docker &> /dev/null; then
     echo -e "${RED}[ERROR]${NC} Docker is not installed or not in PATH"
