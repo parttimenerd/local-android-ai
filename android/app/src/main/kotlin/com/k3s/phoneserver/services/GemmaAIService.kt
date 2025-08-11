@@ -38,12 +38,25 @@ class GemmaAIService(private val context: Context) {
     private var cameraProvider: ProcessCameraProvider? = null
     private var cameraExecutor: ExecutorService = Executors.newSingleThreadExecutor()
     private var isInitialized = false
-    
+    private var isInitializing = false // To track initialization state
+
     // Local models directory
     private val modelsDir = java.io.File(context.filesDir, "ai_models")
 
     init {
-        initializeAI()
+        CoroutineScope(Dispatchers.IO).launch {
+            isInitializing = true
+            try {
+                initializeAI() // Renamed for clarity
+                isInitialized = true
+                Timber.d("AI Services initialized successfully on background thread.")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize AI services on background thread")
+                // Handle initialization failure (e.g., set a flag, notify user)
+            } finally {
+                isInitializing = false
+            }
+        }
     }
 
     private fun initializeAI() {
@@ -175,8 +188,12 @@ class GemmaAIService(private val context: Context) {
     suspend fun analyzeImage(task: String, imageBase64: String?): String {
         return withContext(Dispatchers.Default) {
             try {
-                if (!isInitialized) {
-                    return@withContext "Error: AI services not initialized"
+                if (!isInitialized && isInitializing) {
+                    // Optionally wait for initialization to complete if it's in progress
+                    // This is a simple busy-wait, consider a more robust solution like a CompletableFuture or callback
+                    while(isInitializing) {
+                        delay(100) // Wait a bit
+                    }
                 }
                 
                 if (imageBase64.isNullOrEmpty()) {
@@ -200,8 +217,12 @@ class GemmaAIService(private val context: Context) {
     suspend fun captureAndAnalyze(task: String, camera: CameraSelection = CameraSelection.BACK): String {
         return withContext(Dispatchers.Main) {
             try {
-                if (!isInitialized) {
-                    return@withContext "Error: AI services not initialized"
+                if (!isInitialized && isInitializing) {
+                    // Optionally wait for initialization to complete if it's in progress
+                    // This is a simple busy-wait, consider a more robust solution like a CompletableFuture or callback
+                    while(isInitializing) {
+                        delay(100) // Wait a bit
+                    }
                 }
                 
                 val bitmap = captureImageFromCamera(camera)
@@ -222,9 +243,12 @@ class GemmaAIService(private val context: Context) {
     suspend fun captureImage(camera: CameraSelection = CameraSelection.BACK): String? {
         return withContext(Dispatchers.Main) {
             try {
-                if (!isInitialized) {
-                    Timber.e("AI services not initialized for image capture")
-                    return@withContext null
+                if (!isInitialized && isInitializing) {
+                    // Optionally wait for initialization to complete if it's in progress
+                    // This is a simple busy-wait, consider a more robust solution like a CompletableFuture or callback
+                    while(isInitializing) {
+                        delay(100) // Wait a bit
+                    }
                 }
                 
                 val bitmap = captureImageFromCamera(camera)
