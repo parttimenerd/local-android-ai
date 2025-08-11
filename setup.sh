@@ -3051,6 +3051,64 @@ install_k3s_agent() {
         check_and_reinstall_tailscale_for_agent
     fi
 
+    log_verbose "Checking GitHub connectivity for K3s download..."
+    if ! ping -c 1 github.com &> /dev/null; then
+        log_error "Cannot reach github.com - network connectivity issue detected"
+        log_error "If connectivity issues persist, try restarting and reinstalling Debian on your phone"
+        log_error "This is a known issue with the Android Linux Terminal app"
+        exit $EXIT_INSTALL_FAILED
+    fi
+
+    log_verbose "Downloading and installing K3s agent with server URL: $K3S_URL"
+    log_verbose "This may take a few minutes - downloading K3s binary and setting up systemd service..."
+
+    # In local mode, use K3S_NODE_NAME to preserve the system hostname
+    if [ "$LOCAL_MODE" = true ]; then
+        log_verbose "Using K3S_NODE_NAME to preserve system hostname"
+        current_hostname=$(hostname)
+        log_verbose "Installing K3s agent with preserved hostname: $current_hostname"
+        
+        # Show the exact command being executed
+        log "Executing K3s agent installation command:"
+        log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" K3S_NODE_NAME=\"$current_hostname\" sh -"
+        
+        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_NAME="$current_hostname" sh - || {
+            log_error "Failed to install K3s agent"
+            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
+            exit $EXIT_INSTALL_FAILED
+        }
+    else
+        # Normal mode - let K3s handle hostname
+        log_verbose "Installing K3s agent with auto-generated hostname"
+        
+        # Show the exact command being executed
+        log "Executing K3s agent installation command:"
+        log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" sh -"
+        
+        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
+            log_error "Failed to install K3s agent"
+            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
+            exit $EXIT_INSTALL_FAILED
+        }
+    fi
+
+    log "✅ K3s agent installation completed"
+    log_verbose "K3s installer automatically set up and started the k3s-agent systemd service"
+    
+    # Give the service a moment to start up
+    log "Waiting for k3s-agent service to initialize..."
+    sleep 10
+    
+    # Check if the service is running (simple check)
+    if sudo systemctl is-active --quiet k3s-agent; then
+        log "✅ k3s-agent service is running"
+    else
+        log_warn "⚠️  k3s-agent service may still be starting up"
+        log_warn "Check status with: sudo systemctl status k3s-agent"
+        log_warn "View logs with: sudo journalctl -u k3s-agent -f"
+    fi
+
+    # NOW configure Docker registry AFTER K3s agent is installed and running
     # Extract master IP from K3S_URL for registry configuration
     log_verbose "Configuring Docker for insecure registry access..."
     if [ -n "$K3S_URL" ]; then
@@ -3120,53 +3178,6 @@ install_k3s_agent() {
         log_error "Agent nodes require K3S_URL to configure Docker registry access"
         log_error "Please provide K3S_URL parameter for agent setup"
         exit $EXIT_CONFIG_FAILED
-    fi
-
-    log_verbose "Checking GitHub connectivity for K3s download..."
-    if ! ping -c 1 github.com &> /dev/null; then
-        log_error "Cannot reach github.com - network connectivity issue detected"
-        log_error "If connectivity issues persist, try restarting and reinstalling Debian on your phone"
-        log_error "This is a known issue with the Android Linux Terminal app"
-        exit $EXIT_INSTALL_FAILED
-    fi
-
-    log_verbose "Downloading and installing K3s agent with server URL: $K3S_URL"
-    log_verbose "This may take a few minutes - downloading K3s binary and setting up systemd service..."
-
-    # In local mode, use K3S_NODE_NAME to preserve the system hostname
-    if [ "$LOCAL_MODE" = true ]; then
-        log_verbose "Using K3S_NODE_NAME to preserve system hostname"
-        current_hostname=$(hostname)
-        log_verbose "Installing K3s agent with preserved hostname: $current_hostname"
-        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_NAME="$current_hostname" sh - || {
-            log_error "Failed to install K3s agent"
-            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
-            exit $EXIT_INSTALL_FAILED
-        }
-    else
-        # Normal mode - let K3s handle hostname
-        log_verbose "Installing K3s agent with auto-generated hostname"
-        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
-            log_error "Failed to install K3s agent"
-            log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
-            exit $EXIT_INSTALL_FAILED
-        }
-    fi
-
-    log "✅ K3s agent installation completed"
-    log_verbose "K3s installer automatically set up and started the k3s-agent systemd service"
-    
-    # Give the service a moment to start up
-    log "Waiting for k3s-agent service to initialize..."
-    sleep 10
-    
-    # Check if the service is running (simple check)
-    if sudo systemctl is-active --quiet k3s-agent; then
-        log "✅ k3s-agent service is running"
-    else
-        log_warn "⚠️  k3s-agent service may still be starting up"
-        log_warn "Check status with: sudo systemctl status k3s-agent"
-        log_warn "View logs with: sudo journalctl -u k3s-agent -f"
     fi
 
     # Wait for the agent to start connecting to the cluster
