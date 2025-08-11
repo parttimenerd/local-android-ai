@@ -3153,158 +3153,20 @@ install_k3s_agent() {
         }
     fi
 
-    log_verbose "K3s agent installation completed, starting systemd service..."
-
-    # Wait for the service to start and show progress with improved monitoring
-    log_verbose "Starting k3s-agent systemd service..."
-    if command -v systemctl &>/dev/null; then
-        # Enable the service for auto-start
-        sudo systemctl enable k3s-agent 2>/dev/null || log_warn "Failed to enable k3s-agent service"
-
-        # Start the service if not already running
-        if ! sudo systemctl is-active --quiet k3s-agent; then
-            log_verbose "Service not running, starting now..."
-            
-            # Pre-flight checks before starting the service
-            log_verbose "Performing pre-flight checks..."
-            
-            # Check if K3S_URL is reachable
-            local k3s_host
-            k3s_host=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|')
-            local k3s_port
-            k3s_port=$(echo "$K3S_URL" | sed -E 's|https?://[^:]+:([0-9]+).*|\1|')
-            
-            if [ -n "$k3s_host" ] && [ -n "$k3s_port" ]; then
-                log_verbose "Testing connectivity to K3s server at $k3s_host:$k3s_port..."
-                if command -v nc &>/dev/null; then
-                    if nc -z -w10 "$k3s_host" "$k3s_port" 2>/dev/null; then
-                        log_verbose "✅ K3s server is reachable at $k3s_host:$k3s_port"
-                    else
-                        log_warn "⚠️  K3s server not reachable at $k3s_host:$k3s_port"
-                        log_warn "Agent may take longer to start or fail to connect"
-                    fi
-                else
-                    log_verbose "nc (netcat) not available, skipping connectivity test"
-                fi
-            fi
-            
-            # Check system resources
-            log_verbose "Checking system resources..."
-            local mem_available
-            mem_available=$(free -m | awk '/^Mem:/ {printf "%.0f", $7}')
-            if [ "$mem_available" -lt 100 ]; then
-                log_warn "⚠️  Low available memory: ${mem_available}MB (K3s may start slowly)"
-            else
-                log_verbose "Available memory: ${mem_available}MB"
-            fi
-            
-            # Start the service
-            log "Starting k3s-agent service..."
-            if sudo systemctl start k3s-agent; then
-                log_verbose "✅ k3s-agent service start command completed"
-            else
-                log_error "Failed to start k3s-agent service"
-                log_error "Check service status: sudo systemctl status k3s-agent"
-                log_error "Check service logs: sudo journalctl -u k3s-agent --no-pager --lines=20"
-                exit $EXIT_CONFIG_FAILED
-            fi
-        else
-            log_verbose "k3s-agent service is already running"
-        fi
-
-        # Wait and monitor service startup with extended timeout
-        log "Waiting for k3s-agent service to become active and stable..."
-        log_verbose "This may take 60-120 seconds for initial connection to K3s server..."
-        local wait_count=0
-        local max_wait=120  # Increased from 30 to 120 seconds
-        local last_status=""
-        
-        while [ $wait_count -lt $max_wait ]; do
-            local current_status
-            current_status=$(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')
-            
-            if [ "$current_status" = "active" ]; then
-                log "✅ k3s-agent service is active after ${wait_count}s"
-                
-                # Additional check: ensure the agent is actually connecting
-                log_verbose "Verifying agent is connecting to cluster..."
-                sleep 5  # Give it a moment to establish connection
-                
-                # Check if the agent is in the logs
-                if sudo journalctl -u k3s-agent --no-pager --since="1 minute ago" | grep -q "Successfully registered node\|Node controller sync successful\|Connecting to proxy"; then
-                    log "✅ k3s-agent is successfully connecting to the cluster"
-                    break
-                else
-                    log_verbose "Agent service is active but still establishing cluster connection..."
-                    # Continue waiting as the connection might still be establishing
-                fi
-            fi
-            
-            # Show status changes and progress
-            if [ "$current_status" != "$last_status" ]; then
-                log_verbose "Service status changed: $last_status → $current_status"
-                last_status="$current_status"
-            fi
-            
-            # Show progress every 10 seconds
-            if [ $((wait_count % 10)) -eq 0 ] && [ $wait_count -gt 0 ]; then
-                log_verbose "⏳ Still waiting for k3s-agent to become active and connect... (${wait_count}s/${max_wait}s)"
-                log_verbose "Current status: $current_status"
-                
-                # Show recent logs every 30 seconds for debugging
-                if [ $((wait_count % 30)) -eq 0 ] && [ $wait_count -gt 0 ]; then
-                    log_verbose "Recent k3s-agent logs:"
-                    sudo journalctl -u k3s-agent --no-pager --lines=3 --since="30 seconds ago" 2>/dev/null | while IFS= read -r line; do
-                        log_verbose "  $line"
-                    done
-                fi
-            fi
-
-            sleep 1
-            wait_count=$((wait_count + 1))
-        done
-
-        # Final comprehensive check
-        local final_status
-        final_status=$(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')
-        
-        if [ "$final_status" != "active" ]; then
-            log_error "k3s-agent service failed to become active within ${max_wait} seconds"
-            log_error "Final service status: $final_status"
-            echo ""
-            log_error "Detailed diagnostics:"
-            log_error "=== Service Status ==="
-            sudo systemctl status k3s-agent --no-pager -l 2>/dev/null || echo "No status available"
-            echo ""
-            log_error "=== Recent Service Logs ==="
-            sudo journalctl -u k3s-agent --no-pager --lines=20 2>/dev/null || echo "No logs available"
-            echo ""
-            log_error "=== System Resources ==="
-            log_error "Memory: $(free -h | grep '^Mem:' || echo 'unknown')"
-            log_error "Disk: $(df -h / | tail -1 || echo 'unknown')"
-            echo ""
-            log_error "=== Network Connectivity ==="
-            if [ -n "$k3s_host" ] && [ -n "$k3s_port" ]; then
-                if command -v nc &>/dev/null; then
-                    if nc -z -w5 "$k3s_host" "$k3s_port" 2>/dev/null; then
-                        log_error "✅ K3s server is reachable at $k3s_host:$k3s_port"
-                    else
-                        log_error "❌ K3s server is NOT reachable at $k3s_host:$k3s_port"
-                        log_error "This is likely the cause of the agent startup failure"
-                    fi
-                fi
-            fi
-            echo ""
-            log_error "Troubleshooting steps:"
-            log_error "  1. Check server connectivity: nc -zv $k3s_host $k3s_port"
-            log_error "  2. Verify K3S_TOKEN is correct"
-            log_error "  3. Check firewall/network settings"
-            log_error "  4. Try restarting: sudo systemctl restart k3s-agent"
-            log_error "  5. Monitor logs: sudo journalctl -u k3s-agent -f"
-            exit $EXIT_CONFIG_FAILED
-        else
-            log "✅ k3s-agent service is running successfully"
-        fi
+    log "✅ K3s agent installation completed"
+    log_verbose "K3s installer automatically set up and started the k3s-agent systemd service"
+    
+    # Give the service a moment to start up
+    log "Waiting for k3s-agent service to initialize..."
+    sleep 10
+    
+    # Check if the service is running (simple check)
+    if sudo systemctl is-active --quiet k3s-agent; then
+        log "✅ k3s-agent service is running"
+    else
+        log_warn "⚠️  k3s-agent service may still be starting up"
+        log_warn "Check status with: sudo systemctl status k3s-agent"
+        log_warn "View logs with: sudo journalctl -u k3s-agent -f"
     fi
 
     # Wait for the agent to start connecting to the cluster
