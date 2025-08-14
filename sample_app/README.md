@@ -1,22 +1,28 @@
 # Sample Kubernetes Application
 
-⚠️ **EXPERIMENTAL PROTOTYPE - USE AT YOUR OWN RISK** ⚠️
+Spring Boot application demonstrating K3s deployment with location mapping and AI integration.
 
-**This is experimental prototype s# If using from K3s cluster, ensure port forwarding in Android Linux Terminal:
-# Use the Linux Terminal app UI to forward port 8005tware. Features may not work as expected, may fail unpredictably, or may not function at all. Use entirely at your own risk.**
+## Features
 
-Java HTTP server demonstrating K3s deployment and load balancing on mobile devices.
+- **Health API** (`/health`) with node details and system metrics
+- **Dashboard** (`/dashboard`) with cluster monitoring and map visualization  
+- **Location Integration** using Android GPS and reverse geocoding
+- **Object Detection** via MediaPipe EfficientDet Lite 2
+- **Auto-scaling** deployment across cluster nodes
+- **LoadBalancer** service with Tailscale networking
 
-## Overview
+## Object Detection
+- MediaPipe EfficientDet Lite 2 integration
+- JSON response with objects, bounding boxes, confidence scores
+- Optional base64 image return
+- API: `/api/phone/capture` with detection enabled
 
-⚠️ **PROTOTYPE WARNING**: All features described are experimental and may not work reliably.
-
-Lightweight Java application providing:
-- System information endpoint (`/health`)
-- SAP UI5 dashboard (`/dashboard`) with real-time monitoring
-- Phone integration with location, orientation, camera, and AI features
-- Auto-scaling deployment across cluster nodes
-- LoadBalancer service with Tailscale networking
+## System Information
+- Real-time metrics (CPU, memory, network)
+- Node identification and cluster status
+- GPS coordinates from Android devices
+- City names via geocoder service
+- AI capability detection
 
 ## Prerequisites
 
@@ -95,16 +101,32 @@ sample_app/
 - **`/health`**: Detailed system health data  
 - **`/dashboard`**: SAP UI5 monitoring interface with Android phone integration
 - **`/api/system`**: Additional system metrics
-- **`/api/phone`**: Android phone location/orientation/camera/AI data (if available)
-- **`/api/phone/capture`**: Direct camera capture from connected Android phone
+- **`/api/phone`**: Android phone location/orientation/object detection data (if available)
+- **`/api/phone/capture`**: Direct camera capture with object detection from connected Android phone
+
+### Enhanced API Endpoints
+
+#### GET `/api/phone?refreshAI=true&includeImage=true`
+- **Purpose**: Get phone data with fresh object detection
+- **Parameters**:
+  - `refreshAI=true`: Triggers new object detection (faster than LLM)
+  - `includeImage=true`: Includes base64 image in object detection response
+- **Response**: JSON with location, orientation, and object detection data
+- **Performance**: Object detection typically completes in <1 second
+
+#### POST `/api/phone/capture`
+- **Purpose**: Direct camera capture with object detection
+- **Request Body**: JSON with object detection parameters
+- **Response**: JSON with detected objects, bounding boxes, and optional image
+- **Uses**: MediaPipe EfficientDet Lite 2 for fast on-device processing
 
 ### Dashboard Features
 The `/dashboard` endpoint provides a comprehensive monitoring interface featuring:
 - **Real-time system monitoring**: Memory usage, CPU load, uptime tracking
 - **Interactive phone location map**: Live GPS tracking with orientation markers using reverse-geocoder service
-- **Live camera feed**: Real-time camera capture from connected Android device
-- **AI-powered descriptions**: Automatic scene analysis and description updates
-- **Auto-refresh**: System data every 10 seconds, AI descriptions every minute
+- **Live object detection**: Real-time object detection from connected Android device camera
+- **Fast AI processing**: MediaPipe-based object detection with <1 second response times
+- **Auto-refresh**: System data every 10 seconds, object detection on demand
 - **Responsive design**: SAP UI5 components with mobile-friendly interface
 - **City location display**: Automatic city resolution using local GeoNames database
 
@@ -153,6 +175,75 @@ The application automatically discovers the geocoder service at:
 
 ## Usage Examples
 
+### Object Detection Integration
+```bash
+# Test object detection through sample app
+curl "http://localhost:8080/api/phone?refreshAI=true&includeImage=true"
+
+# Direct camera capture with object detection
+curl -X POST http://localhost:8080/api/phone/capture \
+  -H "Content-Type: application/json" \
+  -d '{
+    "side": "rear",
+    "threshold": 0.6,
+    "maxResults": 10,
+    "returnImage": true
+  }'
+
+# Fast object detection without image (for dashboards)
+curl "http://localhost:8080/api/phone?refreshAI=true&includeImage=false"
+```
+
+### Sample Object Detection Response
+```json
+{
+  "available": true,
+  "timestamp": 1692720000000,
+  "capabilities": {
+    "ai": true,
+    "camera": true,
+    "location": true
+  },
+  "location": {
+    "latitude": 37.7749,
+    "longitude": -122.4194,
+    "accuracy": 5.0
+  },
+  "objectDetection": {
+    "success": true,
+    "objects": [
+      {
+        "category": "person",
+        "score": 0.92,
+        "boundingBox": {
+          "left": 0.15,
+          "top": 0.20,
+          "width": 0.35,
+          "height": 0.65
+        }
+      },
+      {
+        "category": "car",
+        "score": 0.87,
+        "boundingBox": {
+          "left": 0.60,
+          "top": 0.45,
+          "width": 0.30,
+          "height": 0.25
+        }
+      }
+    ],
+    "inferenceTime": 850,
+    "threshold": 0.6,
+    "imageMetadata": {
+      "width": 1920,
+      "height": 1080,
+      "camera": "rear"
+    }
+  }
+}
+```
+
 ### Load Balancing Test
 ```bash
 for i in {1..10}; do curl -s http://<SERVICE-IP>:8080 | jq .hostname; done
@@ -179,12 +270,21 @@ curl http://localhost:8005/status
 # If using from K3s cluster, ensure port forwarding in Android Linux Terminal:
 # socat TCP-LISTEN:8005,fork TCP:localhost:8005 &
 
-# Verify AI availability
-curl http://localhost:8005/has-ai
+# Verify AI and object detection availability
+curl http://localhost:8005/ai/models
+curl http://localhost:8005/capabilities
 
 # Test phone API endpoints
 curl http://localhost:8005/location
 curl http://localhost:8005/orientation
+
+# Test object detection endpoint directly
+curl -X POST http://localhost:8005/ai/object_detection \
+  -H "Content-Type: application/json" \
+  -d '{"side":"rear","threshold":0.5,"maxResults":5,"returnImage":false}'
+
+# Test sample app integration
+curl "http://localhost:8080/api/phone?refreshAI=true&includeImage=false"
 ```
 
 ### Pods Issues

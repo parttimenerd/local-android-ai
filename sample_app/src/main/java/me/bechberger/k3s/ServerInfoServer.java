@@ -11,6 +11,7 @@ import me.bechberger.k3s.handlers.HealthHandler;
 import me.bechberger.k3s.handlers.DashboardHandler;
 import me.bechberger.k3s.handlers.SystemInfoHandler;
 import me.bechberger.k3s.handlers.PhoneDataHandler;
+import me.bechberger.k3s.handlers.AITextHandler;
 import me.bechberger.k3s.handlers.CameraCaptureHandler;
 import me.bechberger.k3s.handlers.ClusterLocationHandler;
 
@@ -96,6 +97,7 @@ public class ServerInfoServer {
         server.createContext("/api/system", new SystemInfoHandler());
         server.createContext("/api/phone", new PhoneDataHandler());
         server.createContext("/api/phone/capture", new CameraCaptureHandler());
+        server.createContext("/api/phone/ai-text", new AITextHandler());
         server.createContext("/api/cluster/locations", new ClusterLocationHandler());
         
         // Start server

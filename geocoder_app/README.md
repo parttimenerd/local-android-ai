@@ -1,40 +1,35 @@
 # Reverse Geocoder Service
 
-A memory-optimized standalone reverse geocoding service using local GeoNames data for converting GPS coordinates to city names. Designed for ultra-low resource usage in K3s phone clusters.
+Memory-optimized reverse geocoding service using local GeoNames data for GPS coordinate to city name conversion.
 
 ## Overview
 
-The reverse geocoder service provides a REST API for converting GPS coordinates (latitude/longitude) into human-readable location names (cities). It operates entirely offline using an optimized local GeoNames database, eliminating external dependencies while maintaining minimal memory footprint.
+REST API for converting GPS coordinates to location names using offline GeoNames database. Optimized for low-resource K3s phone clusters.
 
 ## Memory Optimization
 
-- **Ultra-Low Memory**: ~0.8 MB memory usage for German cities (10,390+ cities)
-- **Smart Filtering**: Only includes cities and administrative centers with ASCII names
-- **Auto-Sized**: Memory requirements automatically detected and K8s configs updated
-- **Extensible**: Easy to add more countries with automatic memory scaling
-- **No Population Data**: City records optimized to essential data only (name, country, coordinates)
+- **Ultra-low memory**: ~0.8 MB for German cities (10,390+ cities)
+- **Filtered data**: Cities and administrative centers with ASCII names only
+- **Auto-sizing**: Memory requirements auto-detected, K8s configs updated
+- **Population-free**: Essential data only (name, country, coordinates)
 
 ## Architecture
 
-- **Standalone Service**: Runs independently on the cluster master node
-- **High Availability**: Deployed as a Kubernetes service accessible from all cluster nodes  
-- **Memory Optimized**: Custom-filtered GeoNames database with only essential city data
-- **Zero External Dependencies**: No internet required for geocoding operations
-- **Auto-Configuration**: Memory limits automatically calculated and applied
-- **K3s Phone Integration**: Optimized for Android phone clusters with limited resources
+- Standalone service on cluster master node
+- Kubernetes service accessible from all nodes
+- Zero external dependencies for geocoding
+- Auto-configuration with calculated memory limits
+- Optimized for Android phone clusters
 
-## Integration with k3s-on-phone
+## K3s Integration
 
-This geocoder service is designed specifically for the [k3s-on-phone](../) project:
+Used by k3s-on-phone project for location monitoring:
+- Server-side operation (not on individual phones)
+- SSH-based querying via `update-node-locations.sh`
+- Minimal resource usage for phone environments
 
-- **Simplified Location Monitoring**: Replaces complex node-labeler services
-- **Server-Side Operation**: Runs on the K3s server node, not on individual phones
-- **SSH-Based Querying**: Used by `update-node-locations.sh` to get city names for phone coordinates
-- **Minimal Resource Usage**: Optimized for phone cluster environments
-
-**Usage in cluster:**
 ```bash
-# The location monitoring service uses this geocoder
+# Usage in cluster
 ssh phone-node "curl -s localhost:8005/location" | jq '.latitude,.longitude' | \
   xargs -I {} curl -s "http://reverse-geocoder:8090/api/reverse-geocode?lat={}&lon={}"
 ```

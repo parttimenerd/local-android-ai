@@ -1,215 +1,139 @@
-# K3s on Phone
+# K3s on Phone - Android Kubernetes with AI
 
-⚠️ **EARLY PROTOTYPE - USE AT YOUR OWN RISK** ⚠️
+⚠️ **EXPERIMENTAL PROJECT** ⚠️
 
-**This is an experimental proof-of-concept project. None of the features are guaranteed to work. Use entirely at your own risk. Only intended for exploration.**
+Kubernetes cluster deployment on Android devices with on-device AI inference.
 
-Kubernetes cluster deployment on Android devices using Debian in KVM via Android Linux Terminal.
+## Project Overview
 
-## Overview
+- **K3s cluster nodes** running in Android Linux containers
+- **Android app** with MediaPipe LLM inference and object detection
+- **REST API server** on port 8005 with AI, camera, and location endpoints
+- **Location tracking** for automatic node labeling
+- **Sample applications** including geocoder and cluster dashboard
 
-⚠️ **EXPERIMENTAL PROJECT**: This is a rough prototype for educational and experimental purposes only. Features may not work as expected, may break without notice, and are only suitable for exploration.
+## Android App Features
 
-Deploy a multi-node K3s cluster across Android phones u**How it works:**
-- **Server-side script**: `/usr/local/bin/update-node-locations.sh`# Test phone app API directly
-curl -s http://phone-hostname:8005/location
-
-# Check phone location labels with city information
-kubectl get nodes -l device-type=phone -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.labels.phone\.location/latitude}{"\t"}{.metadata.labels.phone\.location/longitude}{"\t"}{.metadata.labels.phone\.location/altitude}{"\t"}{.metadata.labels.phone\.location/city}{"\n"}{end}'
-
-# Test location monitoring script
-./test-simplified-location.sh
-
-# SSH connectivity test
-# Test SSH connectivity to phone nodes
-ssh phone-hostname "curl -s http://localhost:8005/location"erying**: Direct connection to phone Android apps on port 8005
-- **No complex authentication**: Uses simple SSH keys and kubectl commands
-- **Systemd service**: `location-monitor.service` for continuous monitoring
-
-**Prerequisites:**
-```bash
-# Set up SSH keys (run on server)
-ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa
-ssh-copy-id user@phone-hostname
-
-# Test SSH connectivity
-ssh phone-hostname "echo 'SSH working'"
-
-# Test Android app
-curl http://phone-hostname:8005/location
-```eight Kubernetes distribution
-- Tailscale mesh VPN for secure networking  
-- Java sample application with cluster location mapping and city information
-- Automated Docker registry setup and image distribution
-- **Simplified SSH-based location monitoring** (no complex services)
-- **Server-side location updates** via SSH and kubectl
-- **Unified script interface** - all management commands integrated into `setup.sh`
-- Automated scripts for setup and deployment
-
-## 🚀 New Simplified Architecture
-
-The project now uses a **much simpler, more reliable approach** for location monitoring:
-
-### What Changed
-- ❌ **Removed**: Complex node-labeler services with authentication issues
-- ❌ **Removed**: DaemonSet-based self-labeling with complex RBAC
-- ❌ **Removed**: Agent-side geolocation services
-- ✅ **Added**: Simple SSH-based location querying from server
-- ✅ **Added**: Direct kubectl label updates (no complex authentication)
-- ✅ **Added**: Server-side location monitoring script
-- ✅ **Added**: Systemd service for continuous monitoring
-- ✅ **Added**: Unified command interface through `setup.sh`
-
-### How It Works Now
-```
-┌─────────────────┐    SSH    ┌──────────────────┐    HTTP    ┌─────────────────┐
-│   K3s Server    │◄─────────►│   Phone Node     │◄──────────►│  Android App    │
-│ update-node-    │           │ device-type=     │            │  (port 8005)    │
-│ locations.sh    │           │ phone            │            │ /location       │
-└─────────────────┘           └──────────────────┘            └─────────────────┘
-        │                              
-        │ kubectl label                
-        ▼                              
-┌─────────────────────────────────────────────────────────┐
-│              Kubernetes Cluster                        │
-│  Nodes labeled with phone.location/* labels            │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Benefits
-- **80% less code complexity** 
-- **No authentication issues**
-- **Easier to debug and maintain**
-- **More reliable operation**
-- **Self-contained in setup.sh**
-- **Unified command interface** - all operations through one script
-
-## 🔄 Migration from Old Complex Services
-
-If you had a previous installation with complex node-labeler services, they have been completely removed and replaced with the simplified approach. The new system will work automatically with fresh installations.
-
-### For Existing Clusters:
-1. **Clean up old services** (if any exist):
-   ```bash
-   kubectl delete deployment node-labeler-service -n kube-system || true
-   kubectl delete service node-labeler-service -n kube-system || true
-   kubectl delete daemonset node-self-labeler -n kube-system || true
-   kubectl delete daemonset geo-forwarder -n kube-system || true
-   ```
-
-2. **Re-run setup.sh** on the server to install simplified location monitoring:
-   ```bash
-   ./setup.sh --local  # Will install new location monitoring system
-   ```
-
-3. **Set up SSH keys** for location monitoring (see setup instructions below)
-
-The simplified approach is **much more reliable** and eliminates the authentication issues that plagued the old services.
-
-
-### System Requirements
-
-- Android devices with developer mode enabled
-- Android Linux Terminal app with Debian installed
-- Tailscale account for VPN networking
-- 4GB+ RAM, 64GB+ storage per device
-- Stable network connectivity
-
-**Known Issues:**
-- If network connectivity fails during setup, restarting and reinstalling Debian on your phone is often needed
-- This is a known limitation of the experimental Android Linux Terminal app
+- **LLM Inference**: Gemma, DeepSeek-R1, Llama 3.2, TinyLlama models via MediaPipe
+- **Object Detection**: MediaPipe EfficientDet Lite 2
+- **Location Services**: GPS tracking with accuracy metadata
+- **Camera Integration**: Front/rear camera with zoom and base64 encoding
+- **Device Sensors**: Compass orientation and device data
+- **Model Management**: Download, test, and manage AI models with performance metrics
 
 ## Quick Start
 
-### Master Node Setup
+### Requirements
+- Android devices with developer mode
+- Android Linux Terminal with Debian
+- Tailscale account
+- 4GB+ RAM, 64GB+ storage
+
+⚠️ **Install and START K3s Phone Server Android app before setting up nodes**
+
+### Master Node
 ```bash
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-01 -t YOUR_TAILSCALE_KEY
 ```
 
-*Automatically sets up Docker registry, K3s server, and **simplified SSH-based location monitoring**.*
-
-### Worker Node Setup  
+### Worker Node
 ```bash
+# 1. Install and START K3s Phone Server Android app
+# 2. Ensure app is running and listening on port 8005
+# 3. Run agent setup:
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-02 -t YOUR_TAILSCALE_KEY -k K3S_TOKEN -u https://phone-01:6443
 ```
 
-*Automatically configures Docker registry access and joins cluster. **No complex services needed** - location updates handled by server via SSH.*
+## API Endpoints (Port 8005)
 
-### Location Monitoring
-The server automatically monitors phone locations:
-- **Server-side script**: `/usr/local/bin/update-node-locations.sh`
-- **Systemd service**: `location-monitor.service` 
-- **SSH-based**: Queries Android apps directly (no authentication complexity)
-- **Prerequisites**: SSH keys set up between server and phones
+### AI Services
+- `POST /ai/text` - LLM text generation with streaming
+- `POST /ai/object_detection` - MediaPipe object detection
+- `GET /ai/models` - Available models with memory requirements
+- `POST /ai/models/test` - Model testing with performance metrics
 
+### Device Integration  
+- `GET /location` - GPS coordinates with accuracy
+- `GET /orientation` - Compass data (azimuth, pitch, roll)
+- `GET /capture` - Camera capture with zoom support
+- `GET /status` - Server status and capabilities
+
+## Sample Applications
+
+### Geocoder Service
+Reverse geocoding service using GeoNames data:
 ```bash
-# Check location monitoring status
-sudo systemctl status location-monitor
-
-# Manual location update
-sudo /usr/local/bin/update-node-locations.sh --once --verbose
-
-# View node labels
-kubectl get nodes -l device-type=phone -o wide
+cd geocoder_app && ./deploy.sh
 ```
 
-### Deploy Sample Application
-
-#### Option 1: Using Local Registry (Recommended for Multi-Node)
+### Sample App
+Basic Spring Boot application demonstrating cluster API usage:
 ```bash
-# Registry is automatically set up during K3s installation
-
-# Build and push application image
-cd sample_app
-./build.sh
-../registry.sh push server-info-server:latest
-
-# Deploy application with cluster map features
-./deploy.sh && ./test.sh
+cd sample_app && ./deploy.sh
 ```
-
-#### Option 2: SSH Image Distribution
-```bash
-# Set up SSH keys for image distribution
-ssh-copy-id root@<agent-node-ip>  # password: root
-
-# Build and distribute images (will prompt for distribution method)
-cd sample_app
-./build.sh
-
-# Deploy application
-./deploy.sh && ./test.sh
-```
-
-#### Option 3: Manual Build on Each Node
-```bash
-# On each node, build the image locally
-cd sample_app
-./build.sh
-
-# Deploy from master node
-./deploy.sh && ./test.sh
-```
-
-## New Features
-
-### 🗺️ Cluster Location Mapping with City Information
-- **Interactive map dashboard** showing all nodes with real-time locations
-- **City information**: Automatic reverse geocoding adds city names to node labels
-- **Visual markers**: Current node (blue arrow) vs other nodes (muted gray phone icons)
-- **Geographic overview**: See your distributed K3s cluster on an actual world map
-
-### 🐳 Automatic Docker Registry Integration  
-- **Zero-config setup**: Registry automatically configured during K3s installation
-- **Seamless distribution**: Images pushed once, available on all nodes
-- **Insecure registry handling**: Automatic Docker daemon configuration for local development
-- **Dynamic addressing**: Registry location automatically detected for server/agent nodes
 
 ## Cluster Management
 
-The `setup.sh` script now provides a unified interface for all cluster management operations. All utility scripts have been integrated for easier access.
+```bash
+# Cluster status with locations and object detection
+./status.sh -v --object-detection -w
 
-### Unified Commands
+# Interactive dashboard
+./dashboard.sh
+
+# Clean unreachable nodes  
+./clean.sh
+
+# Reset cluster
+./reset.sh --force
+```
+
+## Monitoring & Dashboard
+
+- **Location tracking**: GPS coordinates with reverse geocoding
+- **Object detection**: Real-time camera analysis from all nodes  
+- **Resource monitoring**: Node and pod usage
+- **Live updates**: Auto-refresh every 5-20 seconds
+- **Interactive map**: OpenStreetMap visualization
+
+## 🗺️ Location Monitoring
+
+**Simplified SSH-based approach** for reliable location tracking:
+
+- ✅ **Server-side monitoring**: Centralized location collection
+- ✅ **Direct API calls**: HTTP requests to `$NODE_NAME:8005/location`
+- ✅ **Automatic labeling**: Node labels updated with GPS + city data
+- ✅ **No complex services**: Simple SSH + kubectl approach
+
+## 📁 Project Structure
+
+```
+k3s-on-phone/
+├── android/                    # AI-enabled Android app
+│   ├── app/src/main/kotlin/    # Kotlin source code (AI, camera, server)
+│   └── mediapipe/              # MediaPipe AI components
+├── geocoder_app/               # Reverse geocoding service
+├── sample_app/                 # Example K3s application  
+├── setup.sh                    # Main installation script
+├── status.sh                   # Enhanced status with locations/object detection
+├── dashboard.sh                # Interactive web dashboard
+└── *.sh                        # Utility scripts
+```
+
+## 🔧 Troubleshooting
+
+### Network Connectivity
+- **Debian Issues**: If setup fails, restart and reinstall Debian in Android Linux Terminal
+- **Basic Tests**: `ping github.com` and `ping 8.8.8.8` should work
+
+### Common Issues
+- **Node Join**: Check Tailscale status and K3s token
+- **App Connection**: Ensure Android app is running on port 8005
+- **Location Updates**: Verify SSH keys between server and agents
+
+## 📄 License
+
+Apache 2.0 License - Educational/experimental use only.
 
 ```bash
 # Show comprehensive help
@@ -846,7 +770,7 @@ sudo /usr/local/bin/k3s-agent-uninstall.sh # Agent nodes
 
 ## License
 
-This project is licensed under the Apache 2.0 License.
+This project is licensed under the Apache 2.0 License and has no relationship to the k3s project, other than using it.
 
 ### Third-Party Licenses
 
@@ -854,14 +778,7 @@ The simplified Android app now uses minimal dependencies:
 
 #### Core Components
 - K3s: Apache 2.0 License
-- Tailscale (with headscale support being planned)  
-
-#### Removed AI Components
-- ~~Gemma AI Model~~ - Removed for simplicity and stability
-- ~~TensorFlow Lite models~~ - No longer included
-- ~~MediaPipe~~ - Removed with AI functionality
-
-The simplified app focuses on core location and orientation services without AI complexity.
+- Tailscale (with headscale support being planned)
 
 # Roadmap
 
@@ -869,15 +786,23 @@ The simplified app focuses on core location and orientation services without AI 
     - the computer being the host
 - [x] deploy the application to the cluster with replication
 - [ ] add another phone and improve deploy scripts
-- [ ] test and fix phone app
+- [x] test and fix phone app
   - [x] start with simple app that just gives location (✅ Completed - AI removed)
-  - [ ] add taking photos (Optional - may add back later)
-  - [ ] add LLM stuff (Optional - may add back later)
+  - [x] add taking photos (Optional - may add back later)
+  - [x] add LLM stuff (Optional - may add back later)
 - [x] use phone app to automatically update location labels in node
 - [x] **simplified location monitoring with SSH-based approach**
 - [x] **unified script interface - all commands integrated into setup.sh**
-- [ ] test and fix advanced features of phone app
+- [x] test and fix advanced features of phone app
 - [x] create a small webapp in Java that shows the location of all nodes on a map
-- [ ] update phone app to use tokens and all to download gemma model directly
-- [ ] test cluster without a computer, just two phones
+- [x] update phone app to use tokens and all to download gemma model directly
 - [ ] write blog post
+
+
+now
+- [x] fix app (test that basic LLM works)
+- [ ] setup on agent
+- [ ] location label updating
+- [ ] dashboard.sh
+- [ ] status.sh
+- [ ] sample appö- [ ] with second phone

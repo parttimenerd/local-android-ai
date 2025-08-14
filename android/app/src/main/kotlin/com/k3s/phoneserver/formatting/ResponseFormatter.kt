@@ -3,8 +3,13 @@ package com.k3s.phoneserver.formatting
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.graphics.Matrix
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.util.Base64
 import com.k3s.phoneserver.testing.ApiTestResult
+import org.json.JSONObject
 
 class ResponseFormatter private constructor() {
     
@@ -62,7 +67,96 @@ class ResponseFormatter private constructor() {
             // If regex fails, try simple replacement
             input.replace(Regex("\"data:image/[^\"]+\""), "\"[IMAGE_DATA_HIDDEN]\"")
         }
-    }    fun formatJsonWithHighlighting(response: String): String {
+    }
+    
+    /**
+     * Create a SpannableString with JSON syntax highlighting
+     */
+    fun formatJsonAsSpannable(response: String): SpannableString {
+        if (response.isBlank()) return SpannableString(response)
+        
+        // Always clean base64 image data before formatting
+        val cleanedResponse = cleanBase64ImageData(response)
+        
+        return try {
+            val formatted = formatJsonStructure(cleanedResponse)
+            addJsonSyntaxHighlightingSpannable(formatted)
+        } catch (e: Exception) {
+            // If JSON formatting fails, return cleaned response as spannable
+            SpannableString(cleanedResponse)
+        }
+    }
+    
+    /**
+     * Add syntax highlighting to JSON using SpannableString
+     */
+    private fun addJsonSyntaxHighlightingSpannable(json: String): SpannableString {
+        val spannable = SpannableString(json)
+        
+        // Colors for different JSON elements
+        val keyColor = Color.parseColor("#2196F3")      // Blue for keys
+        val stringColor = Color.parseColor("#4CAF50")   // Green for string values
+        val numberColor = Color.parseColor("#FF9800")   // Orange for numbers
+        val booleanColor = Color.parseColor("#9C27B0")  // Purple for booleans
+        val nullColor = Color.parseColor("#757575")     // Gray for null
+        val structureColor = Color.parseColor("#607D8B") // Blue-gray for brackets/braces
+        
+        // Highlight JSON keys (quoted strings followed by colon)
+        val keyRegex = Regex("\"([^\"]+)\"\\s*:")
+        keyRegex.findAll(json).forEach { match ->
+            val start = match.range.first + 1 // Skip opening quote
+            val end = match.range.first + 1 + match.groupValues[1].length // Before closing quote
+            spannable.setSpan(ForegroundColorSpan(keyColor), start, end, 0)
+        }
+        
+        // Highlight string values (quoted strings after colon, not keys)
+        val stringValueRegex = Regex(":\\s*\"([^\"]+)\"")
+        stringValueRegex.findAll(json).forEach { match ->
+            val valueStart = match.value.indexOf('"', 1) + 1 // Find second quote
+            val start = match.range.first + valueStart
+            val end = start + match.groupValues[1].length
+            spannable.setSpan(ForegroundColorSpan(stringColor), start, end, 0)
+        }
+        
+        // Highlight numbers
+        val numberRegex = Regex(":\\s*(-?\\d+\\.?\\d*)")
+        numberRegex.findAll(json).forEach { match ->
+            val numberStart = match.value.indexOf(match.groupValues[1])
+            val start = match.range.first + numberStart
+            val end = start + match.groupValues[1].length
+            spannable.setSpan(ForegroundColorSpan(numberColor), start, end, 0)
+        }
+        
+        // Highlight booleans
+        val booleanRegex = Regex(":\\s*(true|false)")
+        booleanRegex.findAll(json).forEach { match ->
+            val booleanStart = match.value.indexOf(match.groupValues[1])
+            val start = match.range.first + booleanStart
+            val end = start + match.groupValues[1].length
+            spannable.setSpan(ForegroundColorSpan(booleanColor), start, end, 0)
+        }
+        
+        // Highlight null values
+        val nullRegex = Regex(":\\s*(null)")
+        nullRegex.findAll(json).forEach { match ->
+            val nullStart = match.value.indexOf("null")
+            val start = match.range.first + nullStart
+            val end = start + 4 // "null".length
+            spannable.setSpan(ForegroundColorSpan(nullColor), start, end, 0)
+        }
+        
+        // Highlight structural characters
+        val structureChars = listOf('{', '}', '[', ']', ',', ':')
+        json.forEachIndexed { index, char ->
+            if (char in structureChars) {
+                spannable.setSpan(ForegroundColorSpan(structureColor), index, index + 1, 0)
+            }
+        }
+        
+        return spannable
+    }
+    
+    fun formatJsonWithHighlighting(response: String): String {
         if (response.isBlank()) return response
         
         // Always clean base64 image data before formatting
@@ -120,12 +214,69 @@ class ResponseFormatter private constructor() {
             if (match != null) {
                 val base64Data = match.groupValues[2]
                 val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                
+                // Check for rotation metadata in the response
+                val rotation = extractRotationFromResponse(response)
+                if (rotation != 0 && bitmap != null) {
+                    return rotateImageIfNeeded(bitmap, rotation)
+                }
+                
+                bitmap
             } else {
                 null
             }
         } catch (e: Exception) {
             null
+        }
+    }
+    
+    /**
+     * Extract rotation information from JSON response metadata
+     */
+    private fun extractRotationFromResponse(response: String): Int {
+        return try {
+            val jsonObject = JSONObject(response)
+            if (jsonObject.has("metadata")) {
+                val metadata = jsonObject.getJSONObject("metadata")
+                if (metadata.has("rotation")) {
+                    metadata.getInt("rotation")
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        } catch (e: Exception) {
+            0 // Default to no rotation if parsing fails
+        }
+    }
+    
+    /**
+     * Rotate bitmap based on EXIF orientation/rotation degrees
+     */
+    private fun rotateImageIfNeeded(bitmap: Bitmap, rotationDegrees: Int): Bitmap {
+        if (rotationDegrees == 0) {
+            return bitmap
+        }
+        
+        return try {
+            val matrix = Matrix()
+            matrix.postRotate(rotationDegrees.toFloat())
+            
+            val rotatedBitmap = Bitmap.createBitmap(
+                bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+            )
+            
+            // Recycle the original bitmap if it's different from the rotated one
+            if (rotatedBitmap != bitmap) {
+                bitmap.recycle()
+            }
+            
+            rotatedBitmap
+        } catch (e: Exception) {
+            // If rotation fails, return the original bitmap
+            bitmap
         }
     }
     
@@ -152,8 +303,14 @@ class ResponseFormatter private constructor() {
         var indent = 0
         var inString = false
         var escapeNext = false
+        var inArray = false
+        var arrayDepth = 0
+        var arrayStartPos = -1
         
-        for (char in json) {
+        var i = 0
+        while (i < json.length) {
+            val char = json[i]
+            
             when {
                 escapeNext -> {
                     result.append(char)
@@ -169,7 +326,23 @@ class ResponseFormatter private constructor() {
                         inString = !inString
                     }
                 }
-                !inString && (char == '{' || char == '[') -> {
+                !inString && char == '[' -> {
+                    // Check if this array should be compact
+                    val arrayContent = findMatchingBracket(json, i)
+                    if (shouldCompactArray(json.substring(i, arrayContent + 1))) {
+                        // Write compact array
+                        val compactArray = formatCompactArray(json.substring(i, arrayContent + 1))
+                        result.append(compactArray)
+                        i = arrayContent
+                    } else {
+                        // Regular array formatting
+                        result.append(char)
+                        result.append('\n')
+                        indent++
+                        result.append("  ".repeat(indent))
+                    }
+                }
+                !inString && char == '{' -> {
                     result.append(char)
                     result.append('\n')
                     indent++
@@ -197,9 +370,65 @@ class ResponseFormatter private constructor() {
                     result.append(char)
                 }
             }
+            i++
         }
         
         return result.toString()
+    }
+    
+    private fun findMatchingBracket(json: String, start: Int): Int {
+        var depth = 0
+        var inString = false
+        var escapeNext = false
+        
+        for (i in start until json.length) {
+            val char = json[i]
+            when {
+                escapeNext -> escapeNext = false
+                char == '\\' && inString -> escapeNext = true
+                char == '"' && !escapeNext -> inString = !inString
+                !inString && char == '[' -> depth++
+                !inString && char == ']' -> {
+                    depth--
+                    if (depth == 0) return i
+                }
+            }
+        }
+        return json.length - 1
+    }
+    
+    private fun shouldCompactArray(arrayStr: String): Boolean {
+        // Remove outer brackets and whitespace
+        val content = arrayStr.substring(1, arrayStr.length - 1).trim()
+        if (content.isEmpty()) return true // Empty array
+        
+        // Check if array contains only primitives (no nested objects/arrays)
+        var inString = false
+        var escapeNext = false
+        var depth = 0
+        
+        for (char in content) {
+            when {
+                escapeNext -> escapeNext = false
+                char == '\\' && inString -> escapeNext = true
+                char == '"' && !escapeNext -> inString = !inString
+                !inString && (char == '{' || char == '[') -> {
+                    depth++
+                    if (depth > 0) return false // Contains nested structures
+                }
+                !inString && (char == '}' || char == ']') -> depth--
+            }
+        }
+        
+        // Also check length - keep compact if reasonably short
+        return content.length < 200
+    }
+    
+    private fun formatCompactArray(arrayStr: String): String {
+        // Remove extra whitespace but preserve structure
+        return arrayStr.replace(Regex("\\s*,\\s*"), ", ")
+                       .replace(Regex("\\[\\s*"), "[")
+                       .replace(Regex("\\s*\\]"), "]")
     }
     
     private fun addJsonSyntaxHighlighting(json: String): String {

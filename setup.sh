@@ -74,11 +74,15 @@ USAGE:
     ./setup.sh --local [OPTIONS]
     ./setup.sh cleanup [OPTIONS]
     ./setup.sh test-geocoder [OPTIONS]
+    ./setup.sh setup-port
+    ./setup.sh dashboard [start|stop|help]
 
 ARGUMENTS:
     HOSTNAME                    Set the hostname for this node (not allowed with --local)
     cleanup                     Remove not-ready nodes from cluster
     test-geocoder               Test the geocoder service with sample German city coordinates
+    setup-port                  Scan local subnet for K3s Phone Server and setup port forwarding
+    dashboard                   Launch web dashboard showing node locations and camera feeds
 
 OPTIONS:
     -t, --tailscale-key KEY     Tailscale authentication key (validated before use)
@@ -121,6 +125,12 @@ EXAMPLES:
     # Test geocoder service with sample German cities
     ./setup.sh test-geocoder -v
 
+    # Setup port forwarding to K3s Phone Server on local network
+    ./setup.sh setup-port
+
+    # Launch web dashboard to monitor cluster
+    ./setup.sh dashboard
+
 DESCRIPTION:
     This script will:
     1. Set the hostname for the device
@@ -140,6 +150,13 @@ DESCRIPTION:
     3. Suitable for existing systems with prerequisites already installed
     4. If -t flag is provided, it will be included in generated agent commands
 
+    Setup-port mode will:
+    1. Scan the local subnet (192.168.179.1/24) for K3s Phone Server
+    2. Setup persistent port forwarding from local port 8005 to the phone server
+    3. Enable location services, camera capture, and AI capabilities for agent nodes
+    4. Warn if no server is found (indicating missing mobile capabilities)
+    5. Automatically runs during agent node setup
+
 NOTES:
     - This script requires sudo privileges
     - Root SSH password will be set to 'root' for simplicity
@@ -154,6 +171,8 @@ ADDITIONAL COMMANDS:
     ./setup.sh status        - Show comprehensive cluster status and diagnostics
     ./setup.sh reset         - Completely reset the entire cluster (destructive)
     ./setup.sh test-location - Test the simplified location monitoring system
+    ./setup.sh setup-port    - Setup port forwarding to K3s Phone Server (for agent nodes)
+    ./setup.sh dashboard     - Launch web dashboard (map + object detection)
     
     For registry management, use ./registry.sh
 
@@ -1276,6 +1295,351 @@ test_geocoder_service() {
     fi
 }
 
+# Function to get the current local IP address
+get_local_ip() {
+    # Try multiple methods to get local IP
+    local local_ip=""
+    
+    # Method 1: Use ip route to get default route interface IP
+    if command -v ip &> /dev/null; then
+        local_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -n1)
+    fi
+    
+    # Method 2: Use hostname -I as fallback
+    if [ -z "$local_ip" ] && command -v hostname &> /dev/null; then
+        local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    
+    # Method 3: Parse ip addr output as another fallback
+    if [ -z "$local_ip" ] && command -v ip &> /dev/null; then
+        local_ip=$(ip addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v "127.0.0.1" | head -n1)
+    fi
+    
+    echo "$local_ip"
+}
+
+# Function to scan for K3s Phone Server on the local subnet
+scan_for_k3s_server() {
+    log_step "Scanning local subnet for K3s Phone Server..."
+    
+    local local_ip=$(get_local_ip)
+    if [ -z "$local_ip" ]; then
+        log_error "Could not determine local IP address"
+        return 1
+    fi
+    
+    log "Local IP: $local_ip"
+    
+    # Extract subnet (assume /24)
+    local subnet=$(echo "$local_ip" | cut -d. -f1-3)
+    log "Scanning subnet: ${subnet}.1/24 on port 8005"
+    
+    # Check if required tools are available
+    if ! command -v curl &> /dev/null; then
+        log_warn "curl not found, installing..."
+        sudo apt-get update -qq && sudo apt-get install -y curl
+    fi
+    
+    local found_server=""
+    local found_ip=""
+    
+    # Scan the subnet
+    for i in {1..254}; do
+        local target_ip="${subnet}.${i}"
+        
+        # Skip our own IP
+        if [ "$target_ip" = "$local_ip" ]; then
+            continue
+        fi
+        
+        log_verbose "Checking $target_ip:8005..."
+        
+        # Test if port 8005 is open and returns K3s Phone Server response
+        local response=$(curl -s --connect-timeout 2 --max-time 5 "http://${target_ip}:8005/status" 2>/dev/null || echo "")
+        
+        if [[ "$response" == *"K3s Phone Server"* ]]; then
+            log "✅ Found K3s Phone Server at $target_ip:8005"
+            found_server="$response"
+            found_ip="$target_ip"
+            break
+        fi
+    done
+    
+    if [ -n "$found_ip" ]; then
+        log "📱 K3s Phone Server discovered at: $found_ip:8005"
+        log_verbose "Server response: $found_server"
+        echo "$found_ip"
+        return 0
+    else
+        log_warn "❌ No K3s Phone Server found on local subnet"
+        log_warn "⚠️  This means no location, image capture, or local AI capabilities will be available"
+        log_warn "    Make sure the K3s Phone Server app is running on an Android device"
+        log_warn "    connected to the same network (${subnet}.1/24)"
+        return 1
+    fi
+}
+
+# Function to setup port forwarding using socat
+setup_port_forwarding() {
+    log_step "Setting up K3s Phone Server port forwarding..."
+    
+    # Check if socat is available
+    if ! command -v socat &> /dev/null; then
+        log "Installing socat..."
+        sudo apt-get update -qq && sudo apt-get install -y socat
+    fi
+    
+    # Scan for the server
+    local server_ip=$(scan_for_k3s_server)
+    if [ $? -ne 0 ] || [ -z "$server_ip" ]; then
+        log_error "Cannot setup port forwarding without a detected K3s Phone Server"
+        return 1
+    fi
+    
+    # Store the server IP in a config file
+    local config_file="/etc/k3s-phone-server.conf"
+    echo "K3S_PHONE_SERVER_IP=$server_ip" | sudo tee "$config_file" > /dev/null
+    log "📁 Server IP stored in $config_file"
+    
+    # Check if port 8005 is already in use locally
+    if ss -tuln 2>/dev/null | grep -q ':8005 ' || netstat -tuln 2>/dev/null | grep -q ':8005 '; then
+        log_warn "⚠️  Port 8005 is already in use locally"
+        log "Checking if existing service is our port forwarding..."
+        
+        # Check if it's our socat process
+        if pgrep -f "socat.*TCP-LISTEN:8005.*TCP:.*:8005" > /dev/null; then
+            log "✅ Port forwarding to K3s Phone Server is already active"
+            return 0
+        else
+            log_error "Port 8005 is occupied by another service"
+            log "Please stop the service using port 8005 or use a different configuration"
+            return 1
+        fi
+    fi
+    
+    # Create intelligent port forwarding script with IP reevaluation
+    log "Creating intelligent port forwarding script..."
+    
+    cat << 'EOF' | sudo tee /usr/local/bin/k3s-phone-forward.sh > /dev/null
+#!/bin/bash
+
+# Intelligent K3s Phone Server Port Forwarding
+# Reevaluates IP every 60s if working, retries every 20s if no connection
+
+LOG_TAG="k3s-phone-forward"
+CONFIG_FILE="/etc/k3s-phone-server.conf"
+
+log_info() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [INFO] $1" | systemd-cat -t "$LOG_TAG" -p info
+}
+
+log_warn() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [WARN] $1" | systemd-cat -t "$LOG_TAG" -p warning
+}
+
+log_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [ERROR] $1" | systemd-cat -t "$LOG_TAG" -p err
+}
+
+# Function to scan for K3s Phone Server
+scan_for_server() {
+    local network_range="192.168.0.0/24"
+    
+    # Try to determine network range automatically
+    local default_route=$(ip route | grep default | head -n1)
+    if [ -n "$default_route" ]; then
+        local gateway=$(echo "$default_route" | awk '{print $3}')
+        if [[ "$gateway" =~ ^192\.168\.([0-9]+)\.1$ ]]; then
+            network_range="192.168.${BASH_REMATCH[1]}.0/24"
+        fi
+    fi
+    
+    log_info "Scanning network $network_range for K3s Phone Server..."
+    
+    # Scan common ports 8005 on the network
+    for i in {1..254}; do
+        local ip=$(echo "$network_range" | sed "s/0\/24/$i/")
+        if timeout 2 curl -s "http://$ip:8005/status" 2>/dev/null | grep -q "K3s Phone Server"; then
+            echo "$ip"
+            return 0
+        fi
+    done
+    
+    return 1
+}
+
+# Function to test connection to server
+test_connection() {
+    local server_ip="$1"
+    timeout 5 curl -s "http://$server_ip:8005/status" 2>/dev/null | grep -q "K3s Phone Server"
+}
+
+# Main forwarding loop
+main_loop() {
+    local current_server_ip=""
+    local last_check=0
+    local socat_pid=""
+    
+    while true; do
+        local now=$(date +%s)
+        local should_check=false
+        local check_interval=60  # Default: check every 60 seconds if working
+        
+        # If no current server IP or socat process died, scan immediately
+        if [ -z "$current_server_ip" ] || ! kill -0 "$socat_pid" 2>/dev/null; then
+            should_check=true
+            check_interval=20  # Retry every 20 seconds if no connection
+            if [ -n "$socat_pid" ]; then
+                log_warn "socat process died, rescanning for server"
+            fi
+        elif [ $((now - last_check)) -ge $check_interval ]; then
+            should_check=true
+        fi
+        
+        if [ "$should_check" = true ]; then
+            last_check=$now
+            
+            # Test current server if we have one
+            if [ -n "$current_server_ip" ] && test_connection "$current_server_ip"; then
+                log_info "Server $current_server_ip still responsive"
+            else
+                # Current server not working, scan for new one
+                log_info "Scanning for K3s Phone Server..."
+                local new_server_ip=$(scan_for_server)
+                
+                if [ $? -eq 0 ] && [ -n "$new_server_ip" ]; then
+                    if [ "$new_server_ip" != "$current_server_ip" ]; then
+                        log_info "Found K3s Phone Server at $new_server_ip"
+                        
+                        # Kill old socat process
+                        if [ -n "$socat_pid" ] && kill -0 "$socat_pid" 2>/dev/null; then
+                            log_info "Stopping old port forwarding to $current_server_ip"
+                            kill "$socat_pid" 2>/dev/null
+                            wait "$socat_pid" 2>/dev/null
+                        fi
+                        
+                        # Start new socat process
+                        log_info "Starting port forwarding localhost:8005 -> $new_server_ip:8005"
+                        socat TCP-LISTEN:8005,fork,reuseaddr TCP:$new_server_ip:8005 &
+                        socat_pid=$!
+                        current_server_ip="$new_server_ip"
+                        
+                        # Update config file
+                        echo "K3S_PHONE_SERVER_IP=$new_server_ip" > "$CONFIG_FILE"
+                        
+                        check_interval=60  # Check every 60 seconds when working
+                    fi
+                else
+                    log_warn "No K3s Phone Server found, retrying in 20 seconds"
+                    current_server_ip=""
+                    socat_pid=""
+                    check_interval=20  # Retry every 20 seconds when no server found
+                fi
+            fi
+        fi
+        
+        sleep 5  # Main loop runs every 5 seconds for responsiveness
+    done
+}
+
+# Handle signals gracefully
+cleanup() {
+    log_info "Received shutdown signal, cleaning up..."
+    if [ -n "$socat_pid" ] && kill -0 "$socat_pid" 2>/dev/null; then
+        kill "$socat_pid" 2>/dev/null
+        wait "$socat_pid" 2>/dev/null
+    fi
+    exit 0
+}
+
+trap cleanup SIGTERM SIGINT
+
+log_info "Starting intelligent K3s Phone Server port forwarding"
+main_loop
+EOF
+    
+    sudo chmod +x /usr/local/bin/k3s-phone-forward.sh
+    
+    # Create systemd service for intelligent port forwarding
+    log "Creating systemd service for intelligent port forwarding..."
+    
+    cat << EOF | sudo tee /etc/systemd/system/k3s-phone-server-forward.service > /dev/null
+[Unit]
+Description=K3s Phone Server Intelligent Port Forwarding
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/k3s-phone-forward.sh
+Restart=always
+RestartSec=10
+User=root
+Group=root
+KillMode=mixed
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    # Enable and start the service
+    sudo systemctl daemon-reload
+    sudo systemctl enable k3s-phone-server-forward.service
+    sudo systemctl start k3s-phone-server-forward.service
+    
+    # Wait a moment and check if service started successfully
+    sleep 2
+    if sudo systemctl is-active --quiet k3s-phone-server-forward.service; then
+        log "✅ Port forwarding service started successfully"
+        log "🔌 Local port 8005 now forwards to $server_ip:8005"
+        log ""
+        log "📱 K3s Phone Server capabilities now available:"
+        log "   • Location services (/location)"
+        log "   • Camera capture (/capture)"
+        log "   • AI text generation (/ai/text)"
+        log "   • Object detection (/ai/object_detection)"
+        log ""
+        log "Test the connection:"
+        log "   curl http://localhost:8005/status"
+        
+        # Test the forwarding
+        log_verbose "Testing port forwarding..."
+        local test_response=$(curl -s --connect-timeout 5 --max-time 10 "http://localhost:8005/status" 2>/dev/null || echo "")
+        if [[ "$test_response" == *"K3s Phone Server"* ]]; then
+            log "✅ Port forwarding test successful"
+        else
+            log_warn "⚠️  Port forwarding test failed - may need a moment to stabilize"
+        fi
+        
+        # Update Kubernetes ConfigMap for sample_app to use the local forwarded port
+        log_verbose "Updating phone-server-config ConfigMap for sample_app..."
+        if command -v kubectl &> /dev/null && sudo kubectl cluster-info &> /dev/null; then
+            # Create or update the ConfigMap with the correct local configuration
+            sudo kubectl create configmap phone-server-config \
+                --from-literal=phone.server.host=localhost \
+                --from-literal=phone.server.port=8005 \
+                --from-literal=phone.server.enabled=true \
+                --from-literal=phone.server.timeout=3000 \
+                --dry-run=client -o yaml | sudo kubectl apply -f - &> /dev/null
+            
+            if [ $? -eq 0 ]; then
+                log "📋 Updated phone-server-config ConfigMap for sample_app"
+            else
+                log_warn "⚠️  Could not update phone-server-config ConfigMap"
+            fi
+        else
+            log_verbose "Kubernetes not available - skipping ConfigMap update"
+        fi
+    else
+        log_error "❌ Failed to start port forwarding service"
+        sudo systemctl status k3s-phone-server-forward.service
+        return 1
+    fi
+    
+    return 0
+}
+
 # Function to deploy the reverse geocoder service
 deploy_geocoder_service() {
     log_verbose "[DEBUG] deploy_geocoder_service() function called"
@@ -1596,10 +1960,6 @@ install_k3s_server() {
     fi
 
     show_agent_setup_info
-    
-    # Install location monitoring for the server
-    log_step "Installing location monitoring for server node..."
-    install_location_monitoring
 }
 
 # Function to set up geolocation monitoring service
@@ -1617,9 +1977,9 @@ setup_geolocation_service() {
 # Monitors phone app geolocation API and updates node labels
 
 # Configuration
-PHONE_API_URL="http://localhost:8005"
-GEOLOCATION_ENDPOINT="$PHONE_API_URL/location"
 NODE_NAME=$(hostname)
+PHONE_API_URL="http://$NODE_NAME:8005"
+GEOLOCATION_ENDPOINT="$PHONE_API_URL/location"
 LABEL_PREFIX="phone.location"
 CHECK_INTERVAL=20
 
@@ -2166,9 +2526,11 @@ EOF
 # Function to set device type via node-labeler service
 
 
-# Function to install simple location monitoring script (for server)
+# Function to install location monitoring service (for agent nodes with port forwarding)
 install_location_monitoring() {
-    log_step "Setting up simple location monitoring..."
+    log_step "Setting up location monitoring service..."
+    log "📍 This service will monitor location via port forwarding to K3s Phone Server"
+    log "   Port forwarding maps localhost:8005 -> K3s Phone Server IP:8005"
     
     # Create the location updater script embedded in setup.sh
     local script_path="/usr/local/bin/update-node-locations.sh"
@@ -3225,14 +3587,9 @@ install_k3s_agent() {
     # Simple phone node labeling
     simple_label_node_as_phone
 
-    log "✅ Agent node setup complete with simplified location monitoring"
-    log "   Location updates will be handled by the server-side location monitor"
-    log "   Ensure Android geolocation app is running on port 8005"
-
-    # Note: Geolocation monitoring is now handled by the server via SSH
-    log "📍 Location monitoring: Server-side SSH approach (no agent service needed)"
-    log "   The server will query this agent's Android app directly via SSH"
-    log "   No additional geolocation service is installed on agent nodes"
+    log "✅ Agent node setup complete"
+    log "   Location monitoring will be handled by the K3s server/host only"
+    log "   Agent nodes will only provide workload capacity"
 
     # Show agent setup completion information
     show_agent_completion_info
@@ -3477,8 +3834,9 @@ show_agent_setup_info() {
     echo ""
     log "To add agent nodes, use one of the following methods:"
     echo ""
-    log_warn "⚠️  Network Resolution: Commands include 'ping github.com' to test connectivity first"
-    log_warn "⚠️  If ping fails, close the Linux Terminal App tab and reinstall Debian."
+    log "Prerequisites: Ensure K3s Phone Server Android app is running on agent device"
+    log "Network Resolution: Commands include 'ping github.com' to test connectivity first"
+    log "If ping fails, close the Linux Terminal App tab and reinstall Debian."
     echo ""
     echo "Option 1 - One-line setup with auto-generated hostname:"
     echo ""
@@ -3549,7 +3907,15 @@ ssh phone-hostname "curl -s http://localhost:8005/location"
 
 ## Setup Methods
 
-⚠️ **Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, close the Linux Terminal App tab and reinstall Debian.
+⚠️ **Prerequisites Before Agent Setup**:
+1. **Install K3s Phone Server Android App**: Download and install the Android APK on your device
+2. **Start the Android App**: Ensure the app is running and listening on port 8005
+3. **Grant Permissions**: Allow camera, location, and storage permissions when prompted
+   - The app will automatically request location access 10 seconds after startup
+   - Make sure to grant location permissions for GPS-based cluster mapping
+4. **Test Connectivity**: Verify the app responds at \`http://localhost:8005/status\`
+
+**Network Resolution Notice**: All commands include \`ping github.com\` to test network connectivity first. If ping fails, close the Linux Terminal App tab and reinstall Debian.
 
 ### Option 1 - One-line setup with auto-generated hostname
 \`\`\`bash
@@ -3986,6 +4352,24 @@ parse_arguments() {
         exit $?
     fi
 
+    if [ "$1" = "setup-port" ]; then
+        echo "🔌 Setting up K3s Phone Server port forwarding..."
+        setup_port_forwarding
+        exit $?
+    fi
+
+    if [ "$1" = "dashboard" ]; then
+        echo "🌐 Starting K3s Phone Cluster Dashboard..."
+        # Source and run the dashboard script functionality
+        if [ -f "$(dirname "$0")/dashboard.sh" ]; then
+            bash "$(dirname "$0")/dashboard.sh" "${@:2}"
+        else
+            log_error "dashboard.sh not found in script directory"
+            exit $EXIT_FAILURE
+        fi
+        exit $?
+    fi
+
     # Check if first argument is '--local'
     if [ "$1" = "--local" ]; then
         LOCAL_MODE=true
@@ -4199,6 +4583,21 @@ main() {
         log "K3s Mode: Agent (Worker Node)"
         log "K3s Server URL: $K3S_URL"
         log "K3s Token: ***provided***"
+        
+        # Check if Android app is running before proceeding
+        log_step "Checking if K3s Phone Server Android app is running..."
+        if ! curl -s --connect-timeout 5 --max-time 10 "http://localhost:8005/status" >/dev/null 2>&1; then
+            log_error "❌ K3s Phone Server Android app is not responding on port 8005"
+            log_error "📱 Please ensure the Android app is installed and RUNNING before setup"
+            log_error "💡 Steps to fix:"
+            log_error "   1. Install K3s Phone Server APK on this device"
+            log_error "   2. Open the app and ensure it starts successfully" 
+            log_error "   3. Verify the app shows 'Server running on port 8005'"
+            log_error "   4. Test manually: curl http://localhost:8005/status"
+            exit 1
+        else
+            log "✅ K3s Phone Server Android app is running and responding"
+        fi
     else
         log "K3s Mode: Server (Master Node)"
     fi
@@ -4234,6 +4633,19 @@ main() {
     # Install K3s (server or agent based on parameters)
     if [ -n "$K3S_TOKEN" ] && [ -n "$K3S_URL" ]; then
         install_k3s_agent
+        
+        # Setup port forwarding to K3s Phone Server for enhanced capabilities (agent mode only)
+        log_step "Setting up K3s Phone Server integration for agent node..."
+        if scan_for_k3s_server > /dev/null 2>&1; then
+            log "📱 K3s Phone Server detected on network - setting up port forwarding..."
+            setup_port_forwarding || log_warn "Port forwarding setup failed - continuing without mobile capabilities"
+        else
+            log_warn "⚠️  No K3s Phone Server found on local network"
+            log_warn "    This means no location, image capture, or local AI capabilities will be available"
+            log_warn "    To enable these features:"
+            log_warn "      1. Start the K3s Phone Server Android app on a device connected to this network"
+            log_warn "      2. Run: ./setup.sh setup-port"
+        fi
     else
         install_k3s_server
     fi

@@ -6,6 +6,27 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     
+    <!-- Storage permissions for persistent AI model storage -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" 
+        android:maxSdkVersion="28" />
+    
+    <!-- Modern storage permissions for Android 13+ -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    
+    <!-- Request legacy external storage for easier file access on older Android versions -->
+    <uses-permission android:name="android.permission.REQUEST_LEGACY_EXTERNAL_STORAGE" />
+    
+    <!-- Note: Using app-specific storage and SAF (Storage Access Framework) for file access -->
+    <!-- This avoids the need for MANAGE_EXTERNAL_STORAGE which requires special approval -->
+    
+    <!-- Query packages for browser launching (OAuth) -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" 
+        tools:ignore="QueryAllPackagesPermission" />
+    
     <!-- Location permissions -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -35,6 +56,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.K3sPhoneServer"
+        android:largeHeap="true"
+        android:hardwareAccelerated="true"
+        android:vmSafeMode="false"
+        android:extractNativeLibs="true"
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true"
         tools:targetApi="31">
         
         <activity
@@ -46,6 +73,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <activity
+            android:name=".AIModelManagerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.K3sPhoneServer"
+            android:parentActivityName=".MainActivity" />
+        
+        <activity
+            android:name=".AITestActivity"
+            android:exported="false"
+            android:theme="@style/Theme.K3sPhoneServer"
+            android:parentActivityName=".MainActivity"
+            android:label="AI Text Generation" />
         
         <service
             android:name=".server.WebServerService"

@@ -76,37 +76,33 @@ jobs:
         tag_name: android-v${{ github.run_number }}
         name: Android App Release v${{ github.run_number }}
         body: |
-          Automated Android app build with advanced multimodal AI capabilities
+          Android app build for K3s Phone Server
           
           ## Features
-          - 🌐 Web server on port 8005 with REST API
-          - 📍 GPS location API endpoint  
-          - 🧭 Compass/orientation API endpoint
-          - 🤖 Advanced multimodal AI with Gemma + MediaPipe
-          - 📷 Camera capture with multi-camera selection (front/back/wide/zoom)
-          - 🎯 Image classification and object detection
-          - 💬 Natural language image analysis
-          - 📊 Real-time request logging UI
-          - 🔄 Background service operation
-          - 📱 Automatic AI model download with license compliance
+          - REST API server on port 8005
+          - GPS location and orientation sensors
+          - MediaPipe LLM inference (Gemma, DeepSeek-R1, Llama 3.2, TinyLlama)
+          - Object detection with EfficientDet Lite 2
+          - Camera capture with front/rear support
+          - Model management with download and testing
+          - Performance metrics (tokens/second)
+          - Streaming text generation with cancellation
           
           ## Installation
           1. Download the APK file
           2. Enable "Install from unknown sources" in Android settings
           3. Install the APK
-          4. Accept Gemma license terms on first launch
-          5. Wait for AI models to download (~1.3GB)
-          6. Grant necessary permissions (location, camera, storage)
-          7. Start using the multimodal AI features!
+          4. Grant permissions (location, camera, storage)
+          5. Use REST API endpoints or model management UI
           
           ## API Endpoints
-          - `GET /status` - Server status and system info
-          - `GET /location` - Current GPS location
-          - `GET /orientation` - Device orientation/compass
-          - `POST /ai/analyze` - Advanced multimodal AI analysis
-          - `POST /ai/capture` - Capture and analyze with AI
-          - `GET /capture` - Simple camera capture
-          - `GET /logs` - Request logging data
+          - `GET /status` - Server status and capabilities
+          - `GET /location` - GPS coordinates with accuracy
+          - `GET /orientation` - Device compass data
+          - `POST /ai/text` - LLM text generation
+          - `POST /ai/object_detection` - MediaPipe object detection
+          - `GET /ai/models` - Available models list
+          - `GET /capture` - Camera capture with zoom
         files: |
           android/app/build/outputs/apk/debug/app-debug.apk
           android/app/build/outputs/apk/release/app-release-unsigned.apk

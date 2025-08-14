@@ -20,8 +20,8 @@ import java.util.regex.Pattern;
  */
 public class PhoneServerClient {
     
-    private static final String PHONE_SERVER_HOST = "localhost";
-    private static final int PHONE_SERVER_PORT = 8005;
+    private static final String PHONE_SERVER_HOST = System.getenv().getOrDefault("PHONE_SERVER_HOST", "localhost");
+    private static final int PHONE_SERVER_PORT = Integer.parseInt(System.getenv().getOrDefault("PHONE_SERVER_PORT", "8005"));
     private static final String BASE_URL = "http://" + PHONE_SERVER_HOST + ":" + PHONE_SERVER_PORT;
     private static final Duration TIMEOUT = Duration.ofSeconds(3);
     
@@ -207,45 +207,48 @@ public class PhoneServerClient {
     }
     
     /**
-     * Request AI description of surroundings if AI is available.
+     * Request object detection with camera capture if AI is available.
+     * This is faster than LLM-based image description and returns structured object data.
      * 
-     * @return CompletableFuture<String> with AI description or null if unavailable
+     * @param returnImage whether to include base64 image in response
+     * @return CompletableFuture<String> with object detection JSON response or null if unavailable
      */
-    public CompletableFuture<String> getAIDescription() {
+    public CompletableFuture<String> getObjectDetection(boolean returnImage) {
         if (!phoneServerAvailable) {
             return CompletableFuture.completedFuture(null);
         }
-        
+
         return checkAIAvailability().thenCompose(aiAvailable -> {
             if (!aiAvailable) {
                 System.out.println("AI not available on phone server");
                 return CompletableFuture.completedFuture(null);
             }
-            
+
             return CompletableFuture.supplyAsync(() -> {
                 try {
-                    // Create JSON request body
-                    String requestBody = "{\"task\":\"describe your surroundings\",\"camera\":\"back\"}";
-                    
+                    // Create JSON request body for object detection (faster than LLM)
+                    String requestBody = String.format(
+                        "{\"side\":\"rear\",\"threshold\":0.5,\"maxResults\":10,\"returnImage\":%s}",
+                        returnImage
+                    );
+
                     HttpRequest request = HttpRequest.newBuilder()
-                            .uri(URI.create(BASE_URL + "/ai/capture"))
-                            .timeout(Duration.ofSeconds(15)) // AI requests can take longer
+                            .uri(URI.create(BASE_URL + "/ai/object_detection"))
+                            .timeout(Duration.ofSeconds(10)) // Object detection is faster than LLM
                             .header("Content-Type", "application/json")
                             .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                             .build();
-                    
+
                     HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                    
+
                     if (response.statusCode() == 200) {
-                        String responseBody = response.body();
-                        // Extract result from JSON response
-                        return parseJsonString(responseBody, "result");
+                        return response.body(); // Return full JSON response with objects and metadata
                     } else {
-                        System.err.println("AI description request failed with status: " + response.statusCode());
+                        System.err.println("Object detection request failed with status: " + response.statusCode());
                         return null;
                     }
                 } catch (Exception e) {
-                    System.err.println("Failed to get AI description: " + e.getMessage());
+                    System.err.println("Failed to get object detection: " + e.getMessage());
                     return null;
                 }
             });
@@ -255,38 +258,85 @@ public class PhoneServerClient {
     /**
      * Capture image from phone camera.
      * 
-     * @return CompletableFuture<String> with base64 encoded image or null if unavailable
+     * @return CompletableFuture<String> with base64 image data or null if unavailable
      */
     public CompletableFuture<String> captureImage() {
         if (!phoneServerAvailable) {
             return CompletableFuture.completedFuture(null);
         }
-        
+
         return CompletableFuture.supplyAsync(() -> {
             try {
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(BASE_URL + "/capture"))
-                        .timeout(Duration.ofSeconds(10))
+                        .timeout(Duration.ofSeconds(5))
                         .GET()
                         .build();
-                
+
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-                
+
                 if (response.statusCode() == 200) {
-                    String responseBody = response.body();
-                    // Check if it's a base64 image
-                    if (responseBody.startsWith("data:image/")) {
-                        return responseBody;
-                    }
+                    return response.body(); // Return base64 image data
+                } else {
+                    System.err.println("Image capture request failed with status: " + response.statusCode());
+                    return null;
                 }
             } catch (Exception e) {
                 System.err.println("Failed to capture image from phone: " + e.getMessage());
+                return null;
             }
-            return null;
         });
     }
-    
+
     /**
+     * Request AI text response with camera capture and optional image return.
+     * 
+     * @param text the prompt text for the AI
+     * @param camera camera side ("rear" or "front")
+     * @param returnImage whether to include base64 image in response
+     * @return CompletableFuture<String> with AI text JSON response or null if unavailable
+     */
+    public CompletableFuture<String> getAITextResponse(String text, String camera, boolean returnImage) {
+        if (!phoneServerAvailable) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        return checkAIAvailability().thenCompose(aiAvailable -> {
+            if (!aiAvailable) {
+                System.out.println("AI not available on phone server");
+                return CompletableFuture.completedFuture(null);
+            }
+
+            return CompletableFuture.supplyAsync(() -> {
+                try {
+                    // Create JSON request body for AI text endpoint
+                    String escapedText = text.replace("\"", "\\\"");
+                    String requestBody = "{\"text\":\"" + escapedText + 
+                                       "\",\"model\":\"\",\"temperature\":0.7,\"topK\":40,\"returnImage\":" + 
+                                       returnImage + ",\"captureConfig\":{\"camera\":\"" + camera + "\"}}";
+
+                    HttpRequest request = HttpRequest.newBuilder()
+                            .uri(URI.create(BASE_URL + "/ai/text"))
+                            .timeout(Duration.ofSeconds(30)) // AI text can take longer than object detection
+                            .header("Content-Type", "application/json")
+                            .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                            .build();
+
+                    HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+                    if (response.statusCode() == 200) {
+                        return response.body(); // Return full JSON response with AI text and optional image
+                    } else {
+                        System.err.println("AI text request failed with status: " + response.statusCode());
+                        return null;
+                    }
+                } catch (Exception e) {
+                    System.err.println("Failed to get AI text response: " + e.getMessage());
+                    return null;
+                }
+            });
+        });
+    }    /**
      * Check server capabilities using the /capabilities endpoint.
      * 
      * @return CompletableFuture<ServerCapabilities> with available features

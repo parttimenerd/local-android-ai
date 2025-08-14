@@ -14,10 +14,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Handler for camera capture API endpoint.
- * Triggers photo capture on Android K3s Phone Server and returns base64 image.
+ * Handler for camera capture with object detection API endpoint.
+ * Captures photo using object detection on Android K3s Phone Server and returns JSON with detected objects and optional image.
  * 
- * POST /api/phone/capture - Captures photo and returns base64 encoded image
+ * POST /api/phone/capture - Captures photo with object detection and returns detected objects and optional base64 image
  */
 public class CameraCaptureHandler implements HttpHandler {
     
@@ -54,12 +54,17 @@ public class CameraCaptureHandler implements HttpHandler {
                     sendResponse(exchange, 503, "Camera functionality not available on this phone server");
                     return;
                 }
+                
+                if (!capabilities.aiAvailable) {
+                    sendResponse(exchange, 503, "AI object detection not available on this phone server");
+                    return;
+                }
             } catch (Exception capEx) {
                 sendResponse(exchange, 500, "Failed to check server capabilities: " + capEx.getMessage());
                 return;
             }
 
-            // Read request body (camera configuration)
+            // Read request body (object detection configuration)
             String requestBody = "";
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8))) {
@@ -71,16 +76,16 @@ public class CameraCaptureHandler implements HttpHandler {
                 requestBody = sb.toString();
             }
             
-            // Make request to phone server AI capture endpoint
-            String imageBase64 = capturePhotoFromPhone(requestBody);
+            // Make request to phone server object detection endpoint
+            String detectionResult = captureWithObjectDetectionFromPhone(requestBody);
             
-            if (imageBase64 != null && !imageBase64.isEmpty()) {
-                // Set response headers for image data
-                exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            if (detectionResult != null && !detectionResult.isEmpty()) {
+                // Set response headers for JSON data
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-                sendResponse(exchange, 200, imageBase64);
+                sendResponse(exchange, 200, detectionResult);
             } else {
-                sendResponse(exchange, 500, "Failed to capture photo");
+                sendResponse(exchange, 500, "Failed to capture photo with object detection");
             }
             
         } catch (Exception e) {
@@ -89,29 +94,39 @@ public class CameraCaptureHandler implements HttpHandler {
         }
     }
     
-    private String capturePhotoFromPhone(String requestBody) throws Exception {
+    private String captureWithObjectDetectionFromPhone(String requestBody) throws Exception {
         // Get phone server URL from PhoneServerClient
         String phoneServerUrl = phoneClient.getPhoneServerUrl();
         if (phoneServerUrl == null) {
             throw new RuntimeException("Phone server URL not available");
         }
         
-        URI uri = URI.create(phoneServerUrl + "/ai/capture");
+        URI uri = URI.create(phoneServerUrl + "/ai/object_detection");
         HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
         
         try {
             connection.setRequestMethod("POST");
             connection.setRequestProperty("Content-Type", "application/json");
-            connection.setRequestProperty("Accept", "text/plain");
+            connection.setRequestProperty("Accept", "application/json");
             connection.setDoOutput(true);
             connection.setConnectTimeout(5000);
-            connection.setReadTimeout(15000); // Camera operations can take time
+            connection.setReadTimeout(15000); // Object detection can take time
             
-            // Send request body if provided
-            if (requestBody != null && !requestBody.isEmpty()) {
-                try (OutputStream os = connection.getOutputStream()) {
-                    os.write(requestBody.getBytes(StandardCharsets.UTF_8));
-                }
+            // Create default request body if none provided
+            String objectDetectionRequest = requestBody;
+            if (objectDetectionRequest == null || objectDetectionRequest.trim().isEmpty()) {
+                // Default object detection configuration for faster processing
+                objectDetectionRequest = "{\n" +
+                    "  \"side\": \"rear\",\n" +
+                    "  \"threshold\": 0.5,\n" +
+                    "  \"maxResults\": 10,\n" +
+                    "  \"returnImage\": true\n" +
+                    "}";
+            }
+            
+            // Send request body
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(objectDetectionRequest.getBytes(StandardCharsets.UTF_8));
             }
             
             int responseCode = connection.getResponseCode();
@@ -126,7 +141,16 @@ public class CameraCaptureHandler implements HttpHandler {
                     return response.toString();
                 }
             } else {
-                throw new RuntimeException("Phone server returned status: " + responseCode);
+                // Try to read error response
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(connection.getErrorStream(), StandardCharsets.UTF_8))) {
+                    StringBuilder errorResponse = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        errorResponse.append(line);
+                    }
+                    throw new RuntimeException("Phone server returned status: " + responseCode + ", error: " + errorResponse.toString());
+                }
             }
             
         } finally {

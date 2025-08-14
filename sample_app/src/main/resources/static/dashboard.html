@@ -188,6 +188,113 @@
                                         </VBox>
                                     </VBox>
                                     
+                                    <!-- Object Detection API Tester -->
+                                    <VBox id="objectDetectionSection" class="sapUiMediumMargin" visible="false">
+                                        <Label text="🎯 Object Detection API Tester (Rear Camera)" class="metric-label" />
+                                        <Panel class="sapUiSmallMargin" style="border-radius: 8px; border: 2px solid #ff6b35; background: #fffaf8; padding: 12px;">
+                                            <!-- API Testing Controls -->
+                                            <VBox class="sapUiSmallMargin">
+                                                <Label text="Test Parameters:" class="metric-label" />
+                                                <HBox class="sapUiTinyMargin" alignItems="Center">
+                                                    <Label text="Detection Threshold:" width="150px" />
+                                                    <Slider id="thresholdSlider" value="0.5" min="0.1" max="1.0" step="0.1" width="200px" showAdvancedTooltip="true" />
+                                                    <Text id="thresholdValue" text="0.5" style="margin-left: 8px;" />
+                                                </HBox>
+                                                <HBox class="sapUiTinyMargin" alignItems="Center">
+                                                    <Label text="Max Results:" width="150px" />
+                                                    <Slider id="maxResultsSlider" value="5" min="1" max="20" step="1" width="200px" showAdvancedTooltip="true" />
+                                                    <Text id="maxResultsValue" text="5" style="margin-left: 8px;" />
+                                                </HBox>
+                                                <HBox class="sapUiTinyMargin" alignItems="Center">
+                                                    <CheckBox id="includeImageCheck" text="Include Image in Response" selected="true" />
+                                                </HBox>
+                                                <HBox class="sapUiSmallMargin">
+                                                    <Button id="testObjectDetectionBtn" text="🎯 Test Object Detection" type="Emphasized" press="onTestObjectDetection" />
+                                                    <Button id="testCaptureBtn" text="📸 Test Capture API" type="Default" press="onTestCaptureAPI" style="margin-left: 8px;" />
+                                                </HBox>
+                                            </VBox>
+                                            
+                                            <!-- API Response Display -->
+                                            <VBox id="apiResponseSection" class="sapUiSmallMargin" visible="false">
+                                                <Label text="API Response:" class="metric-label" style="margin-top: 12px;" />
+                                                <Panel style="border-radius: 4px; border: 1px solid #ddd; background: #f9f9f9; max-height: 300px; overflow-y: auto;">
+                                                    <Text id="apiResponseText" text="" style="white-space: pre-wrap; font-family: monospace; font-size: 12px; padding: 8px;" />
+                                                </Panel>
+                                            </VBox>
+                                            
+                                            <!-- Object Detection Results -->
+                                            <VBox id="detectionResultsSection" class="sapUiSmallMargin" visible="false">
+                                                <Label text="Detected Objects:" class="metric-label" style="margin-top: 12px;" />
+                                                <List id="detectionResultsList" mode="None" />
+                                            </VBox>
+                                            
+                                            <!-- Test Image Display -->
+                                            <VBox id="testImageSection" class="sapUiSmallMargin" visible="false">
+                                                <Label text="Captured Image:" class="metric-label" style="margin-top: 12px;" />
+                                                <VBox style="border-radius: 8px; border: 2px solid #ff6b35; overflow: hidden; max-width: 500px; background: #f8f9fa;">
+                                                    <html:img id="testImage" style="width: 100%; height: auto; display: block; max-height: 300px; object-fit: contain;" alt="Test image will appear here" />
+                                                </VBox>
+                                            </VBox>
+                                            
+                                            <Text id="apiTestTimestamp" text="" textAlign="End" class="metric-label" style="margin-top: 8px; font-style: italic;" />
+                                        </Panel>
+                                    </VBox>
+
+                                    <!-- AI Text API Tester -->
+                                    <VBox id="aiTextSection" class="sapUiMediumMargin" visible="false">
+                                        <Label text="🤖 AI Text API Tester" class="metric-label" />
+                                        <Panel class="sapUiSmallMargin" style="border-radius: 8px; border: 2px solid #6f42c1; background: #faf8ff; padding: 12px;">
+                                            <!-- AI Testing Controls -->
+                                            <VBox class="sapUiSmallMargin">
+                                                <Label text="Test Parameters:" class="metric-label" />
+                                                <HBox class="sapUiTinyMargin" alignItems="Center">
+                                                    <Label text="Prompt Text:" width="150px" />
+                                                    <Input id="aiPromptInput" value="Describe what you see in detail" width="300px" />
+                                                </HBox>
+                                                <HBox class="sapUiTinyMargin" alignItems="Center">
+                                                    <Label text="Camera Side:" width="150px" />
+                                                    <Select id="aiCameraSelect" selectedKey="rear" width="200px">
+                                                        <core:Item key="rear" text="Rear Camera" />
+                                                        <core:Item key="front" text="Front Camera" />
+                                                    </Select>
+                                                </HBox>
+                                                <HBox class="sapUiTinyMargin" alignItems="Center">
+                                                    <CheckBox id="aiIncludeImageCheck" text="Include Image in Response" selected="true" />
+                                                </HBox>
+                                                <HBox class="sapUiSmallMargin">
+                                                    <Button id="testAITextRearBtn" text="🤖 Test AI Text (Rear)" type="Emphasized" press="onTestAIText" data-camera="rear" />
+                                                    <Button id="testAITextFrontBtn" text="🤖 Test AI Text (Front)" type="Default" press="onTestAIText" data-camera="front" style="margin-left: 8px;" />
+                                                </HBox>
+                                            </VBox>
+                                            
+                                            <!-- AI Response Display -->
+                                            <VBox id="aiApiResponseSection" class="sapUiSmallMargin" visible="false">
+                                                <Label text="AI Response:" class="metric-label" style="margin-top: 12px;" />
+                                                <Panel style="border-radius: 4px; border: 1px solid #ddd; background: #f9f9f9; max-height: 300px; overflow-y: auto;">
+                                                    <Text id="aiApiResponseText" text="" style="white-space: pre-wrap; font-family: monospace; font-size: 12px; padding: 8px;" />
+                                                </Panel>
+                                            </VBox>
+                                            
+                                            <!-- AI Text Result -->
+                                            <VBox id="aiTextResultSection" class="sapUiSmallMargin" visible="false">
+                                                <Label text="AI Generated Text:" class="metric-label" style="margin-top: 12px;" />
+                                                <Panel style="border-radius: 4px; border: 1px solid #6f42c1; background: #faf8ff; padding: 12px;">
+                                                    <Text id="aiTextResult" text="" style="white-space: pre-wrap; font-size: 14px;" />
+                                                </Panel>
+                                            </VBox>
+                                            
+                                            <!-- AI Test Image Display -->
+                                            <VBox id="aiTestImageSection" class="sapUiSmallMargin" visible="false">
+                                                <Label text="Captured Image:" class="metric-label" style="margin-top: 12px;" />
+                                                <VBox style="border-radius: 8px; border: 2px solid #6f42c1; overflow: hidden; max-width: 500px; background: #f8f9fa;">
+                                                    <html:img id="aiTestImage" style="width: 100%; height: auto; display: block; max-height: 300px; object-fit: contain;" alt="Test image will appear here" />
+                                                </VBox>
+                                            </VBox>
+                                            
+                                            <Text id="aiTestTimestamp" text="" textAlign="End" class="metric-label" style="margin-top: 8px; font-style: italic;" />
+                                        </Panel>
+                                    </VBox>
+
                                     <!-- AI Description -->
                                     <VBox id="aiSection" class="sapUiMediumMargin" visible="false">
                                         <Label text="🤖 AI Description of Surroundings" class="metric-label" />
@@ -360,6 +467,7 @@
                     const cameraSection = this.byId("cameraSection");
                     const cameraImage = document.getElementById('cameraImage');
                     const cameraStatus = this.byId("cameraStatus");
+                    const objectDetectionSection = this.byId("objectDetectionSection");
                     const aiSection = this.byId("aiSection");
                     const aiDescriptionText = this.byId("aiDescriptionText");
                     const aiTimestampText = this.byId("aiTimestampText");
@@ -429,6 +537,22 @@
                         if (!capabilities.ai) {
                             console.log("AI features not available on this server");
                         }
+                    }
+                    
+                    // Show object detection API tester if AI capabilities are available
+                    if (capabilities.ai) {
+                        objectDetectionSection.setVisible(true);
+                        this.setupObjectDetectionControls();
+                    } else {
+                        objectDetectionSection.setVisible(false);
+                    }
+                    
+                    // Show AI text API tester if AI capabilities are available
+                    const aiTextSection = this.byId("aiTextSection");
+                    if (capabilities.ai) {
+                        aiTextSection.setVisible(true);
+                    } else {
+                        aiTextSection.setVisible(false);
                     }
                 },
                 
@@ -742,6 +866,320 @@
                             clearInterval(this.autoRefreshInterval);
                         }
                     }
+                },
+                
+                setupObjectDetectionControls: function() {
+                    // Setup slider event handlers
+                    const thresholdSlider = this.byId("thresholdSlider");
+                    const thresholdValue = this.byId("thresholdValue");
+                    const maxResultsSlider = this.byId("maxResultsSlider");
+                    const maxResultsValue = this.byId("maxResultsValue");
+                    
+                    if (thresholdSlider) {
+                        thresholdSlider.attachLiveChange((oEvent) => {
+                            const value = oEvent.getParameter("value");
+                            thresholdValue.setText(value.toFixed(1));
+                        });
+                    }
+                    
+                    if (maxResultsSlider) {
+                        maxResultsSlider.attachLiveChange((oEvent) => {
+                            const value = oEvent.getParameter("value");
+                            maxResultsValue.setText(value.toString());
+                        });
+                    }
+                },
+                
+                onTestObjectDetection: function() {
+                    const thresholdSlider = this.byId("thresholdSlider");
+                    const maxResultsSlider = this.byId("maxResultsSlider");
+                    const includeImageCheck = this.byId("includeImageCheck");
+                    const apiResponseSection = this.byId("apiResponseSection");
+                    const apiResponseText = this.byId("apiResponseText");
+                    const detectionResultsSection = this.byId("detectionResultsSection");
+                    const detectionResultsList = this.byId("detectionResultsList");
+                    const testImageSection = this.byId("testImageSection");
+                    const testImage = document.getElementById('testImage');
+                    const apiTestTimestamp = this.byId("apiTestTimestamp");
+                    const testButton = this.byId("testObjectDetectionBtn");
+                    
+                    // Get parameters
+                    const threshold = thresholdSlider.getValue();
+                    const maxResults = Math.round(maxResultsSlider.getValue());
+                    const includeImage = includeImageCheck.getSelected();
+                    
+                    // Update button state
+                    testButton.setText("🔄 Testing...");
+                    testButton.setEnabled(false);
+                    
+                    // Build API URL with parameters
+                    const params = new URLSearchParams({
+                        threshold: threshold,
+                        maxResults: maxResults,
+                        returnImage: includeImage
+                    });
+                    
+                    const apiUrl = `http://localhost:8005/ai/object_detection?${params.toString()}`;
+                    
+                    console.log("Testing object detection API:", apiUrl);
+                    
+                    fetch(apiUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log("Object detection response:", data);
+                        
+                        // Show API response
+                        apiResponseSection.setVisible(true);
+                        apiResponseText.setText(JSON.stringify(data, null, 2));
+                        
+                        // Process detection results
+                        if (data.detections && data.detections.length > 0) {
+                            detectionResultsSection.setVisible(true);
+                            detectionResultsList.removeAllItems();
+                            
+                            data.detections.forEach((detection, index) => {
+                                const listItem = new sap.m.StandardListItem({
+                                    title: `${detection.category} (${(detection.score * 100).toFixed(1)}%)`,
+                                    description: `Bounding box: [${detection.boundingBox.originX}, ${detection.boundingBox.originY}, ${detection.boundingBox.width}, ${detection.boundingBox.height}]`,
+                                    icon: "sap-icon://target-group"
+                                });
+                                detectionResultsList.addItem(listItem);
+                            });
+                        } else {
+                            detectionResultsSection.setVisible(false);
+                        }
+                        
+                        // Show image if included
+                        if (data.image && includeImage) {
+                            testImageSection.setVisible(true);
+                            if (testImage) {
+                                testImage.src = data.image;
+                            }
+                        } else {
+                            testImageSection.setVisible(false);
+                        }
+                        
+                        // Update timestamp
+                        const timestamp = new Date().toLocaleTimeString();
+                        apiTestTimestamp.setText(`Test completed: ${timestamp}`);
+                        
+                        sap.m.MessageToast.show(`Object detection completed! Found ${data.detections ? data.detections.length : 0} objects.`);
+                    })
+                    .catch(error => {
+                        console.error("Object detection test error:", error);
+                        
+                        // Show error in response section
+                        apiResponseSection.setVisible(true);
+                        apiResponseText.setText(`Error: ${error.message}`);
+                        
+                        // Hide other sections
+                        detectionResultsSection.setVisible(false);
+                        testImageSection.setVisible(false);
+                        
+                        const timestamp = new Date().toLocaleTimeString();
+                        apiTestTimestamp.setText(`Test failed: ${timestamp}`);
+                        
+                        sap.m.MessageToast.show("Object detection test failed: " + error.message);
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        testButton.setText("🎯 Test Object Detection");
+                        testButton.setEnabled(true);
+                    });
+                },
+                
+                onTestCaptureAPI: function() {
+                    const apiResponseSection = this.byId("apiResponseSection");
+                    const apiResponseText = this.byId("apiResponseText");
+                    const detectionResultsSection = this.byId("detectionResultsSection");
+                    const testImageSection = this.byId("testImageSection");
+                    const testImage = document.getElementById('testImage');
+                    const apiTestTimestamp = this.byId("apiTestTimestamp");
+                    const testButton = this.byId("testCaptureBtn");
+                    
+                    // Update button state
+                    testButton.setText("🔄 Testing...");
+                    testButton.setEnabled(false);
+                    
+                    const apiUrl = '/api/phone/capture';
+                    
+                    console.log("Testing capture API:", apiUrl);
+                    
+                    fetch(apiUrl, {
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log("Capture API response:", data);
+                        
+                        // Show API response
+                        apiResponseSection.setVisible(true);
+                        apiResponseText.setText(JSON.stringify(data, null, 2));
+                        
+                        // Hide detection results (capture API doesn't return detections)
+                        detectionResultsSection.setVisible(false);
+                        
+                        // Show image if available
+                        if (data.image) {
+                            testImageSection.setVisible(true);
+                            if (testImage) {
+                                testImage.src = data.image;
+                            }
+                        } else {
+                            testImageSection.setVisible(false);
+                        }
+                        
+                        // Update timestamp
+                        const timestamp = new Date().toLocaleTimeString();
+                        apiTestTimestamp.setText(`Capture test completed: ${timestamp}`);
+                        
+                        const detections = data.objectDetection ? data.objectDetection.detections : null;
+                        const objectCount = detections ? detections.length : 0;
+                        sap.m.MessageToast.show(`Capture completed! Found ${objectCount} objects via embedded object detection.`);
+                    })
+                    .catch(error => {
+                        console.error("Capture API test error:", error);
+                        
+                        // Show error in response section
+                        apiResponseSection.setVisible(true);
+                        apiResponseText.setText(`Error: ${error.message}`);
+                        
+                        // Hide other sections
+                        detectionResultsSection.setVisible(false);
+                        testImageSection.setVisible(false);
+                        
+                        const timestamp = new Date().toLocaleTimeString();
+                        apiTestTimestamp.setText(`Capture test failed: ${timestamp}`);
+                        
+                        sap.m.MessageToast.show("Capture API test failed: " + error.message);
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        testButton.setText("📸 Test Capture API");
+                        testButton.setEnabled(true);
+                    });
+                },
+                
+                onTestAIText: function(oEvent) {
+                    const source = oEvent.getSource();
+                    const camera = source.data("camera") || this.byId("aiCameraSelect").getSelectedKey();
+                    const aiPromptInput = this.byId("aiPromptInput");
+                    const aiIncludeImageCheck = this.byId("aiIncludeImageCheck");
+                    const aiApiResponseSection = this.byId("aiApiResponseSection");
+                    const aiApiResponseText = this.byId("aiApiResponseText");
+                    const aiTextResultSection = this.byId("aiTextResultSection");
+                    const aiTextResult = this.byId("aiTextResult");
+                    const aiTestImageSection = this.byId("aiTestImageSection");
+                    const aiTestImage = document.getElementById('aiTestImage');
+                    const aiTestTimestamp = this.byId("aiTestTimestamp");
+                    
+                    // Get parameters
+                    const text = aiPromptInput.getValue() || "Describe what you see in detail";
+                    const includeImage = aiIncludeImageCheck.getSelected();
+                    
+                    // Update button state
+                    const originalText = source.getText();
+                    source.setText("🔄 Processing...");
+                    source.setEnabled(false);
+                    
+                    // Build request body
+                    const requestBody = JSON.stringify({
+                        text: text,
+                        camera: camera,
+                        returnImage: includeImage
+                    });
+                    
+                    console.log("Testing AI text API with camera:", camera, "text:", text);
+                    
+                    fetch('/api/phone/ai-text', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json'
+                        },
+                        body: requestBody
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        console.log("AI text response:", data);
+                        
+                        // Show API response
+                        aiApiResponseSection.setVisible(true);
+                        aiApiResponseText.setText(JSON.stringify(data, null, 2));
+                        
+                        // Show AI generated text
+                        if (data.response || data.text) {
+                            aiTextResultSection.setVisible(true);
+                            const aiResponse = data.response || data.text;
+                            aiTextResult.setText(aiResponse);
+                        } else {
+                            aiTextResultSection.setVisible(false);
+                        }
+                        
+                        // Show image if included
+                        if (data.image && includeImage) {
+                            aiTestImageSection.setVisible(true);
+                            if (aiTestImage) {
+                                if (data.image.startsWith('data:image')) {
+                                    aiTestImage.src = data.image;
+                                } else {
+                                    aiTestImage.src = 'data:image/jpeg;base64,' + data.image;
+                                }
+                            }
+                        } else {
+                            aiTestImageSection.setVisible(false);
+                        }
+                        
+                        // Update timestamp
+                        const timestamp = new Date().toLocaleTimeString();
+                        aiTestTimestamp.setText(`AI test completed: ${timestamp}`);
+                        
+                        sap.m.MessageToast.show(`AI text response generated for ${camera} camera!`);
+                    })
+                    .catch(error => {
+                        console.error("AI text test error:", error);
+                        
+                        // Show error in response section
+                        aiApiResponseSection.setVisible(true);
+                        aiApiResponseText.setText(`Error: ${error.message}`);
+                        
+                        // Hide other sections
+                        aiTextResultSection.setVisible(false);
+                        aiTestImageSection.setVisible(false);
+                        
+                        const timestamp = new Date().toLocaleTimeString();
+                        aiTestTimestamp.setText(`AI test failed: ${timestamp}`);
+                        
+                        sap.m.MessageToast.show("AI text test failed: " + error.message);
+                    })
+                    .finally(() => {
+                        // Reset button state
+                        source.setText(originalText);
+                        source.setEnabled(true);
+                    });
                 }
             });
         });

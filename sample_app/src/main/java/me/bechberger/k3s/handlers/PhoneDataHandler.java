@@ -14,12 +14,12 @@ import java.util.concurrent.TimeUnit;
 /**
  * Handler for phone data API endpoint.
  * Provides optional integration with Android K3s Phone Server.
- * Returns enhanced data (location, orientation, camera, AI) when available,
+ * Returns enhanced data (location, orientation, camera, object detection) when available,
  * or gracefully indicates unavailability when phone server is not connected.
  * 
  * GET /api/phone - Returns JSON with phone data if available, status if not
- * GET /api/phone?refreshAI=true - Forces fresh AI description via /ai/capture
- * GET /api/phone?refreshAI=false - Uses cached/quick AI data (default behavior)
+ * GET /api/phone?refreshAI=true - Forces fresh object detection via /ai/object_detection
+ * GET /api/phone?includeImage=true - Includes base64 image in object detection response
  */
 public class PhoneDataHandler implements HttpHandler {
     
@@ -40,8 +40,10 @@ public class PhoneDataHandler implements HttpHandler {
             // Parse query parameters
             String query = exchange.getRequestURI().getQuery();
             boolean refreshAI = false;
-            if (query != null && query.contains("refreshAI=true")) {
-                refreshAI = true;
+            boolean includeImage = false;
+            if (query != null) {
+                refreshAI = query.contains("refreshAI=true");
+                includeImage = query.contains("includeImage=true");
             }
 
             // Check if phone server is available
@@ -69,32 +71,25 @@ public class PhoneDataHandler implements HttpHandler {
             
             System.out.println("Server capabilities: " + capabilities);
 
-            // Try to get AI description only if AI is available
-            String aiDescription = null;
-            if (capabilities.aiAvailable) {
-                if (refreshAI) {
-                    try {
-                        System.out.println("Fetching fresh AI description via /ai/capture...");
-                        aiDescription = phoneClient.getAIDescription()
-                                .get(10, TimeUnit.SECONDS); // Longer timeout for fresh AI
-                    } catch (Exception aiEx) {
-                        System.out.println("Fresh AI description failed: " + aiEx.getMessage());
-                    }
-                } else {
-                    try {
-                        aiDescription = phoneClient.getAIDescription()
-                                .get(5, TimeUnit.SECONDS);
-                    } catch (Exception aiEx) {
-                        System.out.println("AI description failed: " + aiEx.getMessage());
-                    }
+            // Try to get object detection data only if AI is available (faster than LLM description)
+            String objectDetectionData = null;
+            if (capabilities.aiAvailable && refreshAI) {
+                try {
+                    System.out.println("Fetching object detection data via /ai/object_detection...");
+                    objectDetectionData = phoneClient.getObjectDetection(includeImage)
+                            .get(8, TimeUnit.SECONDS); // Object detection is faster than LLM
+                } catch (Exception aiEx) {
+                    System.out.println("Object detection failed: " + aiEx.getMessage());
                 }
+            } else if (capabilities.aiAvailable) {
+                System.out.println("AI available but refreshAI=false, skipping object detection");
             } else {
                 System.out.println("AI capabilities not available on server");
             }
 
-            // Try to get camera image only if camera is available
+            // Try to get camera image only if camera is available and image not already included in object detection
             String cameraImage = null;
-            if (capabilities.cameraAvailable) {
+            if (capabilities.cameraAvailable && (objectDetectionData == null || !includeImage)) {
                 try {
                     cameraImage = phoneClient.captureImage()
                             .get(3, TimeUnit.SECONDS);
@@ -102,10 +97,10 @@ public class PhoneDataHandler implements HttpHandler {
                     System.out.println("Camera capture failed: " + camEx.getMessage());
                 }
             } else {
-                System.out.println("Camera capabilities not available on server");
+                System.out.println("Camera capabilities not available or image already included in object detection");
             }
             
-            String response = buildPhoneDataJson(phoneData, aiDescription, cameraImage, capabilities);
+            String response = buildPhoneDataJson(phoneData, objectDetectionData, cameraImage, capabilities);
             sendResponse(exchange, 200, response);
             
         } catch (Exception e) {
@@ -118,7 +113,7 @@ public class PhoneDataHandler implements HttpHandler {
         }
     }
     
-    private String buildPhoneDataJson(PhoneData phoneData, String aiDescription, String cameraImage, PhoneServerClient.ServerCapabilities capabilities) {
+    private String buildPhoneDataJson(PhoneData phoneData, String objectDetectionData, String cameraImage, PhoneServerClient.ServerCapabilities capabilities) {
         StringBuilder json = new StringBuilder();
         json.append("{\n");
         json.append("  \"available\": true,\n");
@@ -144,7 +139,7 @@ public class PhoneDataHandler implements HttpHandler {
                 json.append("    \"timestamp\": ").append(location.timestamp).append("\n");
                 json.append("  }");
                 
-                if (orientation != null || aiDescription != null || cameraImage != null) {
+                if (orientation != null || objectDetectionData != null || cameraImage != null) {
                     json.append(",\n");
                 }
             }
@@ -158,33 +153,32 @@ public class PhoneDataHandler implements HttpHandler {
                 json.append("    \"timestamp\": ").append(orientation.timestamp).append("\n");
                 json.append("  }");
                 
-                if (aiDescription != null || cameraImage != null) {
+                if (objectDetectionData != null || cameraImage != null) {
                     json.append(",\n");
                 }
             }
             
-            // Add camera image if available
+            // Add camera image if available (separate from object detection)
             if (cameraImage != null && !cameraImage.trim().isEmpty()) {
                 json.append("  \"camera\": {\n");
                 json.append("    \"image\": \"").append(cameraImage.replace("\"", "\\\"")).append("\",\n");
                 json.append("    \"timestamp\": ").append(System.currentTimeMillis()).append("\n");
                 json.append("  }");
                 
-                if (aiDescription != null) {
+                if (objectDetectionData != null) {
                     json.append(",\n");
                 }
             }
             
-            // Add AI description if available
-            if (aiDescription != null && !aiDescription.trim().isEmpty()) {
-                json.append("  \"aiDescription\": {\n");
-                json.append("    \"description\": \"").append(aiDescription.replace("\"", "\\\"")).append("\",\n");
-                json.append("    \"timestamp\": ").append(System.currentTimeMillis()).append("\n");
-                json.append("  }");
+            // Add object detection data if available (includes detected objects and optionally image)
+            if (objectDetectionData != null && !objectDetectionData.trim().isEmpty()) {
+                // Object detection response is already JSON, so we embed it directly
+                json.append("  \"objectDetection\": ");
+                json.append(objectDetectionData);
             }
             
-            if (location == null && orientation == null && aiDescription == null && cameraImage == null) {
-                json.append("  \"message\": \"No location, orientation, camera, or AI data available\"");
+            if (location == null && orientation == null && objectDetectionData == null && cameraImage == null) {
+                json.append("  \"message\": \"No location, orientation, camera, or object detection data available\"");
             }
         } else {
             json.append("  \"message\": \"Phone server reachable but no data available\"");

@@ -30,13 +30,17 @@ import com.k3s.phoneserver.manager.AppPermissionManager
 import com.k3s.phoneserver.server.WebServerService
 import com.k3s.phoneserver.testing.ApiTester
 import com.k3s.phoneserver.testing.ApiTestResult
+import com.k3s.phoneserver.ai.AIService
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import timber.log.Timber
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var logAdapter: RequestLogAdapter
     private lateinit var apiTester: ApiTester
+    private lateinit var aiService: AIService
     private var isServerRunning = false
     private var permissionsChecked = false
     private var isApiTestingSectionVisible = false
@@ -46,6 +50,8 @@ class MainActivity : AppCompatActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        Timber.d("Permission result received: $permissions")
+        
         val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                              permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         val cameraGranted = permissions[Manifest.permission.CAMERA] == true
@@ -79,11 +85,37 @@ class MainActivity : AppCompatActivity() {
         if (messages.isNotEmpty()) {
             Toast.makeText(this, messages.joinToString("\n"), Toast.LENGTH_LONG).show()
         }
-
-        // Check for auto-start after permission handling is complete
-        checkAutoStartAfterPermissions()
-        updateUI()
+        
+        // Log detailed permission status for debugging
+        logPermissionStatus()
+        
+        // Auto-start server regardless of optional permissions
+        autoStartServer()
     }
+    
+    private fun logPermissionStatus() {
+        val status = permissionManager.getPermissionStatusSummary(this)
+        Timber.d("Current permission status: $status")
+        
+        // Also check individual permissions manually
+        val fineLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        val coarseLocation = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+        val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+        
+        Timber.d("Manual permission check - Fine location: $fineLocation, Coarse location: $coarseLocation, Camera: $camera")
+    }
+
+    // Gallery image picker for AI testing
+    private val galleryLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            selectedImageUri = uri
+            Toast.makeText(this, "Image selected for AI analysis", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private var selectedImageUri: Uri? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,9 +123,22 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         apiTester = ApiTester()
+        aiService = AIService(this)
         setupRecyclerView()
         setupApiTesting()
         observeRequestLogs()
+        
+        // Initialize AI model system (migrate references and scan for local models)
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val (migratedCount, scannedCount) = com.k3s.phoneserver.ai.ModelDetector.initializeModelSystem(this@MainActivity)
+                if (migratedCount > 0 || scannedCount > 0) {
+                    Timber.i("Model system initialized: $migratedCount migrated, $scannedCount new references created")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize AI model system")
+            }
+        }
         
         // Check if server is already running
         checkServerRunningState()
@@ -106,7 +151,7 @@ class MainActivity : AppCompatActivity() {
             if (!isServerRunning) {
                 Timber.i("Server not running - attempting to start for persistent operation")
                 if (permissionManager.hasRequiredPermissions(this)) {
-                    Toast.makeText(this, "Ensuring server is running persistently...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Ensuring server :8005 is running persistently...", Toast.LENGTH_SHORT).show()
                     startWebServer()
                 } else {
                     Timber.w("Missing permissions for persistent server operation")
@@ -140,6 +185,9 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Cannot open link: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
+        
+        // AI Button handlers
+        setupAIButtons()
         
         // Request battery optimization exemption for background operation
         requestBatteryOptimizationExemption()
@@ -189,7 +237,7 @@ class MainActivity : AppCompatActivity() {
         // If we have required permissions and auto-start is enabled, start immediately
         if (hasRequiredPermissions && isAutoStartEnabled && !isServerRunning) {
             Timber.d("Starting server immediately - all conditions met")
-            Toast.makeText(this, "Auto-starting server...", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Auto-starting server :8005...", Toast.LENGTH_SHORT).show()
             autoStartServer()
         } else {
             Timber.d("Auto-start conditions not met: required=$hasRequiredPermissions, enabled=$isAutoStartEnabled, running=$isServerRunning")
@@ -214,6 +262,37 @@ class MainActivity : AppCompatActivity() {
             Timber.d("Requesting required permissions")
             checkAndRequestPermissions()
         }
+        
+        // Schedule automatic location access 10 seconds after startup to trigger permission request
+        scheduleLocationPermissionRequest()
+    }
+    
+    private fun scheduleLocationPermissionRequest() {
+        // Wait 10 seconds after startup to attempt location access
+        // This helps ensure location permissions are granted early
+        findViewById<LinearLayout>(R.id.apiTestingSection).postDelayed({
+            if (!permissionManager.hasLocationPermissions(this)) {
+                Timber.d("Attempting location access 10 seconds after startup to trigger permission request")
+                lifecycleScope.launch {
+                    try {
+                        val locationService = com.k3s.phoneserver.services.LocationService(this@MainActivity)
+                        val location = locationService.getCurrentLocation()
+                        if (location != null) {
+                            Timber.i("Successfully obtained location: ${location.latitude}, ${location.longitude}")
+                            Toast.makeText(this@MainActivity, "📍 Location permissions working - GPS ready", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Timber.w("Location access returned null - permissions may not be granted")
+                            // This will naturally trigger the permission request flow if needed
+                        }
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to access location 10 seconds after startup - this may trigger permission dialogs")
+                        // This is expected behavior if permissions aren't granted yet
+                    }
+                }
+            } else {
+                Timber.d("Location permissions already granted - skipping delayed location access")
+            }
+        }, 10000) // 10 seconds delay
     }
 
     private fun checkPermissionsAndAutoStart() {
@@ -333,7 +412,7 @@ class MainActivity : AppCompatActivity() {
         
         if (isServerRunning && !wasRunning) {
             Timber.d("Server detected as running - app returning to foreground")
-            Toast.makeText(this, "K3s Server is running in background", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "K3s Server :8005 is running in background", Toast.LENGTH_SHORT).show()
         }
         
         updateUI()
@@ -347,6 +426,8 @@ class MainActivity : AppCompatActivity() {
         updateUI()
         // Refresh request logs in case server processed requests while app was backgrounded
         observeRequestLogs()
+        // Update AI models button to reflect current model availability
+        updateAIModelsButtonText()
     }
 
     override fun onPause() {
@@ -375,6 +456,9 @@ class MainActivity : AppCompatActivity() {
         val missingLocationPermissions = permissionManager.getMissingLocationPermissions(this)
         val missingCameraPermissions = permissionManager.getMissingCameraPermissions(this)
         
+        // Log current permission status for debugging
+        Timber.d("Permission check - Missing core: $missingCorePermissions, Location: $missingLocationPermissions, Camera: $missingCameraPermissions")
+        
         // Always request location and camera permissions but don't block server start
         val allMissingPermissions = missingCorePermissions + missingLocationPermissions + missingCameraPermissions
         
@@ -383,8 +467,93 @@ class MainActivity : AppCompatActivity() {
             permissionManager.updateAndSaveLocationPermissionState(this)
             autoStartServer()
         } else {
-            permissionLauncher.launch(allMissingPermissions.toTypedArray())
+            // Check if we need to show rationale for location permissions
+            if (missingLocationPermissions.isNotEmpty()) {
+                showLocationPermissionRationale {
+                    requestPermissionsWithRationale(allMissingPermissions)
+                }
+            } else {
+                requestPermissionsWithRationale(allMissingPermissions)
+            }
         }
+    }
+    
+    private fun showLocationPermissionRationale(onProceed: () -> Unit) {
+        val missingLocationPermissions = permissionManager.getMissingLocationPermissions(this)
+        
+        // Check if we should show rationale for location permissions
+        val shouldShowRationale = missingLocationPermissions.any { permission ->
+            shouldShowRequestPermissionRationale(permission)
+        }
+        
+        if (shouldShowRationale || !permissionsChecked) {
+            AlertDialog.Builder(this)
+                .setTitle("Location Permission")
+                .setMessage("K3s Phone Server can provide device location information through its API. This enables location-based features for connected applications.\n\nLocation access is optional - the server will work without it, but location endpoints will be disabled.")
+                .setPositiveButton("Grant Permission") { _, _ ->
+                    onProceed()
+                }
+                .setNegativeButton("Skip") { _, _ ->
+                    Toast.makeText(this, "Location features will be disabled", Toast.LENGTH_SHORT).show()
+                    // Skip location and proceed with other permissions
+                    val missingCorePermissions = permissionManager.getMissingCorePermissions(this)
+                    val missingCameraPermissions = permissionManager.getMissingCameraPermissions(this)
+                    val remainingPermissions = missingCorePermissions + missingCameraPermissions
+                    
+                    if (remainingPermissions.isNotEmpty()) {
+                        permissionLauncher.launch(remainingPermissions.toTypedArray())
+                    } else {
+                        autoStartServer()
+                    }
+                }
+                .setCancelable(false)
+                .show()
+        } else {
+            // Permission was permanently denied, show settings dialog
+            showPermissionDeniedDialog()
+        }
+    }
+    
+    private fun showPermissionDeniedDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Location Permission Required")
+            .setMessage("Location permission was permanently denied. To enable location features, please grant the permission in app settings.\n\nWould you like to open app settings?")
+            .setPositiveButton("Open Settings") { _, _ ->
+                openAppSettings()
+            }
+            .setNegativeButton("Continue Without Location") { _, _ ->
+                Toast.makeText(this, "Location features will be disabled", Toast.LENGTH_SHORT).show()
+                // Continue with remaining permissions
+                val missingCorePermissions = permissionManager.getMissingCorePermissions(this)
+                val missingCameraPermissions = permissionManager.getMissingCameraPermissions(this)
+                val remainingPermissions = missingCorePermissions + missingCameraPermissions
+                
+                if (remainingPermissions.isNotEmpty()) {
+                    permissionLauncher.launch(remainingPermissions.toTypedArray())
+                } else {
+                    autoStartServer()
+                }
+            }
+            .setCancelable(false)
+            .show()
+    }
+    
+    private fun openAppSettings() {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.fromParts("package", packageName, null)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            startActivity(intent)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to open app settings")
+            Toast.makeText(this, "Could not open app settings", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun requestPermissionsWithRationale(permissions: List<String>) {
+        Timber.d("Requesting permissions: ${permissions.joinToString(", ")}")
+        permissionLauncher.launch(permissions.toTypedArray())
     }
     
     private fun requestCameraPermissions() {
@@ -483,11 +652,11 @@ class MainActivity : AppCompatActivity() {
             val actionButton = findViewById<Button>(R.id.buttonStartServer)
             
             if (isServerRunning) {
-                statusText.text = "K3s Phone Server is running on port 8005"
-                actionButton.text = "Stop Server"
+                statusText.text = "K3s Phone Server is running"
+                actionButton.text = "Stop Server :8005"
             } else {
                 statusText.text = "K3s Phone Server is stopped"
-                actionButton.text = "Start Server"
+                actionButton.text = "Start Server :8005"
             }
         }
     }
@@ -521,7 +690,31 @@ class MainActivity : AppCompatActivity() {
         }
         
         findViewById<Button>(R.id.buttonTestLocation).setOnClickListener {
-            testApiEndpoint("/location")
+            // Check location permissions first
+            if (!permissionManager.hasLocationPermissions(this)) {
+                // Log current permission status for debugging
+                logPermissionStatus()
+                
+                AlertDialog.Builder(this)
+                    .setTitle("Location Permission Required")
+                    .setMessage("Location permission is required to test the location endpoint. Would you like to grant permission?")
+                    .setPositiveButton("Grant Permission") { _, _ ->
+                        // Force permission request
+                        val missingLocationPermissions = permissionManager.getMissingLocationPermissions(this)
+                        Timber.d("Manually requesting location permissions: $missingLocationPermissions")
+                        permissionLauncher.launch(missingLocationPermissions.toTypedArray())
+                    }
+                    .setNegativeButton("Test Anyway") { _, _ ->
+                        // Test without permission to see the error
+                        testApiEndpoint("/location")
+                    }
+                    .setNeutralButton("Open Settings") { _, _ ->
+                        openAppSettings()
+                    }
+                    .show()
+            } else {
+                testApiEndpoint("/location")
+            }
         }
         
         findViewById<Button>(R.id.buttonTestOrientation).setOnClickListener {
@@ -554,7 +747,7 @@ class MainActivity : AppCompatActivity() {
     
     private fun testApiEndpoint(endpoint: String, parameters: Map<String, String> = emptyMap()) {
         if (!isServerRunning) {
-            showApiResponse("⚠️ Server is not running. Please start the server first.")
+            showApiResponse("Server :8005 is not running. Please start the server first.")
             return
         }
         
@@ -562,10 +755,94 @@ class MainActivity : AppCompatActivity() {
             try {
                 showApiResponse("Testing $endpoint... ⏳")
                 val result = apiTester.testEndpoint(endpoint, parameters)
+                
+                // Log the demo request to request log
+                RequestLogger.logRequest(
+                    method = "GET",
+                    path = endpoint,
+                    clientIp = "127.0.0.1",
+                    statusCode = result.statusCode,
+                    responseTime = result.responseTime,
+                    userAgent = "Demo API Test",
+                    responseData = result.response,
+                    responseType = if (result.contentType.contains("json", ignoreCase = true)) "json" else "text"
+                )
+                
                 showApiResult(result)
             } catch (e: Exception) {
                 Timber.e(e, "Error testing API endpoint $endpoint")
-                showApiResponse("❌ Error testing $endpoint: ${e.message}")
+                showApiResponse("Error testing $endpoint: ${e.message}")
+                
+                // Log failed demo request
+                RequestLogger.logRequest(
+                    method = "GET",
+                    path = endpoint,
+                    clientIp = "127.0.0.1",
+                    statusCode = 500,
+                    responseTime = 0L,
+                    userAgent = "Demo API Test",
+                    responseData = """{"error": "${e.message}"}""",
+                    responseType = "json"
+                )
+            }
+        }
+    }
+    
+    private fun testObjectDetectionEndpoint(side: String) {
+        if (!isServerRunning) {
+            showApiResponse("⚠️ Server :8005 is not running. Please start the server first.")
+            return
+        }
+
+        lifecycleScope.launch {
+            try {
+                showApiResponse("Testing object detection ($side camera)... ⏳")
+                
+                // Build the JSON request body for object detection
+                val requestBody = """
+                {
+                    "side": "$side",
+                    "threshold": 0.2,
+                    "maxResults": 10,
+                    "returnImage": true
+                }
+                """.trimIndent()
+                
+                val result = apiTester.testPostEndpoint("/ai/object_detection", requestBody)
+                
+                // Log the demo request to request log
+                RequestLogger.logRequest(
+                    method = "POST",
+                    path = "/ai/object_detection",
+                    clientIp = "127.0.0.1",
+                    statusCode = result.statusCode,
+                    responseTime = result.responseTime,
+                    userAgent = "Demo API Test (Object Detection)",
+                    responseData = if (result.response.length > 1000) {
+                        // Truncate long responses for logging
+                        result.response.take(1000) + "... [truncated]"
+                    } else {
+                        result.response
+                    },
+                    responseType = if (result.contentType.contains("json", ignoreCase = true)) "object_detection" else "text"
+                )
+                
+                showApiResult(result)
+            } catch (e: Exception) {
+                Timber.e(e, "Error testing object detection endpoint")
+                showApiResponse("❌ Error testing object detection ($side): ${e.message}")
+                
+                // Log failed demo request
+                RequestLogger.logRequest(
+                    method = "POST",
+                    path = "/ai/object_detection",
+                    clientIp = "127.0.0.1",
+                    statusCode = 500,
+                    responseTime = 0L,
+                    userAgent = "Demo API Test (Object Detection)",
+                    responseData = """{"error": "${e.message}"}""",
+                    responseType = "json"
+                )
             }
         }
     }
@@ -616,15 +893,26 @@ class MainActivity : AppCompatActivity() {
                 imageView.visibility = View.VISIBLE
                 
                 // Format the response without the base64 data for text display
-                val formattedResponse = formatter.formatApiResponse(result, this@MainActivity)
-                responseTextView.text = formattedResponse
+                if (result.contentType.contains("application/json", ignoreCase = true)) {
+                    val spannableResponse = formatter.formatJsonAsSpannable(result.response)
+                    responseTextView.text = spannableResponse
+                } else {
+                    val formattedResponse = formatter.formatApiResponse(result, this@MainActivity)
+                    responseTextView.text = formattedResponse
+                }
             } else {
                 // Hide image view if no image
                 imageView.visibility = View.GONE
                 
-                // Use ResponseFormatter to format the response
-                val formattedResponse = formatter.formatApiResponse(result, this@MainActivity)
-                responseTextView.text = formattedResponse
+                // Use syntax highlighting for JSON responses
+                if (result.contentType.contains("application/json", ignoreCase = true)) {
+                    val spannableResponse = formatter.formatJsonAsSpannable(result.response)
+                    responseTextView.text = spannableResponse
+                } else {
+                    // Use ResponseFormatter to format the response
+                    val formattedResponse = formatter.formatApiResponse(result, this@MainActivity)
+                    responseTextView.text = formattedResponse
+                }
             }
             
             // If the response area is currently expanded, update its size to fit the new content
@@ -679,14 +967,12 @@ class MainActivity : AppCompatActivity() {
             expandButton.contentDescription = "Expand response to fit content"
             isApiResponseExpanded = false
         } else {
-            // Calculate the actual content height needed
+            // Calculate the actual content height needed for full display without scrolling
             val contentHeight = calculateRequiredContentHeight(headerTextView, responseTextView, imageView)
-            val maxHeight = (resources.displayMetrics.heightPixels * 0.7).toInt() // Max 70% of screen
-            val finalHeight = minOf(contentHeight, maxHeight)
             
-            // Expand to content size (minimum 500dp)
-            val dp500 = (500 * resources.displayMetrics.density).toInt()
-            layoutParams.height = maxOf(finalHeight, dp500)
+            // Use the full content height without any maximum limit to eliminate scrolling
+            val minHeight = (500 * resources.displayMetrics.density).toInt() // Minimum 500dp
+            layoutParams.height = maxOf(contentHeight, minHeight)
             expandButton.text = "📐"
             expandButton.contentDescription = "Collapse response area"
             isApiResponseExpanded = true
@@ -748,12 +1034,10 @@ class MainActivity : AppCompatActivity() {
         // Wait for layout to complete before measuring
         scrollView.post {
             val contentHeight = calculateRequiredContentHeight(headerTextView, responseTextView, imageView)
-            val maxHeight = (resources.displayMetrics.heightPixels * 0.7).toInt() // Max 70% of screen
-            val finalHeight = minOf(contentHeight, maxHeight)
             
-            // Minimum size is 500dp
-            val dp500 = (500 * resources.displayMetrics.density).toInt()
-            val newHeight = maxOf(finalHeight, dp500)
+            // Use the full content height without any maximum limit to eliminate scrolling
+            val minHeight = (500 * resources.displayMetrics.density).toInt() // Minimum 500dp
+            val newHeight = maxOf(contentHeight, minHeight)
             
             val layoutParams = scrollView.layoutParams
             if (layoutParams.height != newHeight) {
@@ -762,5 +1046,518 @@ class MainActivity : AppCompatActivity() {
                 scrollView.requestLayout()
             }
         }
+    }
+    
+    private fun setupAIButtons() {
+        // Test AI Text endpoint with interactive activity
+        findViewById<Button>(R.id.buttonTestAIText).setOnClickListener {
+            val intent = Intent(this, AITestActivity::class.java)
+            startActivity(intent)
+        }
+        
+        // Test AI Models endpoint
+        findViewById<Button>(R.id.buttonTestAIModels).setOnClickListener {
+            lifecycleScope.launch {
+                val result = apiTester.testEndpoint("/ai/models")
+                runOnUiThread {
+                    // Log the demo AI models request
+                    RequestLogger.logRequest(
+                        method = "GET",
+                        path = "/ai/models",
+                        clientIp = "127.0.0.1",
+                        statusCode = result.statusCode,
+                        responseTime = result.responseTime,
+                        userAgent = "Demo API Test",
+                        responseData = result.response,
+                        responseType = if (result.contentType.contains("json", ignoreCase = true)) "json" else "text"
+                    )
+                    showApiResult(result)
+                }
+            }
+        }
+        
+        // Manage AI Models
+        findViewById<Button>(R.id.buttonManageAIModels).setOnClickListener {
+            val intent = Intent(this, AIModelManagerActivity::class.java)
+            startActivity(intent)
+        }
+        
+        // Test Object Detection (Rear Camera)
+        findViewById<Button>(R.id.buttonTestObjectDetectionRear).setOnClickListener {
+            testObjectDetectionEndpoint("rear")
+        }
+        
+        // Test Object Detection (Front Camera)
+        findViewById<Button>(R.id.buttonTestObjectDetectionFront).setOnClickListener {
+            testObjectDetectionEndpoint("front")
+        }
+        
+        // Update the button text based on available models
+        updateAIModelsButtonText()
+    }
+    
+    private fun updateAIModelsButtonText() {
+        val button = findViewById<Button>(R.id.buttonManageAIModels)
+        val badge = findViewById<TextView>(R.id.textModelCount)
+        
+        lifecycleScope.launch {
+            try {
+                val availableModels = withContext(Dispatchers.IO) {
+                    com.k3s.phoneserver.ai.ModelDetector.getAvailableModels(this@MainActivity)
+                }
+                
+                runOnUiThread {
+                    val modelCount = availableModels.size
+                    badge.text = modelCount.toString()
+                    
+                    if (modelCount > 0) {
+                        button.text = "🤖 Manage AI Models"
+                        badge.isSelected = true  // Green background
+                    } else {
+                        button.text = "🤖 Manage AI Models"
+                        badge.isSelected = false  // Red background
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    button.text = "🤖 Manage AI Models"
+                    badge.text = "0"
+                    badge.isSelected = false  // Red background
+                }
+            }
+        }
+    }
+    
+    private fun showAITestDialog() {
+        val dialogView = layoutInflater.inflate(R.layout.dialog_ai_test, null)
+        val inputText = dialogView.findViewById<android.widget.EditText>(R.id.editTextPrompt)
+        val modelSpinner = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerModel)
+        val imageScalingSpinner = dialogView.findViewById<android.widget.Spinner>(R.id.spinnerImageScaling)
+        val radioGroup = dialogView.findViewById<android.widget.RadioGroup>(R.id.radioGroupImageInput)
+        val layoutImageInput = dialogView.findViewById<android.widget.LinearLayout>(R.id.layoutImageInput)
+        val layoutResults = dialogView.findViewById<android.widget.LinearLayout>(R.id.layoutResults)
+        val textResults = dialogView.findViewById<android.widget.TextView>(R.id.textResults)
+        
+        // Set up model selection with only available models
+        lifecycleScope.launch {
+            val availableModels = withContext(Dispatchers.IO) {
+                com.k3s.phoneserver.ai.ModelDetector.getAvailableModels(this@MainActivity)
+            }
+            
+            if (availableModels.isEmpty()) {
+                // No models available - show message and close dialog
+                Toast.makeText(this@MainActivity, "⚠️ No AI models are available. Please add models first.", Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            
+            val modelNames = availableModels.map { it.name }
+            val modelDisplayNames = availableModels.map { "${it.modelName} (${it.fileName})" }
+            
+            val modelAdapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, modelDisplayNames)
+            modelAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            modelSpinner.adapter = modelAdapter
+            
+            // Set up image scaling selection
+            val scalingOptions = arrayOf(
+                "NONE - Original quality",
+                "SMALL - 512×384 (fast)",
+                "MEDIUM - 1024×768 (balanced)",
+                "LARGE - 1536×1152 (good quality)",
+                "ULTRA - 2048×1536 (best quality)"
+            )
+            val scalingAdapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_item, scalingOptions)
+            scalingAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+            imageScalingSpinner.adapter = scalingAdapter
+            imageScalingSpinner.setSelection(2) // Default to MEDIUM
+            
+            // Set default prompt
+            inputText.setText("What do you see in this image?")
+            
+            // Function to update image input visibility based on selected model
+            fun updateImageInputVisibility() {
+                val selectedModelIndex = modelSpinner.selectedItemPosition
+                if (selectedModelIndex >= 0 && selectedModelIndex < availableModels.size) {
+                    val selectedModel = availableModels[selectedModelIndex]
+                    val isMultimodal = selectedModel.supportsVision
+                    layoutImageInput.visibility = if (isMultimodal) android.view.View.VISIBLE else android.view.View.GONE
+                    
+                    // Update prompt hint based on model capability
+                    if (isMultimodal) {
+                        inputText.hint = "Type your message here (you can include image input)..."
+                    } else {
+                        inputText.hint = "Type your message here..."
+                        // Reset to text-only if model doesn't support vision
+                        radioGroup.check(R.id.radioNoImage)
+                    }
+                }
+            }
+            
+            // Set initial visibility
+            updateImageInputVisibility()
+            
+            // Update visibility when model selection changes
+            modelSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                    updateImageInputVisibility()
+                }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+            
+            val dialog = AlertDialog.Builder(this@MainActivity)
+                .setTitle("🤖 AI Text Generation Test")
+                .setView(dialogView)
+                .setPositiveButton("🚀 Generate") { dialog, _ ->
+                    val prompt = inputText.text.toString()
+                    val selectedModelName = modelNames[modelSpinner.selectedItemPosition]
+                    val selectedScaling = getImageScalingFromIndex(imageScalingSpinner.selectedItemPosition)
+                    val imageInputType = getSelectedImageInputType(radioGroup)
+                    
+                    // Don't close dialog, show results instead
+                    generateAITextInDialog(prompt, selectedModelName, selectedScaling, imageInputType, layoutResults, textResults)
+                }
+                .setNegativeButton("Close", null)
+                .create()
+            
+            dialog.show()
+        }
+    }
+    
+    private fun getImageScalingFromIndex(index: Int): String {
+        return when (index) {
+            0 -> "NONE"
+            1 -> "SMALL"
+            2 -> "MEDIUM"
+            3 -> "LARGE"
+            4 -> "ULTRA"
+            else -> "MEDIUM"
+        }
+    }
+    
+    private fun getSelectedImageInputType(radioGroup: android.widget.RadioGroup): ImageInputType {
+        return when (radioGroup.checkedRadioButtonId) {
+            R.id.radioCaptureRear -> ImageInputType.CAPTURE_REAR
+            R.id.radioCaptureFont -> ImageInputType.CAPTURE_FRONT
+            R.id.radioSelectImage -> ImageInputType.SELECT_FROM_GALLERY
+            else -> ImageInputType.NONE
+        }
+    }
+    
+    private enum class ImageInputType {
+        NONE, CAPTURE_REAR, CAPTURE_FRONT, SELECT_FROM_GALLERY
+    }
+    
+    private fun generateAITextInDialog(
+        prompt: String, 
+        model: String, 
+        imageScaling: String, 
+        imageInputType: ImageInputType,
+        layoutResults: android.widget.LinearLayout,
+        textResults: android.widget.TextView
+    ) {
+        lifecycleScope.launch {
+            try {
+                // Show loading state
+                runOnUiThread {
+                    layoutResults.visibility = android.view.View.VISIBLE
+                    textResults.text = "🔄 Generating response..."
+                }
+                
+                // Build the request body based on image input type
+                val jsonBody = when (imageInputType) {
+                    ImageInputType.CAPTURE_REAR -> """
+                    {
+                        "text": "${prompt.replace("\"", "\\\"")}",
+                        "model": "$model",
+                        "imageScaling": "$imageScaling",
+                        "captureConfig": {
+                            "camera": "rear"
+                        },
+                        "temperature": 0.7
+                    }
+                    """.trimIndent()
+                    
+                    ImageInputType.CAPTURE_FRONT -> """
+                    {
+                        "text": "${prompt.replace("\"", "\\\"")}",
+                        "model": "$model",
+                        "imageScaling": "$imageScaling",
+                        "captureConfig": {
+                            "camera": "front"
+                        },
+                        "temperature": 0.7
+                    }
+                    """.trimIndent()
+                    
+                    ImageInputType.SELECT_FROM_GALLERY -> {
+                        if (selectedImageUri == null) {
+                            // Launch gallery picker
+                            runOnUiThread {
+                                galleryLauncher.launch("image/*")
+                                Toast.makeText(this@MainActivity, "Please select an image first", Toast.LENGTH_SHORT).show()
+                                layoutResults.visibility = android.view.View.GONE
+                            }
+                            return@launch
+                        }
+                        
+                        // Convert selected image to base64
+                        val base64Image = try {
+                            val inputStream = contentResolver.openInputStream(selectedImageUri!!)
+                            val bytes = inputStream?.readBytes()
+                            inputStream?.close()
+                            if (bytes != null) {
+                                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                            } else {
+                                throw Exception("Failed to read image")
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "Failed to load image: ${e.message}", Toast.LENGTH_LONG).show()
+                                layoutResults.visibility = android.view.View.GONE
+                            }
+                            return@launch
+                        }
+                        
+                        """
+                        {
+                            "text": "${prompt.replace("\"", "\\\"")}",
+                            "model": "$model",
+                            "imageScaling": "$imageScaling",
+                            "image": "data:image/jpeg;base64,$base64Image",
+                            "temperature": 0.7
+                        }
+                        """.trimIndent()
+                    }
+                    
+                    ImageInputType.NONE -> """
+                    {
+                        "text": "${prompt.replace("\"", "\\\"")}",
+                        "model": "$model",
+                        "imageScaling": "$imageScaling",
+                        "temperature": 0.7
+                    }
+                    """.trimIndent()
+                }
+                
+                val result = apiTester.testPostEndpoint("/ai/text", jsonBody)
+                
+                // Log the demo AI text request
+                runOnUiThread {
+                    RequestLogger.logRequest(
+                        method = "POST",
+                        path = "/ai/text",
+                        clientIp = "127.0.0.1",
+                        statusCode = result.statusCode,
+                        responseTime = result.responseTime,
+                        userAgent = "Demo AI Test",
+                        responseData = result.response,
+                        responseType = "json"
+                    )
+                    showAITestResultInDialog(jsonBody, result, textResults)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    // Log failed demo AI request
+                    RequestLogger.logRequest(
+                        method = "POST",
+                        path = "/ai/text",
+                        clientIp = "127.0.0.1",
+                        statusCode = 500,
+                        responseTime = 0L,
+                        userAgent = "Demo AI Test",
+                        responseData = """{"error": "${e.message}"}""",
+                        responseType = "json"
+                    )
+                    textResults.text = "Error: ${e.message}"
+                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    
+    private fun showAITestResultInDialog(requestJson: String, result: ApiTestResult, textResults: android.widget.TextView) {
+        val formatter = ResponseFormatter.getInstance()
+        
+        // Build combined request and response display
+        val combinedText = buildString {
+            appendLine("AI Generation Result")
+            appendLine("=".repeat(40))
+            appendLine()
+            appendLine("REQUEST:")
+            appendLine(formatter.formatJsonWithHighlighting(requestJson))
+            appendLine()
+            appendLine("RESPONSE:")
+            if (result.success) {
+                appendLine("Status: ${result.statusCode} (${result.responseTime}ms)")
+                appendLine()
+                appendLine(formatter.formatApiResponse(result, this@MainActivity))
+            } else {
+                appendLine("Error: ${result.error ?: "Unknown error"}")
+                appendLine("Status: ${result.statusCode}")
+                if (result.response.isNotEmpty()) {
+                    appendLine()
+                    appendLine(result.response)
+                }
+            }
+        }
+        
+        textResults.text = combinedText
+        
+        // Reset selected image after use
+        selectedImageUri = null
+    }
+
+    private fun generateAITextAdvanced(
+        prompt: String, 
+        model: String, 
+        imageScaling: String, 
+        imageInputType: ImageInputType
+    ) {
+        lifecycleScope.launch {
+            try {
+                // Build the request body based on image input type
+                val jsonBody = when (imageInputType) {
+                    ImageInputType.CAPTURE_REAR -> """
+                    {
+                        "text": "${prompt.replace("\"", "\\\"")}",
+                        "model": "$model",
+                        "imageScaling": "$imageScaling",
+                        "captureConfig": {
+                            "camera": "rear"
+                        },
+                        "temperature": 0.7
+                    }
+                    """.trimIndent()
+                    
+                    ImageInputType.CAPTURE_FRONT -> """
+                    {
+                        "text": "${prompt.replace("\"", "\\\"")}",
+                        "model": "$model",
+                        "imageScaling": "$imageScaling",
+                        "captureConfig": {
+                            "camera": "front"
+                        },
+                        "temperature": 0.7
+                    }
+                    """.trimIndent()
+                    
+                    ImageInputType.SELECT_FROM_GALLERY -> {
+                        if (selectedImageUri == null) {
+                            // Launch gallery picker
+                            runOnUiThread {
+                                galleryLauncher.launch("image/*")
+                                Toast.makeText(this@MainActivity, "Please select an image first", Toast.LENGTH_SHORT).show()
+                            }
+                            return@launch
+                        }
+                        
+                        // Convert selected image to base64
+                        val base64Image = try {
+                            val inputStream = contentResolver.openInputStream(selectedImageUri!!)
+                            val bytes = inputStream?.readBytes()
+                            inputStream?.close()
+                            if (bytes != null) {
+                                android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                            } else {
+                                throw Exception("Failed to read image")
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(this@MainActivity, "Failed to load image: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                            return@launch
+                        }
+                        
+                        """
+                        {
+                            "text": "${prompt.replace("\"", "\\\"")}",
+                            "model": "$model",
+                            "imageScaling": "$imageScaling",
+                            "image": "data:image/jpeg;base64,$base64Image",
+                            "temperature": 0.7
+                        }
+                        """.trimIndent()
+                    }
+                    
+                    ImageInputType.NONE -> """
+                    {
+                        "text": "${prompt.replace("\"", "\\\"")}",
+                        "model": "$model",
+                        "imageScaling": "$imageScaling",
+                        "temperature": 0.7
+                    }
+                    """.trimIndent()
+                }
+                
+                val result = apiTester.testPostEndpoint("/ai/text", jsonBody)
+                runOnUiThread {
+                    // Log the demo AI text request
+                    RequestLogger.logRequest(
+                        method = "POST",
+                        path = "/ai/text",
+                        clientIp = "127.0.0.1",
+                        statusCode = result.statusCode,
+                        responseTime = result.responseTime,
+                        userAgent = "Demo AI Test",
+                        responseData = result.response,
+                        responseType = "json"
+                    )
+                    showAITestResult(jsonBody, result)
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    // Log failed demo AI request
+                    RequestLogger.logRequest(
+                        method = "POST",
+                        path = "/ai/text",
+                        clientIp = "127.0.0.1",
+                        statusCode = 500,
+                        responseTime = 0L,
+                        userAgent = "Demo AI Test",
+                        responseData = """{"error": "${e.message}"}""",
+                        responseType = "json"
+                    )
+                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+    
+    private fun showAITestResult(requestJson: String, result: ApiTestResult) {
+        val responseTextView = findViewById<TextView>(R.id.textApiResponse)
+        val formatter = ResponseFormatter.getInstance()
+        
+        // Build combined request and response display
+        val combinedText = buildString {
+            appendLine("AI Text Generation Test")
+            appendLine("=".repeat(50))
+            appendLine()
+            appendLine("REQUEST:")
+            appendLine(formatter.formatJsonWithHighlighting(requestJson))
+            appendLine()
+            appendLine("RESPONSE:")
+            if (result.success) {
+                appendLine("Status: ${result.statusCode} (${result.responseTime}ms)")
+                appendLine()
+                appendLine(formatter.formatApiResponse(result, this@MainActivity))
+            } else {
+                appendLine("Error: ${result.error ?: "Unknown error"}")
+                appendLine("Status: ${result.statusCode}")
+                if (result.response.isNotEmpty()) {
+                    appendLine()
+                    appendLine(result.response)
+                }
+            }
+        }
+        
+        responseTextView.text = combinedText
+        
+        // Reset selected image after use
+        selectedImageUri = null
+    }
+
+    private fun generateAIText(prompt: String, model: String, includeCamera: Boolean) {
+        // Legacy function - redirect to new advanced function
+        val imageInputType = if (includeCamera) ImageInputType.CAPTURE_REAR else ImageInputType.NONE
+        generateAITextAdvanced(prompt, model, "MEDIUM", imageInputType)
     }
 }

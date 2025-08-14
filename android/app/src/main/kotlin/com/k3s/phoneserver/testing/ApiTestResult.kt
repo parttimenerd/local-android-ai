@@ -9,5 +9,6 @@ data class ApiTestResult(
     val responseTime: Long,
     val contentType: String,
     val timestamp: String,
+    val method: String = "GET",
     val error: String? = null
 )

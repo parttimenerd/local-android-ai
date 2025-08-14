@@ -1,121 +1,146 @@
-# K3s Phone Server Android App - Simplified Version
+# K3s Phone Server - Android AI App
 
-⚠️ **SIMPLIFIED FOR STABILITY** ⚠️
-
-Android application providing web server with location and orientation services for K3s integration. **AI functionality has been removed** for improved stability and reduced complexity.
+Android application with MediaPipe AI inference, object detection, and device sensors for K3s cluster integration.
 
 ## Features
 
-- **Web Server**: HTTP API on ports 8005 and 8080
-- **Location Services**: GPS location via `/location`
-- **Orientation**: Device compass via `/orientation`  
-- **Health Checks**: Server status via `/status` and `/health`
+### AI Inference
+- **LLM Support**: Gemma 3n E2B IT, DeepSeek-R1 Distill Qwen 1.5B, Llama 3.2 (1B/3B), TinyLlama 1.1B
+- **Object Detection**: MediaPipe EfficientDet Lite 2
+- **Model Management**: Download, test, performance metrics (tokens/second)
+- **Streaming**: Real-time token streaming with cancellation support
 
-## Removed Features (For Stability)
+### Device Integration
+- **Location**: GPS with accuracy, altitude, bearing metadata
+- **Camera**: Front/rear with zoom, base64 encoding
+- **Sensors**: Compass orientation (azimuth, pitch, roll)
+- **Permissions**: Runtime request handling
 
-- ~~**AI Vision**: Image analysis (removed)~~
-- ~~**AI Camera**: Image capture and analysis (removed)~~
-- ~~**Camera**: Basic image capture (removed)~~
-- ~~**Large AI models**: No more 42MB downloads (removed)~~
+### REST API (Port 8005)
+- JSON responses with CORS support
+- Error handling with HTTP status codes
+- Built-in documentation at `/help`
 
 ## API Endpoints
 
-### Server Status
-```
-GET /status
-```
-Returns server information and features:
-```json
+### AI Services
+```http
+POST /ai/text
 {
-  "status": "running",
-  "server": "K3s Phone Server", 
-  "version": "1.0.0-simplified",
-  "features": {
-    "location": true,
-    "orientation": true,
-    "ai": false
-  }
+  "prompt": "text",
+  "model": "gemma-3n-e2b-it", 
+  "maxTokens": 150,
+  "temperature": 0.7,
+  "topK": 40,
+  "topP": 0.95
 }
 ```
 
-### Health Check
-```
-GET /health
-```
-Returns service health status:
-```json
+```http
+POST /ai/object_detection
 {
-  "status": "healthy",
-  "services": {
-    "location": "available",
-    "orientation": "available"
-  }
+  "side": "rear|front",
+  "threshold": 0.6,
+  "maxResults": 5,
+  "returnImage": false
 }
 ```
 
-### Location Services
-```
-GET /location
-```
-Returns current GPS location:
-```json
-{
-  "latitude": 37.7749,
-  "longitude": -122.4194,
-  "altitude": 50.0,
-  "accuracy": 10.0,
-  "timestamp": 1641234567890,
-  "provider": "gps"
-}
+```http
+GET /ai/models
+POST /ai/models/download {"modelName": "model-name"}
+POST /ai/models/test {"modelName": "model-name", "prompt": "text"}
 ```
 
-### Orientation/Compass
-```
-GET /orientation
-```
-Returns device orientation:
-```json
-{
-  "azimuth": 45.0,
-  "pitch": 10.0,
-  "roll": 5.0,
-  "accuracy": "HIGH",
-  "timestamp": 1641234567890
-}
+### Device & System
+```http
+GET /location       # GPS: lat, lng, alt, accuracy, bearing
+GET /orientation    # Compass: azimuth, pitch, roll, accuracy  
+GET /capture?side=rear&zoom=2.0  # Camera capture, base64 JPEG
+GET /status         # Server status, features, permissions
+GET /help           # API documentation
 ```
 
-## Installation
+## Technical Details
 
-1. Download APK from [releases](../../releases)
-2. Enable "Install from unknown sources" in Android settings
-3. Install APK and grant permissions (location, camera, storage)
-4. **Port Forwarding**: If using Android Linux Terminal app, ensure port 8005 is forwarded using the Linux Terminal app UI
+### AI Models
+- **Gemma 3n E2B IT**: 2B parameters, instruction-tuned
+- **DeepSeek-R1 Distill**: 1.5B reasoning model with thinking capability
+- **Llama 3.2**: 1B/3B instruction models
+- **TinyLlama**: 1.1B chat model
+- **Backend Support**: CPU, GPU, NNAPI backends
+- **Memory Requirements**: 1-4GB depending on model
 
-AI models (~42MB) download automatically on first launch.
+### MediaPipe Integration
+- **Object Detection**: EfficientDet Lite 2 with 80 COCO classes
+- **LLM Inference**: Native MediaPipe LLM with streaming support
+- **Performance**: Real-time token generation with metrics
+- **Cancellation**: Coroutine-based with proper cleanup
 
-## Building
+### Development
+- **Kotlin**: Android-native implementation
+- **Coroutines**: Async operations with proper cancellation
+- **Camera2 API**: Advanced camera features
+- **Permissions**: Location, camera runtime requests
+- **Error Handling**: Comprehensive exception management
+
+## Build & Install
 
 ```bash
-cd android
+# Build APK
 ./gradlew assembleDebug
-# APK will be in app/build/outputs/apk/debug/
+
+# Install via ADB
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+
+# Monitor logs
+adb logcat -s "K3sPhoneServer" "*AI*" "*Camera*" "*Location*"
 ```
 
-## Basic Usage
+## Integration
 
+Designed for K3s cluster nodes running on Android devices. Provides REST API for cluster applications to access AI inference, device sensors, and camera functionality.
+
+```http
+GET /health
+# Simple health check endpoint
+```
+
+```http
+GET /help
+# Complete API documentation with examples
+```
+
+## 🛠️ Build Instructions
+
+### Prerequisites
+- **Android Studio** Arctic Fox or newer
+- **Android SDK** API level 24+ (Android 7.0+)
+- **Device Requirements**: 3GB+ RAM for AI features
+- **Permissions**: Camera, Location, Internet
+
+### Building the App
 ```bash
-# Check AI availability
-curl http://PHONE_IP:8005/has-ai
+# Clone the repository
+git clone <repository-url>
+cd android
 
-# Get location and orientation
-curl http://PHONE_IP:8005/location
-curl http://PHONE_IP:8005/orientation
+# Build debug APK
+./gradlew assembleDebug
 
-# AI image analysis
-curl -X POST http://PHONE_IP:8005/ai/capture \
-  -H "Content-Type: application/json" \
-  -d '{"task": "describe your surroundings"}'
+# Install on connected device  
+./gradlew installDebug
+
+# Build release APK
+./gradlew assembleRelease
 ```
+
+### Debug Information
+The `/status` endpoint provides comprehensive debug information including:
+- Current AI model status and memory usage
+- Permission status for all features
+- Available device memory and requirements
+- Feature availability and configuration
 
 ## License
 

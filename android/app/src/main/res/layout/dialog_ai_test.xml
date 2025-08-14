@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:maxHeight="600dp">
+
+<LinearLayout
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <!-- Model Selection -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="🤖 Select AI Model:"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <Spinner
+        android:id="@+id/spinnerModel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp" />
+
+    <!-- Image Input Section -->
+    <LinearLayout
+        android:id="@+id/layoutImageInput"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📷 Image Input (Optional):"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <RadioGroup
+            android:id="@+id/radioGroupImageInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp">
+
+            <RadioButton
+                android:id="@+id/radioNoImage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="No image"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/radioCaptureRear"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Capture with rear camera" />
+
+            <RadioButton
+                android:id="@+id/radioCaptureFont"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Capture with front camera" />
+
+            <RadioButton
+                android:id="@+id/radioSelectImage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🖼️ Select image from gallery" />
+
+        </RadioGroup>
+
+        <!-- Image Scaling Selection -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="⚙️ Image Quality:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <Spinner
+            android:id="@+id/spinnerImageScaling"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp" />
+
+    </LinearLayout>
+
+    <!-- Prompt Input -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="💬 Enter your prompt:"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <EditText
+        android:id="@+id/editTextPrompt"
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:gravity="top"
+        android:inputType="textMultiLine"
+        android:hint="Type your message here..."
+        android:background="@android:drawable/edit_text"
+        android:padding="12dp"
+        android:textSize="14sp"
+        android:layout_marginBottom="16dp" />
+
+    <!-- License Info -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="📄 Gemma models: Licensed under Gemma Terms of Use (https://ai.google.dev/gemma/terms). By using Gemma models, you agree to these terms."
+        android:textSize="10sp"
+        android:textStyle="italic"
+        android:textColor="@android:color/darker_gray"
+        android:background="@drawable/status_background"
+        android:padding="8dp"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Results Section -->
+    <LinearLayout
+        android:id="@+id/layoutResults"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:layout_marginTop="16dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="📊 Results:"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="200dp"
+            android:background="@android:drawable/edit_text"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/textResults"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:textIsSelectable="true" />
+
+        </ScrollView>
+
+    </LinearLayout>
+
+</LinearLayout>
+</ScrollView>

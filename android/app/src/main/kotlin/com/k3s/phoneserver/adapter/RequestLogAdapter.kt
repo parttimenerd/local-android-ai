@@ -1,6 +1,9 @@
 package com.k3s.phoneserver.adapter
 
 import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.View
@@ -134,6 +137,13 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
             .show()
     }        private fun showTextDialog(requestLog: RequestLog) {
             val context = itemView.context
+            
+            // For JSON responses, create a formatted dialog with syntax highlighting
+            if (requestLog.responseType == "json" && !requestLog.responseData.isNullOrBlank()) {
+                showFormattedJsonDialog(requestLog)
+                return
+            }
+            
             val details = buildString {
                 appendLine("Request Details")
                 appendLine()
@@ -212,6 +222,46 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
                 .setTitle("Request Log Details")
                 .setMessage(details)
                 .setPositiveButton("OK", null)
+                .show()
+        }
+        
+        private fun showFormattedJsonDialog(requestLog: RequestLog) {
+            val context = itemView.context
+            
+            // Create a TextView for displaying formatted JSON
+            val textView = TextView(context).apply {
+                text = ResponseFormatter.getInstance().formatJsonAsSpannable(requestLog.responseData ?: "")
+                setPadding(16, 16, 16, 16)
+                textSize = 12f
+                typeface = android.graphics.Typeface.MONOSPACE
+                setTextIsSelectable(true)
+            }
+            
+            // Create a ScrollView to contain the TextView
+            val scrollView = android.widget.ScrollView(context).apply {
+                addView(textView)
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    (context.resources.displayMetrics.heightPixels * 0.6).toInt()
+                )
+            }
+            
+            val title = buildString {
+                append("Request Log Details - ${requestLog.path}")
+                appendLine()
+                append("${requestLog.timestamp} | ${requestLog.method} | ${requestLog.statusCode} | ${requestLog.responseTime}ms")
+            }
+            
+            AlertDialog.Builder(context)
+                .setTitle(title)
+                .setView(scrollView)
+                .setPositiveButton("OK", null)
+                .setNegativeButton("Copy JSON") { _, _ ->
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("JSON Response", requestLog.responseData)
+                    clipboard.setPrimaryClip(clip)
+                }
+                .create()
                 .show()
         }
     }

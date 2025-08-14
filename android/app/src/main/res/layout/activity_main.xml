@@ -5,39 +5,18 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:padding="16dp"
+    android:rotation="0"
+    android:rotationY="0"
     tools:context=".MainActivity">
-
-    <TextView
-        android:id="@+id/textDescription"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Web server providing location and orientation services for integration"
-        android:textSize="14sp"
-        android:gravity="center"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textTitle" />
-
-    <Button
-        android:id="@+id/buttonStartServer"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="Start Server"
-        android:textSize="18sp"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textDescription" />
 
     <ScrollView
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:layout_marginTop="24dp"
+        android:layout_marginTop="8dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/buttonStartServer">
+        app:layout_constraintTop_toTopOf="parent">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -45,41 +24,66 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/textDescription"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:gravity="center"
+                android:text="Web server providing location, camera and AI services for other app and Linux Terminal apps"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/buttonStartServer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="Start Server"
+                android:textSize="18sp" />
+
+            <!-- AI Model Management -->
+            <include
+                layout="@layout/button_with_badge"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="16dp" />
+
+            <TextView
                 android:id="@+id/textStatus"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Server stopped"
-                android:textSize="14sp"
+                android:layout_marginBottom="16dp"
+                android:background="@drawable/status_background"
                 android:fontFamily="monospace"
                 android:padding="16dp"
-                android:background="@drawable/status_background"
-                android:layout_marginBottom="16dp" />
+                android:text="Server stopped"
+                android:textSize="14sp"
+                android:visibility="gone" />
 
             <!-- API Testing Section -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
                 android:layout_marginBottom="8dp"
-                android:gravity="center_vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:padding="8dp"
                     android:text="API Testing"
                     android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:padding="8dp" />
+                    android:textStyle="bold" />
 
                 <Button
                     android:id="@+id/buttonToggleApiTesting"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
                     android:text="▼ Show"
-                    android:textSize="12sp"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_marginEnd="8dp" />
+                    android:textSize="12sp" />
 
             </LinearLayout>
 
@@ -87,77 +91,77 @@
                 android:id="@+id/apiTestingSection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/status_background"
-                android:padding="12dp"
                 android:layout_marginBottom="16dp"
+                android:background="@drawable/status_background"
+                android:orientation="vertical"
+                android:padding="12dp"
                 android:visibility="gone">
 
                 <!-- Status/Health endpoints -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="8dp">
+                    android:layout_marginBottom="8dp"
+                    android:orientation="horizontal">
 
                     <Button
                         android:id="@+id/buttonTestStatus"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginEnd="4dp"
                         android:layout_weight="1"
                         android:text="/status"
-                        android:textSize="12sp"
-                        android:layout_marginEnd="4dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:textSize="12sp" />
 
                     <Button
                         android:id="@+id/buttonTestHealth"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
                         android:layout_weight="1"
                         android:text="/health"
-                        android:textSize="12sp"
-                        android:layout_marginStart="4dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 
                 <!-- Capabilities endpoint -->
                 <Button
                     android:id="@+id/buttonTestCapabilities"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="/capabilities"
-                    android:textSize="12sp"
                     android:layout_marginBottom="8dp"
-                    style="@style/Widget.Material3.Button.OutlinedButton" />
+                    android:text="/capabilities"
+                    android:textSize="12sp" />
 
                 <!-- Location/Orientation endpoints -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="8dp">
+                    android:layout_marginBottom="8dp"
+                    android:orientation="horizontal">
 
                     <Button
                         android:id="@+id/buttonTestLocation"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginEnd="4dp"
                         android:layout_weight="1"
                         android:text="/location"
-                        android:textSize="12sp"
-                        android:layout_marginEnd="4dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:textSize="12sp" />
 
                     <Button
                         android:id="@+id/buttonTestOrientation"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
                         android:layout_weight="1"
                         android:text="/orientation"
-                        android:textSize="12sp"
-                        android:layout_marginStart="4dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:textSize="12sp" />
 
                 </LinearLayout>
 
@@ -165,28 +169,86 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginBottom="8dp">
+                    android:layout_marginBottom="8dp"
+                    android:orientation="horizontal">
 
                     <Button
                         android:id="@+id/buttonTestCaptureRear"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginEnd="2dp"
                         android:layout_weight="1"
                         android:text="/capture (rear)"
-                        android:textSize="10sp"
-                        android:layout_marginEnd="2dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:textSize="10sp" />
 
                     <Button
                         android:id="@+id/buttonTestCaptureFront"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp"
                         android:layout_weight="1"
                         android:text="/capture (front)"
-                        android:textSize="10sp"
+                        android:textSize="10sp" />
+
+                </LinearLayout>
+
+                <!-- AI endpoints -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/buttonTestAIText"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="2dp"
+                        android:layout_weight="1"
+                        android:text="/ai/text"
+                        android:textSize="12sp" />
+
+                    <Button
+                        android:id="@+id/buttonTestAIModels"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginStart="2dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:layout_weight="1"
+                        android:text="/ai/models"
+                        android:textSize="10sp" />
+
+                </LinearLayout>
+
+                <!-- Object Detection endpoints -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/buttonTestObjectDetectionRear"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="2dp"
+                        android:layout_weight="1"
+                        android:text="🎯 Object Detection (Rear)"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/buttonTestObjectDetectionFront"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="2dp"
+                        android:layout_weight="1"
+                        android:text="🎯 Object Detection (Front)"
+                        android:textSize="10sp" />
 
                 </LinearLayout>
 
@@ -194,10 +256,10 @@
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
                     android:layout_marginTop="8dp"
                     android:layout_marginBottom="4dp"
-                    android:gravity="center_vertical">
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
                     <TextView
                         android:layout_width="0dp"
@@ -209,40 +271,40 @@
 
                     <Button
                         android:id="@+id/buttonExpandResponse"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📏"
-                        android:textSize="12sp"
-                        android:padding="4dp"
-                        android:minHeight="0dp"
-                        android:minWidth="0dp"
                         android:layout_marginEnd="4dp"
                         android:contentDescription="Toggle response size"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="4dp"
+                        android:text="📏"
+                        android:textSize="12sp" />
 
                     <Button
                         android:id="@+id/buttonCopyApiResponse"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="📋"
-                        android:textSize="12sp"
-                        android:padding="4dp"
-                        android:minHeight="0dp"
-                        android:minWidth="0dp"
                         android:layout_marginEnd="4dp"
                         android:contentDescription="Copy response to clipboard"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:minWidth="0dp"
+                        android:minHeight="0dp"
+                        android:padding="4dp"
+                        android:text="📋"
+                        android:textSize="12sp" />
 
                     <Button
                         android:id="@+id/buttonClearApiResponse"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Clear"
-                        android:textSize="10sp"
-                        android:padding="4dp"
-                        android:minHeight="0dp"
                         android:minWidth="0dp"
-                        style="@style/Widget.Material3.Button.OutlinedButton" />
+                        android:minHeight="0dp"
+                        android:padding="4dp"
+                        android:text="Clear"
+                        android:textSize="10sp" />
 
                 </LinearLayout>
 
@@ -251,10 +313,11 @@
                     android:layout_width="match_parent"
                     android:layout_height="250dp"
                     android:background="#f5f5f5"
+                    android:clickable="true"
+                    android:focusable="true"
                     android:padding="8dp"
                     android:scrollbars="none"
-                    android:clickable="true"
-                    android:focusable="true">
+                    android:tag="collapsed">
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -265,11 +328,11 @@
                             android:id="@+id/textApiResponseHeader"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text=""
-                            android:textSize="10sp"
-                            android:fontFamily="monospace"
-                            android:textColor="#666666"
                             android:layout_marginBottom="8dp"
+                            android:fontFamily="monospace"
+                            android:text=""
+                            android:textColor="#666666"
+                            android:textSize="10sp"
                             android:visibility="gone" />
 
                         <ImageView
@@ -278,21 +341,21 @@
                             android:layout_height="wrap_content"
                             android:layout_marginBottom="8dp"
                             android:adjustViewBounds="true"
-                            android:scaleType="fitCenter"
+                            android:contentDescription="API response image"
                             android:maxHeight="200dp"
-                            android:visibility="gone"
-                            android:contentDescription="API response image" />
+                            android:scaleType="fitCenter"
+                            android:visibility="gone" />
 
                         <TextView
                             android:id="@+id/textApiResponse"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="Click an endpoint button to test the API"
-                            android:textSize="11sp"
                             android:fontFamily="monospace"
+                            android:lineSpacingMultiplier="1.2"
+                            android:text="Click an endpoint button to test the API"
                             android:textColor="#333333"
                             android:textIsSelectable="true"
-                            android:lineSpacingMultiplier="1.2" />
+                            android:textSize="11sp" />
 
                     </LinearLayout>
 
@@ -303,26 +366,26 @@
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="8dp">
+                android:layout_marginBottom="8dp"
+                android:orientation="horizontal">
 
                 <TextView
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
+                    android:padding="8dp"
                     android:text="Request Log"
                     android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:padding="8dp" />
+                    android:textStyle="bold" />
 
                 <Button
                     android:id="@+id/buttonClearLogs"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
                     android:text="Clear"
-                    android:textSize="12sp"
-                    style="@style/Widget.Material3.Button.OutlinedButton"
-                    android:layout_marginEnd="8dp" />
+                    android:textSize="12sp" />
 
             </LinearLayout>
 
@@ -331,23 +394,23 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/status_background"
-                android:padding="8dp"
-                android:nestedScrollingEnabled="false" />
+                android:nestedScrollingEnabled="false"
+                android:padding="8dp" />
 
             <TextView
                 android:id="@+id/prototypeFooter"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                android:text="Prototype for the k3s-on-phone project - github.com/parttimenerd/k3s-on-phone"
-                android:textSize="11sp"
-                android:textColor="#0066cc"
-                android:padding="12dp"
                 android:background="@drawable/status_background"
                 android:clickable="true"
                 android:focusable="true"
-                android:textStyle="italic"
-                android:gravity="center" />
+                android:gravity="center"
+                android:padding="12dp"
+                android:text="Prototype for the k3s-on-phone project - github.com/parttimenerd/k3s-on-phone"
+                android:textColor="#0066cc"
+                android:textSize="11sp"
+                android:textStyle="italic" />
 
         </LinearLayout>
 

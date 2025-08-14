@@ -15,6 +15,8 @@ WATCH_MODE=false
 REFRESH_INTERVAL=5
 NAMESPACE=""
 SHOW_SYSTEM=false
+SHOW_OBJECT_DETECTION=false
+SHOW_LLM=false
 
 # Colors for output
 RED='\033[0;31m'
@@ -59,6 +61,8 @@ OPTIONS:
     -w, --watch                Watch mode - continuously refresh status
     -i, --interval SECONDS     Refresh interval for watch mode (default: 5)
     -v, --verbose              Enable verbose output
+    --object-detection         Include object detection from phone cameras
+    --llm                      Include LLM scene descriptions from phone rear cameras
     -h, --help                 Show this help message
     --version                  Show version information
 
@@ -66,26 +70,37 @@ EXAMPLES:
     # Show basic cluster status
     ./status.sh
 
+    # Show verbose output with node locations
+    ./status.sh -v
+
+    # Show status with object detection from phone cameras
+    ./status.sh --object-detection
+
+    # Show status with LLM scene descriptions from phone cameras
+    ./status.sh --llm
+
     # Show status for specific namespace
     ./status.sh -n default
 
     # Show all resources including system namespaces
     ./status.sh -s
 
-    # Watch mode with 10 second refresh
-    ./status.sh -w -i 10
+    # Watch mode with 10 second refresh and object detection
+    ./status.sh -w -i 10 --object-detection
 
-    # Verbose output with system namespaces
-    ./status.sh -v -s
+    # Full monitoring: verbose + object detection + watch mode
+    ./status.sh -v -s --object-detection -w
 
 DESCRIPTION:
     This script displays:
     1. Cluster information and version
     2. Node status and resource usage
-    3. Pod status across namespaces
-    4. Service endpoints
-    5. Application deployments and statefulsets
-    6. Recent cluster events
+    3. Node locations with GPS coordinates and reverse geocoded cities (verbose mode)
+    4. Pod status across namespaces
+    5. Service endpoints
+    6. Application deployments and statefulsets
+    7. Recent cluster events
+    8. Object detection from phone cameras (with --object-detection flag)
 
 NOTES:
     - This script requires kubectl access to the K3s cluster
@@ -381,6 +396,221 @@ show_events() {
     fi
 }
 
+# Show node locations
+show_locations() {
+    if [ "$VERBOSE" = true ]; then
+        log_header "📍 Node Locations"
+        echo ""
+        
+        # Get all nodes with phone labels
+        local phone_nodes
+        phone_nodes=$(kubectl get nodes -o json 2>/dev/null | jq -r '.items[] | select(.metadata.labels["device-type"] == "phone") | .metadata.name' 2>/dev/null || echo "")
+        
+        if [ -z "$phone_nodes" ]; then
+            echo "No phone nodes found in cluster"
+            echo ""
+            return
+        fi
+        
+        # Table header
+        printf "%-20s %-12s %-13s %-10s %-20s %-15s\n" "NODE" "LATITUDE" "LONGITUDE" "ALTITUDE" "CITY" "LAST UPDATED"
+        printf "%-20s %-12s %-13s %-10s %-20s %-15s\n" "----" "--------" "---------" "--------" "----" "------------"
+        
+        # Get location data for each phone node
+        echo "$phone_nodes" | while read -r node; do
+            if [ -n "$node" ]; then
+                local node_info
+                node_info=$(kubectl get node "$node" -o json 2>/dev/null || echo "")
+                
+                if [ -n "$node_info" ]; then
+                    local latitude longitude altitude city updated
+                    latitude=$(echo "$node_info" | jq -r '.metadata.labels["phone.location/latitude"] // "N/A"' 2>/dev/null || echo "N/A")
+                    longitude=$(echo "$node_info" | jq -r '.metadata.labels["phone.location/longitude"] // "N/A"' 2>/dev/null || echo "N/A")
+                    altitude=$(echo "$node_info" | jq -r '.metadata.labels["phone.location/altitude"] // "N/A"' 2>/dev/null || echo "N/A")
+                    city=$(echo "$node_info" | jq -r '.metadata.labels["phone.location/city"] // "Unknown"' 2>/dev/null || echo "Unknown")
+                    updated=$(echo "$node_info" | jq -r '.metadata.labels["phone.location/updated"] // "Never"' 2>/dev/null || echo "Never")
+                    
+                    # Format coordinates
+                    if [ "$latitude" != "N/A" ] && [ "$longitude" != "N/A" ]; then
+                        latitude=$(printf "%.6f" "$latitude" 2>/dev/null || echo "$latitude")
+                        longitude=$(printf "%.6f" "$longitude" 2>/dev/null || echo "$longitude")
+                    fi
+                    
+                    # Format altitude
+                    if [ "$altitude" != "N/A" ]; then
+                        altitude=$(printf "%.1fm" "$altitude" 2>/dev/null || echo "$altitude")
+                    fi
+                    
+                    # Truncate long city names
+                    if [ ${#city} -gt 18 ]; then
+                        city="${city:0:15}..."
+                    fi
+                    
+                    # Format timestamp
+                    if [ "$updated" != "Never" ] && [ "$updated" != "N/A" ]; then
+                        updated=$(date -d "$updated" "+%H:%M:%S" 2>/dev/null || echo "$updated")
+                    fi
+                    
+                    printf "%-20s %-12s %-13s %-10s %-20s %-15s\n" "$node" "$latitude" "$longitude" "$altitude" "$city" "$updated"
+                fi
+            fi
+        done
+        echo ""
+    fi
+}
+
+# Show object detection results
+show_object_detection() {
+    if [ "$SHOW_OBJECT_DETECTION" = true ]; then
+        log_header "📹 Object Detection (Front & Rear Cameras)"
+        echo ""
+        
+        # Get all nodes with phone labels
+        local phone_nodes
+        phone_nodes=$(kubectl get nodes -o json 2>/dev/null | jq -r '.items[] | select(.metadata.labels["device-type"] == "phone") | .metadata.name' 2>/dev/null || echo "")
+        
+        if [ -z "$phone_nodes" ]; then
+            echo "No phone nodes found in cluster"
+            echo ""
+            return
+        fi
+        
+        # Table header
+        printf "%-20s %-10s %-50s %-15s\n" "NODE" "CAMERA" "DETECTED OBJECTS" "TIMESTAMP"
+        printf "%-20s %-10s %-50s %-15s\n" "----" "------" "----------------" "---------"
+        
+        # Get object detection data for each phone node
+        echo "$phone_nodes" | while read -r node; do
+            if [ -n "$node" ]; then
+                # Check if node has forwarded port or direct access
+                local api_base=""
+                if command -v curl >/dev/null 2>&1; then
+                    # Try localhost first (if port forwarding is set up)
+                    if curl -s --connect-timeout 2 "http://localhost:8005/status" >/dev/null 2>&1; then
+                        api_base="http://localhost:8005"
+                    else
+                        # Try direct node access
+                        api_base="http://$node:8005"
+                    fi
+                    
+                    # Get front camera detection
+                    local front_result
+                    front_result=$(curl -s --connect-timeout 5 --max-time 10 "$api_base/object-detection?camera=front" 2>/dev/null || echo "")
+                    if [ -n "$front_result" ]; then
+                        local front_objects front_timestamp
+                        front_objects=$(echo "$front_result" | jq -r '[.objects[]?.class] | join(", ")' 2>/dev/null || echo "Error")
+                        front_timestamp=$(echo "$front_result" | jq -r '.timestamp' 2>/dev/null | xargs -I {} date -d {} "+%H:%M:%S" 2>/dev/null || echo "Unknown")
+                        
+                        if [ -z "$front_objects" ] || [ "$front_objects" = "null" ]; then
+                            front_objects="No objects detected"
+                        fi
+                        
+                        # Truncate long object lists
+                        if [ ${#front_objects} -gt 48 ]; then
+                            front_objects="${front_objects:0:45}..."
+                        fi
+                        
+                        printf "%-20s %-10s %-50s %-15s\n" "$node" "Front" "$front_objects" "$front_timestamp"
+                    else
+                        printf "%-20s %-10s %-50s %-15s\n" "$node" "Front" "API unavailable" "---"
+                    fi
+                    
+                    # Get rear camera detection
+                    local rear_result
+                    rear_result=$(curl -s --connect-timeout 5 --max-time 10 "$api_base/object-detection?camera=rear" 2>/dev/null || echo "")
+                    if [ -n "$rear_result" ]; then
+                        local rear_objects rear_timestamp
+                        rear_objects=$(echo "$rear_result" | jq -r '[.objects[]?.class] | join(", ")' 2>/dev/null || echo "Error")
+                        rear_timestamp=$(echo "$rear_result" | jq -r '.timestamp' 2>/dev/null | xargs -I {} date -d {} "+%H:%M:%S" 2>/dev/null || echo "Unknown")
+                        
+                        if [ -z "$rear_objects" ] || [ "$rear_objects" = "null" ]; then
+                            rear_objects="No objects detected"
+                        fi
+                        
+                        # Truncate long object lists
+                        if [ ${#rear_objects} -gt 48 ]; then
+                            rear_objects="${rear_objects:0:45}..."
+                        fi
+                        
+                        printf "%-20s %-10s %-50s %-15s\n" "$node" "Rear" "$rear_objects" "$rear_timestamp"
+                    else
+                        printf "%-20s %-10s %-50s %-15s\n" "$node" "Rear" "API unavailable" "---"
+                    fi
+                else
+                    printf "%-20s %-10s %-50s %-15s\n" "$node" "Front" "curl not available" "---"
+                    printf "%-20s %-10s %-50s %-15s\n" "$node" "Rear" "curl not available" "---"
+                fi
+            fi
+        done
+        echo ""
+    fi
+}
+
+# Show LLM scene descriptions
+show_llm_descriptions() {
+    if [ "$SHOW_LLM" = true ]; then
+        log_header "🤖 LLM Scene Descriptions (Rear Cameras)"
+        echo ""
+        
+        # Get all nodes with phone labels
+        local phone_nodes
+        phone_nodes=$(kubectl get nodes -o json 2>/dev/null | jq -r '.items[] | select(.metadata.labels["device-type"] == "phone") | .metadata.name' 2>/dev/null || echo "")
+        
+        if [ -z "$phone_nodes" ]; then
+            echo "No phone nodes found in cluster"
+            echo ""
+            return
+        fi
+        
+        # Table header
+        printf "%-20s %-70s %-15s\n" "NODE" "SCENE DESCRIPTION" "TIMESTAMP"
+        printf "%-20s %-70s %-15s\n" "----" "-----------------" "---------"
+        
+        # Get LLM descriptions for each phone node (rear camera only)
+        echo "$phone_nodes" | while read -r node; do
+            if [ -n "$node" ]; then
+                # Check if node has forwarded port or direct access
+                local api_base=""
+                if command -v curl >/dev/null 2>&1; then
+                    # Try localhost first (if port forwarding is set up)
+                    if curl -s --connect-timeout 2 "http://localhost:8005/status" >/dev/null 2>&1; then
+                        api_base="http://localhost:8005"
+                    else
+                        # Try direct node access
+                        api_base="http://$node:8005"
+                    fi
+                    
+                    # Make AI text request with rear camera
+                    local ai_request='{"text":"Describe the scene in one sentence","model":"","temperature":0.7,"topK":40,"captureConfig":{"camera":"rear"}}'
+                    local ai_result
+                    ai_result=$(curl -s --connect-timeout 10 --max-time 30 -X POST -H "Content-Type: application/json" -d "$ai_request" "$api_base/ai/text" 2>/dev/null || echo "")
+                    
+                    if [ -n "$ai_result" ]; then
+                        local description timestamp
+                        description=$(echo "$ai_result" | jq -r '.response // .text // "No description available"' 2>/dev/null || echo "Parse error")
+                        timestamp=$(date "+%H:%M:%S")
+                        
+                        # Clean up description - remove quotes and newlines
+                        description=$(echo "$description" | tr -d '"' | tr '\n' ' ' | sed 's/  */ /g' | xargs)
+                        
+                        # Truncate long descriptions
+                        if [ ${#description} -gt 68 ]; then
+                            description="${description:0:65}..."
+                        fi
+                        
+                        printf "%-20s %-70s %-15s\n" "$node" "$description" "$timestamp"
+                    else
+                        printf "%-20s %-70s %-15s\n" "$node" "AI API unavailable" "---"
+                    fi
+                else
+                    printf "%-20s %-70s %-15s\n" "$node" "curl not available" "---"
+                fi
+            fi
+        done
+        echo ""
+    fi
+}
+
 # Main status function
 show_status() {
     if [ "$WATCH_MODE" = false ]; then
@@ -391,10 +621,13 @@ show_status() {
     
     show_cluster_info
     show_nodes
+    show_locations
     show_pods
     show_services
     show_workloads
     show_events
+    show_object_detection
+    show_llm_descriptions
     
     if [ "$WATCH_MODE" = true ]; then
         echo ""
@@ -432,6 +665,14 @@ parse_arguments() {
                 ;;
             -v|--verbose)
                 VERBOSE=true
+                shift
+                ;;
+            --object-detection)
+                SHOW_OBJECT_DETECTION=true
+                shift
+                ;;
+            --llm)
+                SHOW_LLM=true
                 shift
                 ;;
             -h|--help)

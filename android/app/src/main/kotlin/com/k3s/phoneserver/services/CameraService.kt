@@ -4,14 +4,17 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.os.Build
 import android.util.Log
+import android.view.Surface
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.LifecycleOwner
 import com.k3s.phoneserver.manager.AppPermissionManager
 import timber.log.Timber
@@ -60,14 +63,13 @@ class CameraService(private val context: Context) {
      * @param lifecycleOwner The LifecycleOwner to bind the camera to.
      * @param lensFacingSelection Enum indicating FRONT or REAR camera.
      * @param targetApproxZoomFactor Optional: The desired approximate zoom factor (e.g., 0.6f, 1.0f, 2.0f).
-     *                               If null, a default behavior for the selected facing is used (typically around 1x).
-     * @return A Bitmap of the captured image, or null if capture failed.
+     * @return A CaptureResult with bitmap and rotation degrees, or null if capture failed.
      */
-    suspend fun capture(
+    suspend fun captureWithRotation(
         lifecycleOwner: LifecycleOwner,
         lensFacingSelection: LensFacingSelection,
         targetApproxZoomFactor: Float? = null // Default to null, implying standard 1.0x behavior
-    ): Bitmap? {
+    ): CaptureResult? {
         if (!hasCameraPermissions()) {
             Timber.w("Camera permission not granted")
             return null
@@ -95,6 +97,18 @@ class CameraService(private val context: Context) {
                 cameraSelectorLensFacing
             )
         }
+    }
+
+    /**
+     * Backward compatibility function - returns only the bitmap
+     * @deprecated Use captureWithRotation() instead to get rotation information
+     */
+    suspend fun capture(
+        lifecycleOwner: LifecycleOwner,
+        lensFacingSelection: LensFacingSelection,
+        targetApproxZoomFactor: Float? = null // Default to null, implying standard 1.0x behavior
+    ): Bitmap? {
+        return captureWithRotation(lifecycleOwner, lensFacingSelection, targetApproxZoomFactor)?.bitmap
     }
 
     /**
@@ -174,7 +188,7 @@ class CameraService(private val context: Context) {
     private suspend fun captureWithStandardLens(
         lifecycleOwner: LifecycleOwner,
         @CameraSelector.LensFacing cameraSelectorLensFacing: Int
-    ): Bitmap? = suspendCoroutine { continuation ->
+    ): CaptureResult? = suspendCoroutine { continuation ->
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val mainExecutor = ContextCompat.getMainExecutor(context)
 
@@ -212,7 +226,7 @@ class CameraService(private val context: Context) {
         lifecycleOwner: LifecycleOwner,
         targetApproxZoomFactor: Float,
         @CameraSelector.LensFacing cameraSelectorLensFacing: Int
-    ): Bitmap? = suspendCoroutine { continuation ->
+    ): CaptureResult? = suspendCoroutine { continuation ->
         // (Implementation from the previous version - no changes needed in its core logic)
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
         val mainExecutor: Executor = ContextCompat.getMainExecutor(context)
@@ -277,6 +291,8 @@ class CameraService(private val context: Context) {
     // --- Core Helper Methods ---
     // (getInternalPhysicalCameraDetails, calculateApproxFocalLengthFor1x, calculateApproxZoomFactor remain the same)
 
+    private data class InternalPhysicalCameraDetail(val id: String, val approxZoomFactor: Float)
+
     @SuppressLint("UnsafeOptInUsageError")
     private fun getInternalPhysicalCameraDetails(
         cameraManager: CameraManager,
@@ -329,16 +345,24 @@ class CameraService(private val context: Context) {
         return actualFocalLength / baseline1xFocalLength
     }
 
-    private data class InternalPhysicalCameraDetail(val id: String, val approxZoomFactor: Float)
+    /** 
+     * Capture result with rotation information
+     * Note: The bitmap is already rotated according to EXIF data for proper display orientation
+     */
+    data class CaptureResult(
+        val bitmap: Bitmap?, // Pre-rotated bitmap ready for display
+        val rotationDegrees: Int // Original EXIF rotation that was applied to the bitmap
+    )
 
     /** Renamed from takePicture to takePictureInternal to avoid conflict if CameraService has other public methods. */
     private fun takePictureInternal(
         imageCapture: ImageCapture,
         executor: Executor,
-        continuation: kotlin.coroutines.Continuation<Bitmap?>
+        continuation: kotlin.coroutines.Continuation<CaptureResult?>
     ) {
         val outputFile = File(context.cacheDir, "temp_image_${System.currentTimeMillis()}.jpg")
         val outputOptions = ImageCapture.OutputFileOptions.Builder(outputFile).build()
+        
         imageCapture.takePicture(
             outputOptions, executor,
             object : ImageCapture.OnImageSavedCallback {
@@ -349,12 +373,75 @@ class CameraService(private val context: Context) {
                 }
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     Log.d(TAG, "Photo capture succeeded: ${output.savedUri}")
-                    val bitmap = BitmapFactory.decodeFile(outputFile.absolutePath)
-                    outputFile.delete()
-                    continuation.resume(bitmap)
+                    
+                    try {
+                        // Get EXIF rotation information
+                        val exif = ExifInterface(outputFile.absolutePath)
+                        val orientation = exif.getAttributeInt(
+                            ExifInterface.TAG_ORIENTATION,
+                            ExifInterface.ORIENTATION_NORMAL
+                        )
+                        
+                        val rotationDegrees = when (orientation) {
+                            ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                            ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                            ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                            else -> 0
+                        }
+                        
+                        Log.d(TAG, "Image EXIF orientation: $orientation, rotation: $rotationDegrees degrees")
+                        
+                        val originalBitmap = BitmapFactory.decodeFile(outputFile.absolutePath)
+                        outputFile.delete()
+                        
+                        // Apply rotation to the bitmap if needed
+                        val rotatedBitmap = if (rotationDegrees != 0 && originalBitmap != null) {
+                            Log.d(TAG, "Applying $rotationDegrees degree rotation to bitmap")
+                            rotateImage(originalBitmap, rotationDegrees.toFloat())
+                        } else {
+                            originalBitmap
+                        }
+                        
+                        continuation.resume(CaptureResult(rotatedBitmap, rotationDegrees))
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to process image EXIF data", e)
+                        val originalBitmap = BitmapFactory.decodeFile(outputFile.absolutePath)
+                        outputFile.delete()
+                        continuation.resume(CaptureResult(originalBitmap, 0))
+                    }
                 }
             }
         )
+    }
+
+    /**
+     * Rotates a bitmap by the specified degrees
+     * @param source The source bitmap to rotate
+     * @param degrees The rotation angle in degrees (90, 180, 270, etc.)
+     * @return The rotated bitmap
+     */
+    private fun rotateImage(source: Bitmap, degrees: Float): Bitmap {
+        return try {
+            val matrix = Matrix()
+            matrix.postRotate(degrees)
+            val rotatedBitmap = Bitmap.createBitmap(
+                source, 0, 0, 
+                source.width, source.height, 
+                matrix, true
+            )
+            
+            // Clean up the original bitmap if it's different from the rotated one
+            if (rotatedBitmap != source) {
+                source.recycle()
+            }
+            
+            Log.d(TAG, "Successfully rotated image by $degrees degrees. Original: ${source.width}x${source.height}, Rotated: ${rotatedBitmap.width}x${rotatedBitmap.height}")
+            rotatedBitmap
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to rotate image by $degrees degrees", e)
+            // Return original bitmap if rotation fails
+            source
+        }
     }
 
     fun cleanup() {

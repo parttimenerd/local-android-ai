@@ -44,6 +44,51 @@ class AppPermissionManager private constructor() {
     }
 
     /**
+     * Check if the app has storage permissions for AI model persistence
+     */
+    fun hasStoragePermissions(context: Context): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+ needs media permissions for reading downloaded files
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_IMAGES) == PermissionChecker.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_VIDEO) == PermissionChecker.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_MEDIA_AUDIO) == PermissionChecker.PERMISSION_GRANTED
+        } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // Android 10-12 doesn't need external storage permission for app-specific directories
+            // but may need it for accessing Downloads folder
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PermissionChecker.PERMISSION_GRANTED
+        } else {
+            // Android 9 and below need explicit storage permissions
+            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PermissionChecker.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PermissionChecker.PERMISSION_GRANTED
+        }
+    }
+    
+    /**
+     * Check if the app has enhanced storage permissions for AI model access
+     * This includes checking both general storage and ability to access common model locations
+     */
+    fun hasEnhancedStoragePermissions(context: Context): Boolean {
+        val basicStorageAccess = hasStoragePermissions(context)
+        
+        // Test actual directory access
+        val testDirectories = listOf(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS),
+            context.getExternalFilesDir(null)
+        )
+        
+        var hasDirectoryAccess = false
+        for (dir in testDirectories) {
+            if (dir != null && dir.exists() && dir.canRead()) {
+                hasDirectoryAccess = true
+                break
+            }
+        }
+        
+        return basicStorageAccess && hasDirectoryAccess
+    }
+
+    /**
      * Check if the app has all required core permissions for basic operation
      */
     fun hasRequiredPermissions(context: Context): Boolean {
@@ -84,6 +129,21 @@ class AppPermissionManager private constructor() {
         return arrayOf(
             Manifest.permission.CAMERA
         )
+    }
+
+    /**
+     * Get the list of storage permissions (for AI model persistence)
+     */
+    fun getStoragePermissions(): Array<String> {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // Android 10+ doesn't need external storage permission for app-specific directories
+            emptyArray()
+        } else {
+            arrayOf(
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE
+            )
+        }
     }
 
     /**
