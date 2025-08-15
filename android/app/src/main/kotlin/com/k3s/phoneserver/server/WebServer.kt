@@ -135,7 +135,8 @@ class WebServer(private val context: Context) {
             
             // Capabilities endpoint for dynamic API discovery
             get("/capabilities") {
-                val hasLocation = permissionManager.hasLocationPermissions(this@WebServer.context)
+                val hasBasicLocation = permissionManager.hasBasicLocationPermissions(this@WebServer.context)
+                val hasBackgroundLocation = permissionManager.hasLocationPermissions(this@WebServer.context)
                 val hasCamera = permissionManager.hasCameraPermissions(this@WebServer.context)
                 
                 call.respond(mapOf(
@@ -143,10 +144,12 @@ class WebServer(private val context: Context) {
                     "version" to "1.0.0-simplified",
                     "capabilities" to mapOf(
                         "location" to mapOf(
-                            "available" to hasLocation,
-                            "endpoints" to if (hasLocation) listOf("/location") else emptyList<String>(),
-                            "methods" to if (hasLocation) listOf("GET") else emptyList<String>(),
-                            "description" to if (hasLocation) "GPS location data with latitude, longitude, altitude, accuracy" else "Location permission not granted"
+                            "available" to hasBasicLocation,
+                            "backgroundAccess" to hasBackgroundLocation,
+                            "endpoints" to if (hasBasicLocation) listOf("/location") else emptyList<String>(),
+                            "methods" to if (hasBasicLocation) listOf("GET") else emptyList<String>(),
+                            "description" to if (hasBasicLocation) "GPS location data with latitude, longitude, altitude, accuracy" else "Location permission not granted",
+                            "backgroundDescription" to if (hasBackgroundLocation) "Works in background" else "Requires app visible (Android 10+)"
                         ),
                         "orientation" to mapOf(
                             "available" to true,
@@ -158,7 +161,8 @@ class WebServer(private val context: Context) {
                             "available" to hasCamera,
                             "endpoints" to if (hasCamera) listOf("/capture") else emptyList<String>(),
                             "methods" to if (hasCamera) listOf("GET") else emptyList<String>(),
-                            "description" to if (hasCamera) "Camera capture with zoom and front/rear selection" else "Camera permission not granted"
+                            "description" to if (hasCamera) "Camera capture with zoom and front/rear selection" else "Camera permission not granted",
+                            "visibilityRequirement" to "App must be visible (Android privacy requirement)"
                         ),
                         "health" to mapOf(
                             "available" to true,
@@ -174,7 +178,7 @@ class WebServer(private val context: Context) {
                         )
                     ),
                     "features" to mapOf(
-                        "location" to hasLocation,
+                        "location" to hasBasicLocation,
                         "orientation" to true,
                         "camera" to hasCamera,
                         "ai" to aiService.getStatus().isEnabled
@@ -187,7 +191,8 @@ class WebServer(private val context: Context) {
             // Location endpoint (GPS coordinates) - permission-aware and fast
             get("/location") {
                 try {
-                    if (!permissionManager.hasLocationPermissions(this@WebServer.context)) {
+                    // Check basic location permissions (works for both foreground and background)
+                    if (!permissionManager.hasBasicLocationPermissions(this@WebServer.context)) {
                         call.respond(
                             HttpStatusCode.Forbidden,
                             mapOf(
@@ -201,14 +206,16 @@ class WebServer(private val context: Context) {
 
                     val location = locationService.getCurrentLocation()
                     if (location != null) {
-                        call.respond(mapOf(
+                        val response = mapOf(
                             "latitude" to location.latitude,
                             "longitude" to location.longitude,
                             "altitude" to location.altitude,
                             "accuracy" to location.accuracy,
                             "timestamp" to location.time,
-                            "provider" to location.provider
-                        ))
+                            "provider" to location.provider,
+                            "backgroundAccess" to permissionManager.hasLocationPermissions(this@WebServer.context)
+                        )
+                        call.respond(response)
                     } else {
                         call.respond(
                             HttpStatusCode.ServiceUnavailable,

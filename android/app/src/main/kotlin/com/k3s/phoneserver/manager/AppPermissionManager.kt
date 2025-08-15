@@ -39,6 +39,22 @@ class AppPermissionManager private constructor() {
      * Check if the app has location permissions (either fine or coarse)
      */
     fun hasLocationPermissions(context: Context): Boolean {
+        val basicLocationAccess = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PermissionChecker.PERMISSION_GRANTED ||
+               ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PermissionChecker.PERMISSION_GRANTED
+        
+        // For Android 10+, also check background location for true background access
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val backgroundLocationAccess = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PermissionChecker.PERMISSION_GRANTED
+            basicLocationAccess && backgroundLocationAccess
+        } else {
+            basicLocationAccess
+        }
+    }
+    
+    /**
+     * Check if the app has basic location permissions (without background requirement)
+     */
+    fun hasBasicLocationPermissions(context: Context): Boolean {
         return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PermissionChecker.PERMISSION_GRANTED ||
                ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PermissionChecker.PERMISSION_GRANTED
     }
@@ -116,10 +132,40 @@ class AppPermissionManager private constructor() {
      * Get the list of location permissions (optional)
      */
     fun getLocationPermissions(): Array<String> {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            // Android 10+ requires background location permission for background access
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        }
+    }
+    
+    /**
+     * Get basic location permissions (without background location)
+     */
+    fun getBasicLocationPermissions(): Array<String> {
         return arrayOf(
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
+    }
+    
+    /**
+     * Get background location permission (Android 10+ only)
+     */
+    fun getBackgroundLocationPermissions(): Array<String> {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        } else {
+            emptyArray()
+        }
     }
 
     /**

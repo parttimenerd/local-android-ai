@@ -102,7 +102,9 @@ sample_app/
 - **`/dashboard`**: SAP UI5 monitoring interface with Android phone integration
 - **`/api/system`**: Additional system metrics
 - **`/api/phone`**: Android phone location/orientation/object detection data (if available)
-- **`/api/phone/capture`**: Direct camera capture with object detection from connected Android phone
+- **`/api/phone/capture`**: Direct camera capture with object detection from connected Android phone ⚠️ **Requires Android app visible**
+
+⚠️ **Camera Privacy Requirement**: Camera capture endpoints require the K3s Phone Server Android app to be visible due to Android OS privacy restrictions. This is a built-in security feature to ensure users are aware when the camera is being used.
 
 ### Enhanced API Endpoints
 
@@ -115,10 +117,11 @@ sample_app/
 - **Performance**: Object detection typically completes in <1 second
 
 #### POST `/api/phone/capture`
-- **Purpose**: Direct camera capture with object detection
+- **Purpose**: Direct camera capture with object detection ⚠️ **Requires Android app visible**
 - **Request Body**: JSON with object detection parameters
 - **Response**: JSON with detected objects, bounding boxes, and optional image
 - **Uses**: MediaPipe EfficientDet Lite 2 for fast on-device processing
+- **Privacy**: Android app must be visible due to OS camera privacy restrictions
 
 ### Dashboard Features
 The `/dashboard` endpoint provides a comprehensive monitoring interface featuring:

@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -50,6 +51,22 @@ class MainActivity : AppCompatActivity() {
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        handlePermissionResults(permissions)
+    }
+    
+    // Background location permission launcher (Android 10+)
+    private val backgroundLocationLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            Toast.makeText(this, "✅ Background location access granted - location works in background", Toast.LENGTH_LONG).show()
+        } else {
+            Toast.makeText(this, "⚠️ Background location denied - location may not work when app is hidden", Toast.LENGTH_LONG).show()
+        }
+        permissionManager.saveLocationPermissionState(this)
+    }
+    
+    private fun handlePermissionResults(permissions: Map<String, Boolean>) {
         Timber.d("Permission result received: $permissions")
         
         val locationGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
@@ -65,13 +82,26 @@ class MainActivity : AppCompatActivity() {
         val messages = mutableListOf<String>()
         if (locationGranted) {
             messages.add("📍 Location permission granted")
+            
+            // For Android 10+, check if we need background location permission
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                val hasBackgroundLocation = ContextCompat.checkSelfPermission(
+                    this, 
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                
+                if (!hasBackgroundLocation) {
+                    // Request background location permission separately after a short delay
+                    scheduleBackgroundLocationRequest()
+                }
+            }
         }
         if (cameraGranted) {
             messages.add("📷 Camera permission granted")
         }
         
         val deniedPermissions = mutableListOf<String>()
-        if (!permissionManager.hasLocationPermissions(this)) {
+        if (!permissionManager.hasBasicLocationPermissions(this)) {
             deniedPermissions.add("location")
         }
         if (!permissionManager.hasCameraPermissions(this)) {
@@ -453,14 +483,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkAndRequestPermissions() {
         val missingCorePermissions = permissionManager.getMissingCorePermissions(this)
-        val missingLocationPermissions = permissionManager.getMissingLocationPermissions(this)
+        val missingBasicLocationPermissions = permissionManager.getBasicLocationPermissions().filter { permission ->
+            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
+        }
         val missingCameraPermissions = permissionManager.getMissingCameraPermissions(this)
         
         // Log current permission status for debugging
-        Timber.d("Permission check - Missing core: $missingCorePermissions, Location: $missingLocationPermissions, Camera: $missingCameraPermissions")
+        Timber.d("Permission check - Missing core: $missingCorePermissions, Basic Location: $missingBasicLocationPermissions, Camera: $missingCameraPermissions")
         
-        // Always request location and camera permissions but don't block server start
-        val allMissingPermissions = missingCorePermissions + missingLocationPermissions + missingCameraPermissions
+        // Request basic permissions (don't include background location in initial request)
+        val allMissingPermissions = missingCorePermissions + missingBasicLocationPermissions + missingCameraPermissions
         
         if (allMissingPermissions.isEmpty()) {
             // Update and save permission state
@@ -468,7 +500,7 @@ class MainActivity : AppCompatActivity() {
             autoStartServer()
         } else {
             // Check if we need to show rationale for location permissions
-            if (missingLocationPermissions.isNotEmpty()) {
+            if (missingBasicLocationPermissions.isNotEmpty()) {
                 showLocationPermissionRationale {
                     requestPermissionsWithRationale(allMissingPermissions)
                 }
@@ -479,17 +511,19 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun showLocationPermissionRationale(onProceed: () -> Unit) {
-        val missingLocationPermissions = permissionManager.getMissingLocationPermissions(this)
+        val missingBasicLocationPermissions = permissionManager.getBasicLocationPermissions().filter { permission ->
+            ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED
+        }
         
         // Check if we should show rationale for location permissions
-        val shouldShowRationale = missingLocationPermissions.any { permission ->
+        val shouldShowRationale = missingBasicLocationPermissions.any { permission ->
             shouldShowRequestPermissionRationale(permission)
         }
         
         if (shouldShowRationale || !permissionsChecked) {
             AlertDialog.Builder(this)
                 .setTitle("Location Permission")
-                .setMessage("K3s Phone Server can provide device location information through its API. This enables location-based features for connected applications.\n\nLocation access is optional - the server will work without it, but location endpoints will be disabled.")
+                .setMessage("K3s Phone Server can provide device location information through its API. This enables location-based features for connected applications.\n\nFor background operation when the app is not visible, additional background location access will be requested separately.\n\nLocation access is optional - the server will work without it, but location endpoints will be disabled.")
                 .setPositiveButton("Grant Permission") { _, _ ->
                     onProceed()
                 }
@@ -583,6 +617,32 @@ class MainActivity : AppCompatActivity() {
             }
             .setCancelable(false)
             .show()
+    }
+
+    private fun scheduleBackgroundLocationRequest() {
+        // Request background location permission after a short delay to avoid overwhelming the user
+        findViewById<LinearLayout>(R.id.apiTestingSection).postDelayed({
+            requestBackgroundLocationPermission()
+        }, 3000) // 3 seconds delay
+    }
+
+    private fun requestBackgroundLocationPermission() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            AlertDialog.Builder(this)
+                .setTitle("Background Location Access")
+                .setMessage("To provide location data when the app is not visible, background location access is required.\n\nThis allows the K3s Phone Server to work properly even when the app is in the background.\n\nIn the next dialog, please select 'Allow all the time' for full functionality.")
+                .setPositiveButton("Continue") { _, _ ->
+                    try {
+                        backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to request background location permission")
+                    }
+                }
+                .setNegativeButton("Skip") { _, _ ->
+                    Toast.makeText(this, "⚠️ Location may not work when app is in background", Toast.LENGTH_LONG).show()
+                }
+                .show()
+        }
     }
 
     private fun checkAutoStartAfterPermissions() {

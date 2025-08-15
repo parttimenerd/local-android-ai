@@ -56,10 +56,12 @@ POST /ai/models/test {"modelName": "model-name", "prompt": "text"}
 ```http
 GET /location       # GPS: lat, lng, alt, accuracy, bearing
 GET /orientation    # Compass: azimuth, pitch, roll, accuracy  
-GET /capture?side=rear&zoom=2.0  # Camera capture, base64 JPEG
+GET /capture?side=rear&zoom=2.0  # Camera capture, base64 JPEG ⚠️ App must be visible
 GET /status         # Server status, features, permissions
 GET /help           # API documentation
 ```
+
+⚠️ **Camera Privacy Notice**: Camera capture requires the Android app to be visible due to Android OS privacy restrictions. This ensures users are aware when the camera is being accessed. Location and other endpoints work in the background.
 
 ## Technical Details
 
