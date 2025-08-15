@@ -4,6 +4,22 @@
 
 Kubernetes cluster deployment on Android devices with on-device AI inference.
 
+## 📱 Download Android App
+
+[![Latest Release](https://img.shields.io/github/v/release/parttimenerd/k3s-on-phone?label=Latest%20Release)](https://github.com/parttimenerd/k3s-on-phone/releases/latest)
+
+**Direct APK Downloads:**
+- **[📱 Debug APK](https://github.com/parttimenerd/k3s-on-phone/releases/latest/download/app-debug.apk)** - Development build with debugging enabled
+- **[🚀 Release APK](https://github.com/parttimenerd/k3s-on-phone/releases/latest/download/app-release-unsigned.apk)** - Production build (optimized)
+
+**Installation:**
+1. Enable "Install from unknown sources" in Android Settings → Security
+2. Download and install the APK file
+3. Grant location and camera permissions when prompted
+4. Verify the app shows "Server running on port 8005"
+
+**⚠️ Important:** Start the Android app BEFORE setting up Kubernetes nodes!
+
 ## Project Overview
 
 - **K3s cluster nodes** running in Android Linux containers
@@ -41,7 +57,7 @@ Kubernetes cluster deployment on Android devices with on-device AI inference.
 - Tailscale account
 - 4GB+ RAM, 64GB+ storage
 
-⚠️ **Install and START K3s Phone Server Android app before setting up nodes**
+⚠️ **[Download and install K3s Phone Server Android app](https://github.com/parttimenerd/k3s-on-phone/releases/latest) before setup**
 
 ### Master Node
 ```bash
@@ -50,8 +66,9 @@ curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup
 
 ### Worker Node
 ```bash
-# 1. Install and START K3s Phone Server Android app
-# 2. Ensure app is running and listening on port 8005
+# 1. Download and install K3s Phone Server Android app from:
+#    https://github.com/parttimenerd/k3s-on-phone/releases/latest
+# 2. START the app and ensure it's running on port 8005
 # 3. Run agent setup:
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-02 -t YOUR_TAILSCALE_KEY -k K3S_TOKEN -u https://phone-01:6443
 ```
