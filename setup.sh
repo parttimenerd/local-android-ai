@@ -2785,6 +2785,28 @@ install_k3s_server() {
         force_reset_cluster
     fi
 
+    # Clean up any conflicting services that shouldn't be on server nodes
+    log_step "Cleaning up services not needed on server nodes..."
+    
+    # Remove any port forwarding service (servers don't need to forward to themselves)
+    if sudo systemctl is-active --quiet socat-port-forward 2>/dev/null; then
+        log_verbose "Stopping socat port forwarding service (not needed on server)"
+        sudo systemctl stop socat-port-forward 2>/dev/null || true
+    fi
+    if sudo systemctl is-enabled --quiet socat-port-forward 2>/dev/null; then
+        log_verbose "Disabling socat port forwarding service"
+        sudo systemctl disable socat-port-forward 2>/dev/null || true
+    fi
+    sudo rm -f /etc/systemd/system/socat-port-forward.service 2>/dev/null || true
+
+    # Kill any running socat processes that might be doing port forwarding
+    sudo pkill -f "socat.*8005" 2>/dev/null || true
+
+    # Reload systemd to recognize service removals
+    sudo systemctl daemon-reload 2>/dev/null || true
+    
+    log "✅ Server node cleanup completed"
+
     # Check if K3s is already installed
     if command -v k3s &> /dev/null; then
         log "K3s is already installed, checking configuration..."
@@ -3760,22 +3782,9 @@ simple_label_node_as_phone() {
     local node_name
     node_name=$(hostname)
 
-    log_verbose "Applying phone labels to node: $node_name"
-
-    # Simple labeling with kubectl
-    if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
-        kubectl label node "$node_name" device-type=phone --overwrite >/dev/null 2>&1 || true
-        kubectl label node "$node_name" node-role.kubernetes.io/phone=true --overwrite >/dev/null 2>&1 || true
-
-        # Verify labels were applied
-        if kubectl get node "$node_name" -o jsonpath='{.metadata.labels.device-type}' 2>/dev/null | grep -q "phone"; then
-            log "✅ Node $node_name successfully labeled as phone"
-        else
-            log_warn "Failed to verify phone label on node $node_name"
-        fi
-    else
-        log_warn "kubectl not available, skipping node labeling"
-    fi
+    log_verbose "Skipping node labeling - agents don't have kubectl access"
+    log "ℹ️  Node $node_name will be labeled by the K3s server when it connects"
+    log "   The server will automatically detect and label phone agents"
 }
 
 # Function to label the current node as a phone for deployment targeting
@@ -4084,185 +4093,7 @@ test_k3s_server_connectivity() {
     fi
 }
 
-# Function to setup kubectl configuration for agent nodes
-setup_kubectl_for_agent() {
-    log_step "Configuring kubectl for agent node..."
 
-    # On agent nodes, kubectl needs to use the server's kubeconfig
-    # or connect through the agent's configuration
-
-    # First, wait for K3s agent to create its config (give it time to connect)
-    local agent_config="/etc/rancher/k3s/k3s.yaml"
-    local wait_count=0
-    local max_wait=60  # Wait up to 60 seconds for agent to connect
-
-    log_verbose "Waiting for K3s agent to connect and create config file..."
-    while [ $wait_count -lt $max_wait ]; do
-        if [ -f "$agent_config" ]; then
-            log_verbose "K3s agent config found after ${wait_count}s"
-            break
-        fi
-
-        # Show progress every 10 seconds
-        if [ $((wait_count % 10)) -eq 0 ] && [ $wait_count -gt 0 ]; then
-            log_verbose "⏳ Still waiting for agent to connect... (${wait_count}s/${max_wait}s)"
-            log_verbose "Agent status: $(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')"
-        fi
-
-        sleep 2
-        wait_count=$((wait_count + 2))
-    done
-
-    if [ -f "$agent_config" ]; then
-        log_verbose "Found K3s agent config at $agent_config"
-
-        # Set up KUBECONFIG environment variable for current user
-        local user_home
-        if [ "$USER" = "root" ]; then
-            user_home="/root"
-        else
-            user_home="/home/$USER"
-        fi
-
-        # Create .bashrc entry for KUBECONFIG
-        if [ -f "$user_home/.bashrc" ]; then
-            if ! grep -q "KUBECONFIG.*k3s.yaml" "$user_home/.bashrc"; then
-                log_verbose "Adding KUBECONFIG to .bashrc"
-                echo "" >> "$user_home/.bashrc"
-                echo "# K3s kubectl configuration" >> "$user_home/.bashrc"
-                echo "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> "$user_home/.bashrc"
-                log "✅ Added KUBECONFIG to ~/.bashrc"
-            else
-                log_verbose "KUBECONFIG already configured in .bashrc"
-            fi
-        fi
-
-        # Also set it for the current session
-        export KUBECONFIG="$agent_config"
-        log_verbose "Set KUBECONFIG for current session"
-
-        # Copy the config to user's .kube directory for convenience
-        local kube_dir="$user_home/.kube"
-        if [ ! -d "$kube_dir" ]; then
-            mkdir -p "$kube_dir"
-            log_verbose "Created $kube_dir directory"
-        fi
-
-        # Copy the config file (with proper permissions)
-        sudo cp "$agent_config" "$kube_dir/config"
-        sudo chown "$USER:$(id -gn)" "$kube_dir/config"
-        chmod 600 "$kube_dir/config"
-        log_verbose "Copied kubeconfig to $kube_dir/config"
-
-        # Test kubectl connectivity with retries
-        log_verbose "Testing kubectl connectivity..."
-        local test_count=0
-        local max_test=15  # Try for 30 seconds
-
-        while [ $test_count -lt $max_test ]; do
-            if KUBECONFIG="$agent_config" kubectl cluster-info &> /dev/null; then
-                log "✅ kubectl configured successfully for agent node"
-                return 0
-            fi
-
-            if [ $((test_count % 5)) -eq 0 ] && [ $test_count -gt 0 ]; then
-                log_verbose "⏳ kubectl connectivity test ongoing... (${test_count}/${max_test})"
-            fi
-
-            sleep 2
-            test_count=$((test_count + 1))
-        done
-
-        # If direct test failed, try sourcing bashrc
-        log_verbose "Direct kubectl test failed, trying after sourcing bashrc..."
-        if [ -f "$user_home/.bashrc" ]; then
-            # Source bashrc and test again in a subshell
-            if (source "$user_home/.bashrc" && kubectl cluster-info &> /dev/null); then
-                log "✅ kubectl configured successfully for agent node (after sourcing bashrc)"
-                log_verbose "kubectl works after sourcing ~/.bashrc"
-                return 0
-            fi
-        fi
-
-        log_warn "⚠️  kubectl configuration found but connection test failed"
-        log_warn "The agent may still be connecting to the cluster"
-        log_warn "kubectl should work once the agent fully connects"
-        log_warn "To test manually: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && kubectl get nodes"
-        return 1
-    else
-        log_warn "⚠️  K3s agent config not found at $agent_config after ${max_wait}s"
-        log_warn "This indicates the agent cannot connect to the K3s server"
-        echo ""
-
-        # Extract server hostname for debugging
-        local server_host
-        server_host=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|' 2>/dev/null || echo '<server-hostname>')
-
-        log_warn "� DEBUGGING AGENT CONNECTION FAILURE:"
-        echo ""
-        log_warn "Connection Details:"
-        log_warn "  • Server URL: ${K3S_URL:-'Not set'}"
-        log_warn "  • Server Host: $server_host"
-        log_warn "  • Agent Status: $(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')"
-        echo ""
-
-        log_warn "Network Tests:"
-        # Test basic connectivity
-        if ping -c 1 "$server_host" >/dev/null 2>&1; then
-            log_warn "  • Ping to server: ✅ SUCCESS"
-        else
-            log_warn "  • Ping to server: ❌ FAILED"
-        fi
-
-        # Test port 6443 connectivity
-        if command -v nc >/dev/null 2>&1; then
-            if nc -z "$server_host" 6443 >/dev/null 2>&1; then
-                log_warn "  • Port 6443 access: ✅ SUCCESS"
-            else
-                log_warn "  • Port 6443 access: ❌ FAILED (K3s API server port blocked)"
-            fi
-        else
-            log_warn "  • Port 6443 access: ⚠️  Cannot test (nc not available)"
-        fi
-
-        # Check Tailscale connectivity if available
-        if command -v tailscale >/dev/null 2>&1; then
-            local tailscale_status
-            tailscale_status=$(tailscale status 2>/dev/null | head -1 || echo "Not connected")
-            log_warn "  • Tailscale Status: $tailscale_status"
-
-            local my_tailscale_ip
-            my_tailscale_ip=$(tailscale ip -4 2>/dev/null || echo "unknown")
-            log_warn "  • My Tailscale IP: $my_tailscale_ip"
-        fi
-
-        echo ""
-        log_warn "📱 ANDROID USERS: Even with ports allowed, check for:"
-        log_warn "  1. � Additional Linux Terminal App notifications"
-        log_warn "  2. 🔗 Network connectivity changes (WiFi/cellular switch)"
-        log_warn "  3. 🏠 VPN interference (if using other VPNs)"
-        echo ""
-
-        log_warn "🔧 TROUBLESHOOTING STEPS:"
-        log_warn "  1. Check agent logs for specific errors:"
-        log_warn "     sudo journalctl -u k3s-agent -f --no-pager"
-        echo ""
-        log_warn "  2. Test direct server connectivity:"
-        log_warn "     curl -k https://$server_host:6443/"
-        echo ""
-        log_warn "  3. Verify Tailscale network:"
-        log_warn "     tailscale status"
-        log_warn "     tailscale ping $server_host"
-        echo ""
-        log_warn "  4. Check K3s server status (run on server):"
-        log_warn "     sudo systemctl status k3s"
-        log_warn "     sudo kubectl get nodes"
-        echo ""
-        log_warn "  5. If all else fails, restart both server and agent:"
-        log_warn "     sudo systemctl restart k3s-agent"
-        return 1
-    fi
-}
 
 # Function to uninstall any existing K3s installation for clean agent setup
 uninstall_existing_k3s() {
@@ -4353,6 +4184,40 @@ install_k3s_agent() {
     if command -v k3s &> /dev/null; then
         uninstall_existing_k3s
     fi
+
+    # Clean up any conflicting services that shouldn't be on agent nodes
+    log_step "Cleaning up services not needed on agent nodes..."
+    
+    # Remove port forwarding service (agents don't need this)
+    if sudo systemctl is-active --quiet socat-port-forward 2>/dev/null; then
+        log_verbose "Stopping socat port forwarding service"
+        sudo systemctl stop socat-port-forward 2>/dev/null || true
+    fi
+    if sudo systemctl is-enabled --quiet socat-port-forward 2>/dev/null; then
+        log_verbose "Disabling socat port forwarding service"
+        sudo systemctl disable socat-port-forward 2>/dev/null || true
+    fi
+    sudo rm -f /etc/systemd/system/socat-port-forward.service 2>/dev/null || true
+
+    # Remove geolocation monitoring service (only servers need this)
+    if sudo systemctl is-active --quiet k3s-geolocation-monitor 2>/dev/null; then
+        log_verbose "Stopping geolocation monitoring service"
+        sudo systemctl stop k3s-geolocation-monitor 2>/dev/null || true
+    fi
+    if sudo systemctl is-enabled --quiet k3s-geolocation-monitor 2>/dev/null; then
+        log_verbose "Disabling geolocation monitoring service"
+        sudo systemctl disable k3s-geolocation-monitor 2>/dev/null || true
+    fi
+    sudo rm -f /etc/systemd/system/k3s-geolocation-monitor.service 2>/dev/null || true
+    sudo rm -f /usr/local/bin/k3s-geolocation-monitor 2>/dev/null || true
+
+    # Kill any running socat processes that might be doing port forwarding
+    sudo pkill -f "socat.*8005" 2>/dev/null || true
+
+    # Reload systemd to recognize service removals
+    sudo systemctl daemon-reload 2>/dev/null || true
+    
+    log "✅ Agent node cleanup completed"
 
     # In agent mode, check and reinstall Tailscale if already configured
     if [ "$LOCAL_MODE" = false ]; then
@@ -4493,9 +4358,6 @@ install_k3s_agent() {
     log_verbose "This process can take 30-60 seconds for initial connection..."
     sleep 10
 
-    # Configure kubectl for agent node (this will wait for the config file to be created)
-    setup_kubectl_for_agent
-
     # Test connectivity to K3s server after installation
     test_k3s_server_connectivity_post_install
 
@@ -4522,16 +4384,7 @@ test_k3s_server_connectivity_post_install() {
             log_verbose "Post-installation connectivity test to K3s server: $k3s_host"
             if ping -c 3 "$k3s_host" &> /dev/null; then
                 log "✅ K3s agent can reach server at $k3s_host"
-
-                # Test if kubectl is available and can connect
-                if command -v kubectl &> /dev/null; then
-                    log_verbose "Testing kubectl connectivity to cluster..."
-                    if kubectl cluster-info &> /dev/null 2>&1; then
-                        log "✅ kubectl can connect to K3s cluster"
-                    else
-                        log_warn "⚠️  kubectl cannot connect to cluster yet (may need more time)"
-                    fi
-                fi
+                log "ℹ️  Agent will connect to cluster automatically (kubectl not available on agents)"
             else
                 log_warn "⚠️  Post-installation ping test to K3s server failed"
                 log_warn "This may be temporary - the agent will keep trying to connect"
@@ -4547,101 +4400,6 @@ show_agent_completion_info() {
     log "=============================================="
     echo ""
 
-    # Basic node information
-    log "Node Information:"
-    log "  Hostname: $HOSTNAME"
-    log "  Connected to: $K3S_URL"
-    echo ""
-
-    # Check if we can get node status from the cluster
-    local kubectl_working=false
-
-    if command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1; then
-        kubectl_working=true
-    else
-        # Try sourcing bashrc to pick up KUBECONFIG environment variable
-        log_verbose "kubectl not working, trying after sourcing bashrc..."
-        local user_home
-        if [ "$USER" = "root" ]; then
-            user_home="/root"
-        else
-            user_home="/home/$USER"
-        fi
-
-        if [ -f "$user_home/.bashrc" ]; then
-            # Test kubectl in a subshell with sourced bashrc
-            if (source "$user_home/.bashrc" && command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1); then
-                kubectl_working=true
-                log_verbose "kubectl works after sourcing ~/.bashrc"
-            fi
-        fi
-    fi
-
-    if [ "$kubectl_working" = true ]; then
-        log "Cluster Connection: ✅ Connected"
-
-        # Try to get this node's status
-        local node_status
-        node_status=$(kubectl get node "$HOSTNAME" -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
-        if [ "$node_status" = "True" ]; then
-            log "Node Status: ✅ Ready"
-        else
-            log "Node Status: ⏳ Joining cluster..."
-        fi
-
-        # Show node info if available
-        if kubectl get node "$HOSTNAME" &> /dev/null; then
-            echo ""
-            log "Node Details:"
-            kubectl get node "$HOSTNAME" -o wide 2>/dev/null || log_warn "Could not retrieve detailed node information"
-
-            # Show node labels for phone targeting
-            local device_label
-            device_label=$(kubectl get node "$HOSTNAME" -o jsonpath='{.metadata.labels.device-type}' 2>/dev/null || echo "")
-            if [ "$device_label" = "phone" ]; then
-                log "Node Label: ✅ device-type=phone (ready for phone-targeted deployments)"
-            else
-                log "Node Label: ⚠️  device-type not set (deployments may not target this node)"
-                log "   To set labels from the server node, run:"
-                log "   kubectl label node $HOSTNAME device-type=phone"
-                log "   kubectl label node $HOSTNAME node-role.kubernetes.io/phone=true"
-            fi
-        fi
-
-        # Show cluster nodes count
-        local node_count
-        node_count=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "unknown")
-        echo ""
-        log "Cluster Summary:"
-        log "  Total nodes in cluster: $node_count"
-
-        # Show running pods on this node
-        local pod_count
-        pod_count=$(kubectl get pods --all-namespaces --field-selector spec.nodeName="$HOSTNAME" --no-headers 2>/dev/null | wc -l || echo "unknown")
-        log "  Pods running on this node: $pod_count"
-
-    else
-        log "Cluster Connection: ⏳ Agent connecting to cluster..."
-        echo ""
-        log "kubectl Configuration:"
-        log "⚠️  kubectl is not working properly on this agent node"
-        log "⚠️  Tried automatic configuration and sourcing bashrc, but connection failed"
-        echo ""
-        log "To fix kubectl on this agent node:"
-        log "  1. Wait a few minutes for the agent to fully connect to the cluster"
-        log "  2. Set KUBECONFIG environment variable manually:"
-        log "     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
-        echo ""
-        log "  3. Or reload your shell to pick up the configuration:"
-        log "     source ~/.bashrc"
-        echo ""
-        log "  4. Test kubectl:"
-        log "     kubectl get nodes"
-        echo ""
-        log "  Note: kubectl was configured automatically, but the agent may still be"
-        log "        connecting to the cluster. Try again in a few minutes."
-    fi
-
     # Network information
     echo ""
     log "Network Information:"
@@ -4656,14 +4414,7 @@ show_agent_completion_info() {
         log "  Docker Registry: ⚠️  No insecure registry configuration"
     fi
 
-    # Geolocation monitoring service status
-    if sudo systemctl is-active --quiet k3s-geolocation-monitor.service 2>/dev/null; then
-        log "  Geolocation Service: ✅ Running (monitors phone app every 20s)"
-    elif sudo systemctl is-enabled --quiet k3s-geolocation-monitor.service 2>/dev/null; then
-        log "  Geolocation Service: ⏳ Enabled but not running"
-    else
-        log "  Geolocation Service: ❌ Not installed"
-    fi
+    log "  Geolocation Service: N/A (handled by K3s server only)"
 
     # Tailscale information if available
     if command -v tailscale &> /dev/null && tailscale status &> /dev/null; then
@@ -4678,15 +4429,10 @@ show_agent_completion_info() {
     echo ""
     log "Next Steps:"
     echo ""
-    log "kubectl Usage on Agent Node:"
-    log "  • kubectl is automatically configured and tested on this agent node"
-    log "  • If you get connection errors later, try: source ~/.bashrc"
-    log "  • Or manually set: export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
-    log "  • Wait a few minutes if the agent is still connecting to the cluster"
-    echo ""
     log "Cluster Management:"
     log "  • Check cluster status from server node: kubectl get nodes"
     log "  • View pods on this node: kubectl get pods --all-namespaces --field-selector spec.nodeName=$HOSTNAME"
+    log "  • Use status.sh and dashboard.sh to check on nodes"
     log "  • Monitor node logs: sudo journalctl -u k3s-agent -f"
     echo ""
 }

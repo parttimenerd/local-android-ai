@@ -66,18 +66,6 @@ jobs:
       env:
         GRADLE_OPTS: "--enable-native-access=ALL-UNNAMED"
         
-    - name: Upload debug APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: k3s-phone-server-debug
-        path: android/app/build/outputs/apk/debug/app-debug.apk
-
-    - name: Upload release APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: k3s-phone-server-release
-        path: android/app/build/outputs/apk/release/app-release-unsigned.apk
-        
     - name: Verify APK files exist
       run: |
         echo "Checking for APK files..."
@@ -88,22 +76,27 @@ jobs:
         echo "Release APK:"
         file android/app/build/outputs/apk/release/app-release-unsigned.apk
         
-    - name: Create Release
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    - name: Create Snapshot Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: android-v${{ github.run_number }}
-        name: Android App Release v${{ github.run_number }}
+        tag_name: snapshot-${{ github.run_number }}-${{ github.sha }}
+        name: Android Snapshot Build ${{ github.run_number }}
         body: |
-          Android app build for K3s Phone Server
+          ## 📱 Android APK Snapshot Build
           
-          ## Download APK Files
-          - **Debug APK**: Development build with debugging enabled
-          - **Release APK**: Production build (unsigned)
+          **Build Info:**
+          - Build Number: `${{ github.run_number }}`
+          - Commit: `${{ github.sha }}`
+          - Branch: `${{ github.ref_name }}`
+          - Triggered by: ${{ github.event_name }}
+          
+          **Direct APK Downloads:**
+          - 🐛 **Debug APK**: Development build with debugging enabled
+          - 🚀 **Release APK**: Production build (unsigned, optimized)
           
           ## Features
           - REST API server on port 8005
-          - GPS location and orientation sensors
+          - GPS location and orientation sensors  
           - MediaPipe LLM inference (Gemma, DeepSeek-R1, Llama 3.2, TinyLlama)
           - Object detection with EfficientDet Lite 2
           - Camera capture with front/rear support
@@ -112,11 +105,11 @@ jobs:
           - Streaming text generation with cancellation
           
           ## Installation
-          1. Download the APK file directly from the assets below
-          2. Enable "Install from unknown sources" in Android settings
-          3. Install the APK
-          4. Grant permissions (location, camera, storage)
-          5. Use REST API endpoints or model management UI
+          1. Download the APK file directly from assets below
+          2. Enable "Install from unknown sources" in Android Settings → Security
+          3. Install the APK file
+          4. Grant permissions (location, camera, storage) when prompted
+          5. Verify app shows "Server running on port 8005"
           
           ## API Endpoints
           - `GET /status` - Server status and capabilities
@@ -126,11 +119,14 @@ jobs:
           - `POST /ai/object_detection` - MediaPipe object detection
           - `GET /ai/models` - Available models list
           - `GET /capture` - Camera capture with zoom
+          
+          ---
+          *This is an automated snapshot build. For stable releases, check the main releases page.*
         files: |
           android/app/build/outputs/apk/debug/app-debug.apk
           android/app/build/outputs/apk/release/app-release-unsigned.apk
         draft: false
-        prerelease: false
+        prerelease: true
         fail_on_unmatched_files: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
