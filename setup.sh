@@ -10,7 +10,7 @@
 set -e
 
 # Script version
-VERSION="1.0.0"
+VERSION="0.1.0"
 
 # Default values
 VERBOSE=false
@@ -61,7 +61,7 @@ log_step() {
     echo -e "${BLUE}[STEP]${NC} $1"
 }
 
-# Help function
+# Help functions
 show_help() {
     cat << EOF
 K3s on Phone Setup Script v${VERSION}
@@ -70,138 +70,656 @@ Sets up a Kubernetes cluster using K3s on Android phones running Debian
 in KVM hypervisor via the Android Linux Terminal app.
 
 USAGE:
-    ./setup.sh HOSTNAME [OPTIONS]
-    ./setup.sh --local [OPTIONS]
-    ./setup.sh cleanup [OPTIONS]
-    ./setup.sh test-geocoder [OPTIONS]
-    ./setup.sh setup-port
-    ./setup.sh scan-for-server [SUBNET] [OPTIONS]
-    ./setup.sh dashboard [start|stop|help]
+    ./setup.sh COMMAND [OPTIONS]
 
-ARGUMENTS:
-    HOSTNAME                    Set the hostname for this node (not allowed with --local)
-    cleanup                     Remove not-ready nodes from cluster
-    test-geocoder               Test the geocoder service with sample German city coordinates
-    setup-port                  Scan local subnet for K3s Phone Server and setup port forwarding
-    scan-for-server             Verbose scan of local subnet for K3s Phone Server (no setup)
-                                SUBNET can be specified as: 192.168.1 or 192.168.1.0/24
-    dashboard                   Launch web dashboard showing node locations and camera feeds
+COMMANDS:
+    HOSTNAME [OPTIONS]          Setup K3s node with given hostname
+    --local [OPTIONS]           Local mode setup (skip hostname, use current system)
 
-OPTIONS:
-    -t, --tailscale-key KEY     Tailscale authentication key (validated before use)
-                                Get one at: https://login.tailscale.com/admin/settings/keys
-                                Ensure key is set to 'Reusable' for multiple uses
-    -k, --k3s-token TOKEN       K3s node token (must be used with -u)
-    -u, --k3s-url URL           K3s server URL (must be used with -k)
-    --local                     Local mode: skip hostname, password, Tailscale, Docker setup (but checks Tailscale is running)
-    --force                     Force K3s reinstall: uninstall existing K3s, reinstall fresh, redeploy geocoder (Docker untouched)
-    -v, --verbose               Enable verbose output
-    -h, --help                  Show this help message
+    # Cluster Management
+    scan-for-server [SUBNET]    Discover K3s Phone Servers on network
+    setup-port                  Setup port forwarding to discovered server
+    status [OPTIONS]            Show cluster status and health
+    clean [OPTIONS]             Remove dead/unreachable nodes
+    reset [OPTIONS]             Reset cluster (destructive)
+
+    # Services
+    dashboard [start|stop]      Launch interactive web dashboard
+    test-location              Test location monitoring system
+    test-geocoder              Test reverse geocoding service
+
+    # Legacy Commands (deprecated)
+    cleanup [OPTIONS]          Use 'clean' instead
+
+GLOBAL OPTIONS:
+    -h, --help                  Show help (use with command for specific help)
     --version                   Show version information
-    --remove-from-tailscale     Also remove nodes from Tailscale VPN (cleanup only)
+    -v, --verbose               Enable verbose output
+
+Use './setup.sh COMMAND --help' for command-specific help.
 
 EXAMPLES:
-    # Setup as K3s server (master node)
-    ./setup.sh my-phone-01 -t tskey-auth-xxxxx
+    # Quick Start - Setup cluster
+    ./setup.sh phone-01 -t tskey-auth-xxxxx              # Setup master node
+    ./setup.sh phone-02 -t tskey-auth-xxxxx -k TOKEN -u https://phone-01:6443  # Add worker
+    ./setup.sh --local                                   # Local server setup
 
-    # Setup as K3s agent (worker node)
-    ./setup.sh my-phone-02 -t tskey-auth-xxxxx -k mynodetoken -u https://my-phone-01:6443
+    # Discovery and Management
+    ./setup.sh scan-for-server                           # Find K3s Phone Servers
+    ./setup.sh status                                     # Check cluster health
+    ./setup.sh clean                                      # Remove dead nodes
 
-    # Setup agent with auto-generated hostname
-    ./setup.sh phone-%d -t tskey-auth-xxxxx -k mynodetoken -u https://my-phone-01:6443
-
-    # Local server setup: computer/server as K3s master
-    ./setup.sh --local
-
-    # Local mode: join existing cluster
-    ./setup.sh --local -k mynodetoken -u https://existing-server:6443
-
-    # Clean up not-ready nodes
-    ./setup.sh cleanup -v
-
-    # Clean up not-ready nodes and remove from Tailscale
-    ./setup.sh cleanup --remove-from-tailscale -v
-
-    # Force K3s reinstall (uninstall K3s, reinstall fresh, keep Docker)
-    ./setup.sh my-phone-01 -t tskey-auth-xxxxx --force
-
-    # Test geocoder service with sample German cities
-    ./setup.sh test-geocoder -v
-
-    # Setup port forwarding to K3s Phone Server on local network
-    ./setup.sh setup-port
-
-    # Verbose scan for K3s Phone Server (no setup/forwarding)
-    ./setup.sh scan-for-server -v
-
-    # Scan specific subnet for K3s Phone Server
-    ./setup.sh scan-for-server 192.168.1 -v
-
-    # Launch web dashboard to monitor cluster
-    ./setup.sh dashboard
-
-DESCRIPTION:
-    This script will:
-    1. Set the hostname for the device
-    2. Install Docker following official Debian installation guide
-    3. Configure SSH server with root access
-    4. Install and configure Tailscale for secure networking
-    5. Install K3s either as server (master) or agent (worker)
-
-    Cleanup mode will:
-    1. Identify nodes in NotReady state
-    2. Remove them from the K3s cluster
-    3. Optionally remove them from Tailscale VPN
-
-    Local mode will:
-    1. Skip hostname, password, Tailscale, and Docker setup
-    2. Only install and configure K3s
-    3. Suitable for existing systems with prerequisites already installed
-    4. If -t flag is provided, it will be included in generated agent commands
-
-    Setup-port mode will:
-    1. Scan the local subnet (192.168.179.1/24) for K3s Phone Server
-    2. Setup persistent port forwarding from local port 8005 to the phone server
-    3. Enable location services, camera capture, and AI capabilities for agent nodes
-    4. Warn if no server is found (indicating missing mobile capabilities)
-    5. Automatically runs during agent node setup
-
-NOTES:
-    - This script requires sudo privileges
-    - Root SSH password will be set to 'root' for simplicity
-    - The Android Linux Terminal app is experimental and may be unstable
-    - Ensure you have developer mode enabled on your Android device
-    - If network connectivity issues occur, restarting and reinstalling
-      Debian on your phone may be needed (known issue with Android Linux Terminal)
-    - Cleanup mode must be run from the K3s server (master) node
-
-ADDITIONAL COMMANDS:
-    ./setup.sh clean         - Clean up dead/NotReady nodes from cluster
-    ./setup.sh status        - Show comprehensive cluster status and diagnostics
-    ./setup.sh reset         - Completely reset the entire cluster (destructive)
-    ./setup.sh test-location - Test the simplified location monitoring system
-    ./setup.sh setup-port    - Setup port forwarding to K3s Phone Server (for agent nodes)
-    ./setup.sh scan-for-server - Verbose scan for K3s Phone Server (no setup/forwarding)
-    ./setup.sh dashboard     - Launch web dashboard (map + object detection)
-    
-    For registry management, use ./registry.sh
-
-TROUBLESHOOTING:
-    Common issues and solutions:
-    - Network connectivity: Check internet and DNS resolution
-    - Permissions: Ensure user has sudo access but don't run as root
-    - SSH service: Script handles both 'ssh' and 'sshd' service names automatically
-    - Tailscale auth: Keys are validated automatically before use
-      • Ensure key format starts with 'tskey-auth-'
-      • Check that key hasn't expired or been revoked
-      • Set keys to 'Reusable' for multiple node setups
-      • Get new keys at: https://login.tailscale.com/admin/settings/keys
-    - Firewall: May block Tailscale or K3s traffic
-    - Manual Tailscale setup: curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --auth-key=YOUR_KEY
+    # Command-specific help
+    ./setup.sh scan-for-server --help                    # Scanning help
+    ./setup.sh my-phone-01 --help                        # Node setup help
+    ./setup.sh clean --help                              # Cleanup help
 
 EOF
 }
 
+# Command-specific help functions
+show_scan_for_server_help() {
+    cat << EOF
+K3s Phone Server Discovery v${VERSION}
+
+Discover K3s Phone Servers running on your network using parallel scanning.
+
+USAGE:
+    ./setup.sh scan-for-server [SUBNET] [OPTIONS]
+
+ARGUMENTS:
+    SUBNET                      Network subnet to scan (optional)
+                                Formats: 192.168.1, 192.168.1.0/24, 10.0.0.0/16
+                                Default: 192.168.179.0/24
+
+OPTIONS:
+    -v, --verbose               Show detailed endpoint testing (default: enabled)
+    -q, --quiet                 Suppress verbose output
+    -h, --help                  Show this help message
+
+FEATURES:
+    • Parallel scanning (20 concurrent connections)
+    • Early termination on first server found
+    • Endpoint validation (/status, /location, /orientation, /help)
+    • Network latency measurement
+    • Server capability detection
+
+EXAMPLES:
+    ./setup.sh scan-for-server                    # Scan default subnet
+    ./setup.sh scan-for-server 192.168.1          # Scan 192.168.1.0/24
+    ./setup.sh scan-for-server 10.0.0.0/16        # Scan large subnet
+    ./setup.sh scan-for-server --quiet            # Minimal output
+
+EOF
+}
+
+show_node_setup_help() {
+    cat << EOF
+K3s Node Setup v${VERSION}
+
+Setup K3s master or worker nodes on Android phones or local systems.
+
+USAGE:
+    ./setup.sh HOSTNAME [OPTIONS]
+    ./setup.sh --local [OPTIONS]
+
+ARGUMENTS:
+    HOSTNAME                    Set hostname for this node (phone-XX, server-XX)
+    --local                     Use current system hostname (local mode)
+
+REQUIRED OPTIONS (for cluster join):
+    -t, --tailscale-key KEY     Tailscale auth key from admin console
+    -k, --k3s-token TOKEN       K3s node token (with -u for worker nodes)
+    -u, --k3s-url URL           K3s server URL (with -k for worker nodes)
+
+OPTIONAL:
+    --force                     Force reinstall K3s
+    -v, --verbose               Enable verbose logging
+    -h, --help                  Show this help
+
+SETUP MODES:
+    Master Node:    ./setup.sh phone-01 -t tskey-auth-xxxxx
+    Worker Node:    ./setup.sh phone-02 -t tskey-auth-xxxxx -k TOKEN -u https://phone-01:6443
+    Local Server:   ./setup.sh --local
+    Local Join:     ./setup.sh --local -k TOKEN -u https://server:6443
+
+REQUIREMENTS:
+    • Android Linux Terminal with Debian (for phone nodes)
+    • Tailscale account and auth key
+    • K3s Phone Server app running on port 8005 (for phones)
+
+EOF
+}
+
+show_clean_help() {
+    cat << EOF
+K3s Cluster Cleanup v${VERSION}
+
+Remove dead, unreachable, or NotReady nodes from the cluster.
+
+USAGE:
+    ./setup.sh clean [OPTIONS]
+
+OPTIONS:
+    -t, --tailscale-key KEY     Also remove nodes from Tailscale VPN
+    --dry-run                   Preview what would be cleaned (no changes)
+    --force                     Skip confirmation prompts
+    -v, --verbose               Show detailed cleanup process
+    -h, --help                  Show this help
+
+CLEANUP ACTIONS:
+    • Remove NotReady Kubernetes nodes
+    • Clean up abandoned pods and services
+    • Remove unreachable phone devices from Tailscale (with -t)
+    • Preserve master/server nodes
+
+EXAMPLES:
+    ./setup.sh clean --dry-run              # Preview cleanup
+    ./setup.sh clean                        # Interactive cleanup
+    ./setup.sh clean --force                # Auto-confirm cleanup
+    ./setup.sh clean -t tskey-api-xxxxx     # Also clean Tailscale
+
+SAFETY:
+    • Master nodes are never removed
+    • Dry-run mode shows planned actions
+    • Interactive confirmation by default
+
+EOF
+}
+
+show_status_help() {
+    cat << EOF
+K3s Cluster Status v${VERSION}
+
+Display comprehensive cluster health, node locations, and resource usage.
+
+USAGE:
+    ./setup.sh status [OPTIONS]
+
+OPTIONS:
+    -n, --namespace NS          Show specific namespace (default: all)
+    -w, --watch                 Continuous refresh mode
+    -s, --system                Include system namespaces
+    --object-detection          Include object detection from cameras
+    --location-only             Show only location information
+    -v, --verbose               Detailed node and pod information
+    -h, --help                  Show this help
+
+FEATURES:
+    • Node health and resource usage
+    • GPS locations with city names
+    • Pod status across namespaces
+    • Service endpoints and load balancers
+    • Object detection from phone cameras (optional)
+    • Interactive map links
+
+EXAMPLES:
+    ./setup.sh status                       # Basic cluster overview
+    ./setup.sh status -w                    # Watch mode with auto-refresh
+    ./setup.sh status -n default            # Specific namespace
+    ./setup.sh status --location-only -v    # GPS tracking focus
+
+EOF
+}
+
+show_reset_help() {
+    cat << EOF
+K3s Cluster Reset v${VERSION}
+
+Reset the cluster to master-only state by removing all worker nodes.
+
+USAGE:
+    ./setup.sh reset [OPTIONS]
+
+⚠️  WARNING: This is a DESTRUCTIVE operation! ⚠️
+
+OPTIONS:
+    --force                     Skip all confirmation prompts
+    --remove-from-tailscale     Also remove nodes from Tailscale VPN
+    --dry-run                   Preview what would be reset (no changes)
+    -v, --verbose               Show detailed reset process
+    -h, --help                  Show this help
+
+RESET ACTIONS:
+    • Remove ALL worker/agent nodes from cluster
+    • Delete ALL applications and services
+    • Reset cluster to master-only state
+    • Optionally remove nodes from Tailscale VPN
+    • Preserve master node configuration
+
+EXAMPLES:
+    ./setup.sh reset --dry-run                    # Preview reset
+    ./setup.sh reset                              # Interactive reset
+    ./setup.sh reset --force                      # Auto-confirm reset
+    ./setup.sh reset --remove-from-tailscale      # Also clean Tailscale
+
+RECOVERY:
+    After reset, worker nodes can rejoin using their original setup commands.
+
+EOF
+}
+
+show_setup_port_help() {
+    cat << 'EOF'
+K3s Phone Server Port Forwarding v1.0.0
+
+Setup port forwarding to a discovered K3s Phone Server.
+
+USAGE:
+    ./setup.sh setup-port [OPTIONS]
+
+OPTIONS:
+    -h, --help                  Show this help
+
+DESCRIPTION:
+    Sets up port forwarding from local port 8005 to a discovered K3s Phone Server.
+    Automatically scans for servers if none specified.
+
+EXAMPLES:
+    ./setup.sh setup-port       # Auto-discover and setup forwarding
+
+REQUIREMENTS:
+    • socat installed for port forwarding
+    • K3s Phone Server running on target device
+
+EOF
+}
+
+show_dashboard_help() {
+    cat << 'EOF'
+K3s Cluster Dashboard v1.0.0
+
+Launch interactive web dashboard for cluster monitoring.
+
+USAGE:
+    ./setup.sh dashboard [COMMAND]
+
+COMMANDS:
+    start                       Start dashboard server
+    stop                        Stop dashboard server
+
+OPTIONS:
+    -h, --help                  Show this help
+
+DESCRIPTION:
+    Launches the cluster dashboard with real-time monitoring, location tracking,
+    and object detection from phone cameras.
+
+EXAMPLES:
+    ./setup.sh dashboard        # Start dashboard
+    ./setup.sh dashboard start  # Start dashboard
+    ./setup.sh dashboard stop   # Stop dashboard
+
+FEATURES:
+    • Real-time cluster status
+    • GPS location tracking
+    • Object detection feeds
+    • Resource usage monitoring
+
+EOF
+}
+
+show_test_location_help() {
+    cat << 'EOF'
+K3s Location Monitoring Test v1.0.0
+
+Test the SSH-based location monitoring system.
+
+USAGE:
+    ./setup.sh test-location [OPTIONS]
+
+OPTIONS:
+    -h, --help                  Show this help
+
+DESCRIPTION:
+    Tests the simplified location monitoring system that collects GPS data
+    from K3s Phone Server nodes via direct API calls.
+
+EXAMPLES:
+    ./setup.sh test-location    # Test location system
+
+TESTING:
+    • Connectivity to phone nodes
+    • GPS data collection
+    • Location data formatting
+    • Reverse geocoding
+
+EOF
+}
+
+show_test_geocoder_help() {
+    cat << 'EOF'
+K3s Geocoder Service Test v1.0.0
+
+Test the reverse geocoding service functionality.
+
+USAGE:
+    ./setup.sh test-geocoder [OPTIONS]
+
+OPTIONS:
+    -h, --help                  Show this help
+
+DESCRIPTION:
+    Tests the geocoder service that converts GPS coordinates to
+    human-readable location names.
+
+EXAMPLES:
+    ./setup.sh test-geocoder    # Test geocoder service
+
+TESTING:
+    • Geocoder service connectivity
+    • Coordinate to location conversion
+    • Service response times
+    • Data accuracy
+
+EOF
+}
+
+# Parse command line arguments and determine execution mode
+parse_command() {
+    if [ $# -eq 0 ]; then
+        show_help
+        exit 0
+    fi
+
+    # Check for help with specific commands
+    if [[ $# -ge 2 && ("$2" = "--help" || "$2" = "-h") ]]; then
+        case "$1" in
+            scan-for-server)
+                show_scan_for_server_help
+                exit 0
+                ;;
+            clean|cleanup)
+                show_clean_help
+                exit 0
+                ;;
+            status)
+                show_status_help
+                exit 0
+                ;;
+            reset)
+                show_reset_help
+                exit 0
+                ;;
+            dashboard)
+                show_dashboard_help
+                exit 0
+                ;;
+            setup-port)
+                show_setup_port_help
+                exit 0
+                ;;
+            test-location)
+                show_test_location_help
+                exit 0
+                ;;
+            test-geocoder)
+                show_test_geocoder_help
+                exit 0
+                ;;
+            --local)
+                show_node_setup_help
+                exit 0
+                ;;
+            *)
+                if [[ "$1" != -* ]]; then
+                    show_node_setup_help
+                    exit 0
+                fi
+                ;;
+        esac
+    fi
+
+    # Handle global options first
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --version)
+            show_version
+            exit 0
+            ;;
+    esac
+
+    # Route to specific command handlers
+    case "$1" in
+        scan-for-server)
+            shift
+            handle_scan_command "$@"
+            ;;
+        setup-port)
+            shift
+            handle_setup_port_command "$@"
+            ;;
+        clean)
+            shift
+            handle_clean_command "$@"
+            ;;
+        status)
+            shift
+            handle_status_command "$@"
+            ;;
+        reset)
+            shift
+            handle_reset_command "$@"
+            ;;
+        dashboard)
+            shift
+            handle_dashboard_command "$@"
+            ;;
+        test-location)
+            shift
+            handle_test_location_command "$@"
+            ;;
+        test-geocoder)
+            shift
+            handle_test_geocoder_command "$@"
+            ;;
+        cleanup)
+            # Legacy command - redirect to clean
+            shift
+            handle_cleanup_legacy_command "$@"
+            ;;
+        --local)
+            shift
+            handle_local_setup_command "$@"
+            ;;
+        *)
+            # Default: node setup with hostname
+            if [[ "$1" == -* ]]; then
+                log_error "Unknown option: $1"
+                echo ""
+                show_help
+                exit 1
+            fi
+            handle_node_setup_command "$@"
+            ;;
+    esac
+}
+
+# Command handlers
+handle_scan_command() {
+    echo "🔍 Scanning for K3s Phone Server..."
+    VERBOSE=true  # Default verbose for scan
+
+    custom_subnet=""
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            -q|--quiet)
+                VERBOSE=false
+                shift
+                ;;
+            -h|--help)
+                show_scan_for_server_help
+                exit 0
+                ;;
+            --version)
+                show_version
+                exit 0
+                ;;
+            -*)
+                log_error "Unknown scan option: $1"
+                echo ""
+                show_scan_for_server_help
+                exit 1
+                ;;
+            *)
+                if [ -z "$custom_subnet" ]; then
+                    custom_subnet="$1"
+                    shift
+                else
+                    log_error "Too many arguments for scan command"
+                    show_scan_for_server_help
+                    exit 1
+                fi
+                ;;
+        esac
+    done
+
+    scan_for_k3s_server_verbose "$custom_subnet"
+    command_exit $? "scan-for-server"
+}
+
+handle_setup_port_command() {
+    echo "🔌 Setting up K3s Phone Server port forwarding..."
+    setup_port_forwarding
+    command_exit $? "setup-port"
+}
+
+handle_clean_command() {
+    echo "🧹 Running cluster cleanup..."
+    if [ -f "$(dirname "$0")/clean.sh" ]; then
+        bash "$(dirname "$0")/clean.sh" "$@"
+    else
+        log_error "clean.sh not found in script directory"
+        exit 1
+    fi
+    exit $?
+}
+
+handle_status_command() {
+    echo "📊 Showing cluster status..."
+    if [ -f "$(dirname "$0")/status.sh" ]; then
+        bash "$(dirname "$0")/status.sh" "$@"
+        command_exit $? "status"
+    else
+        log_error "status.sh not found in script directory"
+        exit 1
+    fi
+}
+
+handle_reset_command() {
+    echo "🔄 Resetting cluster (WARNING: This is destructive!)..."
+    if [ -f "$(dirname "$0")/reset.sh" ]; then
+        bash "$(dirname "$0")/reset.sh" "$@"
+    else
+        log_error "reset.sh not found in script directory"
+        exit 1
+    fi
+    exit $?
+}
+
+handle_dashboard_command() {
+    echo "🌐 Starting K3s Phone Cluster Dashboard..."
+    if [ -f "$(dirname "$0")/dashboard.sh" ]; then
+        bash "$(dirname "$0")/dashboard.sh" "$@"
+        command_exit $? "dashboard"
+    else
+        log_error "dashboard.sh not found in script directory"
+        exit 1
+    fi
+}
+
+handle_test_location_command() {
+    echo "📍 Testing location monitoring system..."
+    if [ -f "$(dirname "$0")/test-simplified-location.sh" ]; then
+        bash "$(dirname "$0")/test-simplified-location.sh" "$@"
+    else
+        log_error "test-simplified-location.sh not found in script directory"
+        exit 1
+    fi
+    exit $?
+}
+
+handle_test_geocoder_command() {
+    handle_test_geocoder_mode
+    exit $?
+}
+
+handle_cleanup_legacy_command() {
+    log_warn "Warning: 'cleanup' command is deprecated. Use 'clean' instead."
+    echo "Redirecting to: ./setup.sh clean $*"
+    echo ""
+    handle_clean_command "$@"
+}
+
+handle_local_setup_command() {
+    LOCAL_MODE=true
+    parse_node_setup_options "$@"
+    main_setup
+}
+
+handle_node_setup_command() {
+    HOSTNAME="$1"
+    shift
+    parse_node_setup_options "$@"
+    main_setup
+}
+
+# Parse options for node setup
+parse_node_setup_options() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -t|--tailscale-key)
+                TAILSCALE_AUTH_KEY="$2"
+                shift 2
+                ;;
+            -k|--k3s-token)
+                K3S_TOKEN="$2"
+                shift 2
+                ;;
+            -u|--k3s-url)
+                K3S_URL="$2"
+                shift 2
+                ;;
+            --local)
+                LOCAL_MODE=true
+                shift
+                ;;
+            --force)
+                FORCE_MODE=true
+                shift
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            -h|--help)
+                show_node_setup_help
+                exit 0
+                ;;
+            --version)
+                show_version
+                exit 0
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo ""
+                show_node_setup_help
+                exit 1
+                ;;
+        esac
+    done
+}
+
+# Show version information
 show_version() {
     echo "K3s on Phone Setup Script v${VERSION}"
 }
@@ -264,25 +782,25 @@ detect_ssh_service_name() {
 # Function to install debugging utilities for network troubleshooting
 install_debug_utilities() {
     log_verbose "Installing network debugging utilities..."
-    
+
     # Install netcat for port testing and other useful debugging tools
     local packages_to_install=""
-    
+
     # Check if netcat is installed
     if ! command -v nc &> /dev/null; then
         packages_to_install="$packages_to_install netcat-openbsd"
     fi
-    
+
     # Check if curl is installed (usually is, but just in case)
     if ! command -v curl &> /dev/null; then
         packages_to_install="$packages_to_install curl"
     fi
-    
+
     # Check if dig is installed for DNS debugging
     if ! command -v dig &> /dev/null; then
         packages_to_install="$packages_to_install dnsutils"
     fi
-    
+
     # Install missing packages if any
     if [ -n "$packages_to_install" ]; then
         log_verbose "Installing missing debug utilities:$packages_to_install"
@@ -372,20 +890,20 @@ setup_docker_insecure_registry() {
 
     log_verbose "Debug: Received master_ip='$master_ip', registry_port='$registry_port'"
     log_verbose "Debug: Constructed registry_address='$registry_address'"
-    
+
     # Pre-flight check: Ensure Docker is installed and running
     if ! command -v docker &>/dev/null; then
         log_error "Docker is not installed - cannot configure registry"
         return 1
     fi
-    
+
     if ! sudo systemctl is-active docker >/dev/null 2>&1; then
         log_warn "Docker service is not running, attempting to start it..."
         if ! sudo systemctl start docker; then
             log_error "Failed to start Docker service"
             return 1
         fi
-        
+
         # Wait for Docker to be ready
         for i in {1..30}; do
             if docker info >/dev/null 2>&1; then
@@ -426,17 +944,17 @@ setup_docker_insecure_registry() {
     # Check if daemon.json exists and process it
     if [ -f "$daemon_config" ]; then
         log_verbose "Processing existing Docker daemon configuration"
-        
+
         # Use jq if available for proper JSON manipulation
         if command -v jq &>/dev/null; then
             log_verbose "Using jq for JSON manipulation"
-            
+
             # Check if insecure-registries already contains our registry
             if sudo jq -e --arg registry "$registry_address" '.["insecure-registries"]? // [] | index($registry)' "$daemon_config" >/dev/null 2>&1; then
                 log "Registry $registry_address already configured in Docker daemon"
                 return 0
             fi
-            
+
             # Add registry to insecure-registries array
             if sudo jq --arg registry "$registry_address" \
                 'if .["insecure-registries"] then .["insecure-registries"] += [$registry] | .["insecure-registries"] |= unique else . + {"insecure-registries": [$registry]} end' \
@@ -470,7 +988,7 @@ EOF
         log_verbose "Debug: Contents of temp config file:"
         log_verbose "$(cat "$temp_config" 2>/dev/null || echo 'Failed to read temp config')"
     fi
-    
+
     # Validate JSON if jq is available
     if command -v jq &>/dev/null; then
         log_verbose "Validating JSON configuration"
@@ -478,7 +996,7 @@ EOF
             log_error "Generated JSON configuration is invalid"
             log_error "jq validation output:"
             jq . "$temp_config" 2>&1 || true
-            
+
             # Restore backup if it exists
             if [ -f "$backup_config" ]; then
                 log_warn "Restoring backup configuration"
@@ -496,16 +1014,16 @@ EOF
 
     # Restart Docker daemon with better error handling
     log "Restarting Docker daemon..."
-    
+
     # Check Docker status before restart
     local docker_was_running=false
     if sudo systemctl is-active docker >/dev/null 2>&1; then
         docker_was_running=true
     fi
-    
+
     if sudo systemctl restart docker; then
         log "✅ Docker daemon restart command completed"
-        
+
         # Wait for Docker to be ready with more detailed monitoring
         log_verbose "Waiting for Docker daemon to be ready..."
         for i in {1..60}; do
@@ -520,7 +1038,7 @@ EOF
             else
                 log_verbose "Docker service not active yet (${i}/60)"
             fi
-            
+
             if [ $i -eq 60 ]; then
                 log_error "Docker daemon failed to become ready within 60 seconds"
                 log_error "Final checks:"
@@ -530,7 +1048,7 @@ EOF
                 sudo systemctl status docker || true
                 log_error "Checking Docker daemon logs:"
                 sudo journalctl -u docker --no-pager --lines=20 || true
-                
+
                 # Don't fail immediately - Docker might actually be working
                 log_warn "Docker readiness check failed, but attempting to continue..."
                 log_warn "Docker may still be functional despite readiness check timeout"
@@ -544,7 +1062,7 @@ EOF
         sudo systemctl status docker || true
         log_error "Checking Docker daemon logs:"
         sudo journalctl -u docker --no-pager --lines=10 || true
-        
+
         # Attempt to restore backup configuration
         if [ -f "$backup_config" ]; then
             log_warn "Attempting to restore backup Docker configuration"
@@ -558,12 +1076,12 @@ EOF
 
     # Test the registry configuration
     log_verbose "Testing Docker registry configuration..."
-    
+
     # Final check: Ensure Docker is actually working before declaring success
     if ! docker info >/dev/null 2>&1; then
         log_error "Docker API is not responding after configuration"
         log_error "Registry configuration may have failed"
-        
+
         # Attempt to restore backup configuration as last resort
         if [ -f "$backup_config" ]; then
             log_warn "Attempting to restore backup Docker configuration as last resort"
@@ -576,7 +1094,7 @@ EOF
         fi
         return 1
     fi
-    
+
     # Verify the configuration file contains our registry
     if [ -f "$daemon_config" ] && grep -q "$registry_address" "$daemon_config"; then
         log "✅ Registry $registry_address successfully configured in Docker daemon"
@@ -585,7 +1103,7 @@ EOF
         log_warn "Registry configuration file may not contain expected entry"
         log_verbose "But Docker is responding, so configuration was likely successful"
     fi
-    
+
     # Also check if docker info shows the registry (might take a moment)
     if docker info 2>/dev/null | grep -q "$registry_address"; then
         log_verbose "Docker info confirms registry is active"
@@ -596,7 +1114,7 @@ EOF
 
     # Cleanup temporary files
     sudo rm -f "$temp_config" 2>/dev/null || true
-    
+
     log "✅ Docker registry configuration completed successfully"
     return 0
 }
@@ -922,17 +1440,15 @@ force_reset_cluster() {
     log_warn "⚠️  All pods, services, and data will be permanently lost!"
     log_warn "⚠️  Docker will remain untouched - only K3s will be reinstalled"
 
-    if [ "$VERBOSE" = false ]; then
-        echo ""
-        echo "Continuing in 5 seconds... Press Ctrl+C to cancel"
-        for i in 5 4 3 2 1; do
-            echo -n "$i... "
-            sleep 1
-        done
-        echo ""
-        echo ""
-        log "Starting K3s force reset process..."
-    fi
+    echo ""
+    echo "Continuing in 5 seconds... Press Ctrl+C to cancel"
+    for i in 5 4 3 2 1; do
+        echo -n "$i... "
+        sleep 1
+    done
+    echo ""
+    echo ""
+    log "Starting K3s force reset process..."
 
     # Stop and disable geolocation monitoring if it exists
     log "Stopping geolocation monitoring service..."
@@ -1019,7 +1535,7 @@ test_geocoder_comprehensive() {
     local ready_replicas desired_replicas
     ready_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
     desired_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "1")
-    
+
     if [ "$ready_replicas" != "$desired_replicas" ]; then
         log_error "Geocoder deployment not ready: $ready_replicas/$desired_replicas replicas available"
         return 1
@@ -1030,12 +1546,12 @@ test_geocoder_comprehensive() {
     local service_ip service_port api_url
     service_ip=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
     service_port=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "8090")
-    
+
     if [ -z "$service_ip" ]; then
         log_error "Cannot determine geocoder service IP"
         return 1
     fi
-    
+
     api_url="http://${service_ip}:${service_port}"
     log_verbose "Testing geocoder at: $api_url"
 
@@ -1043,7 +1559,7 @@ test_geocoder_comprehensive() {
     log_verbose "1. Testing health endpoint..."
     local health_response
     health_response=$(curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && (echo "$health_response" | grep -q "healthy" || echo "$health_response" | grep -q "ok"); then
         log_verbose "✅ Health endpoint responding"
     else
@@ -1057,7 +1573,7 @@ test_geocoder_comprehensive() {
     local api_test_url="${api_url}/api/reverse-geocode?lat=52.52&lon=13.40&method=geonames"
     local api_response
     api_response=$(curl -s --connect-timeout 10 --max-time 15 "$api_test_url" 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && [ -n "$api_response" ]; then
         log_verbose "✅ API endpoint responding for German cities"
     else
@@ -1067,7 +1583,7 @@ test_geocoder_comprehensive() {
 
     # Test 3: Comprehensive city resolution test with German cities
     log_verbose "3. Testing city resolution with German coordinates..."
-    
+
     # Define German city test cases - geocoder is optimized for German cities only
     declare -A test_coordinates=(
         ["Berlin_Germany"]="52.52,13.40"
@@ -1080,25 +1596,25 @@ test_geocoder_comprehensive() {
 
     local test_count=0
     local success_count=0
-    
+
     for test_case in "${!test_coordinates[@]}"; do
         test_count=$((test_count + 1))
         local coords=${test_coordinates[$test_case]}
         local lat=${coords%,*}
         local lon=${coords#*,}
         local city_name=${test_case%_*}  # Extract city name before underscore
-        
+
         log_verbose "  Testing $city_name ($lat, $lon)..."
-        
+
         local test_url="${api_url}/api/reverse-geocode?lat=${lat}&lon=${lon}&method=geonames"
         local response
         response=$(curl -s --connect-timeout 10 --max-time 15 "$test_url" 2>/dev/null)
-        
+
         if [ $? -eq 0 ] && [ -n "$response" ]; then
             # Check if response contains location data
             local location
             location=$(echo "$response" | grep -o '"location":"[^"]*"' | cut -d'"' -f4)
-            
+
             if [ -n "$location" ]; then
                 log_verbose "    ✅ $city_name → $location"
                 success_count=$((success_count + 1))
@@ -1115,12 +1631,12 @@ test_geocoder_comprehensive() {
     log_verbose "4. Testing different geocoding methods with German coordinates..."
     local berlin_lat="52.52"
     local berlin_lon="13.40"
-    
+
     # Test geonames method (primary) with Berlin coordinates
     local geonames_url="${api_url}/api/reverse-geocode?lat=${berlin_lat}&lon=${berlin_lon}&method=geonames"
     local geonames_response
     geonames_response=$(curl -s --connect-timeout 10 --max-time 15 "$geonames_url" 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && echo "$geonames_response" | grep -q '"location"'; then
         log_verbose "✅ Geonames method working with German cities"
     else
@@ -1132,7 +1648,7 @@ test_geocoder_comprehensive() {
     local invalid_url="${api_url}/api/reverse-geocode?lat=999&lon=999&method=geonames"
     local invalid_response
     invalid_response=$(curl -s --connect-timeout 5 --max-time 10 "$invalid_url" 2>/dev/null)
-    
+
     if [ $? -eq 0 ]; then
         log_verbose "✅ API handles invalid coordinates gracefully"
     else
@@ -1145,7 +1661,7 @@ test_geocoder_comprehensive() {
     log "  Total German city tests: $test_count"
     log "  Successful resolutions: $success_count"
     log "  Success rate: $(( (success_count * 100) / test_count ))%"
-    
+
     # Determine overall success - expect high success rate for German cities
     if [ $success_count -ge $((test_count * 5 / 6)) ]; then  # At least 83% success rate (5/6 cities)
         log "✅ Geocoder service is functional and ready for German cities"
@@ -1278,7 +1794,7 @@ test_geocoder_service() {
     # Run comprehensive geocoder tests
     log "Running comprehensive geocoder functionality tests..."
     echo ""
-    
+
     if test_geocoder_comprehensive; then
         echo ""
         log "=============================================="
@@ -1309,82 +1825,190 @@ test_geocoder_service() {
 get_local_ip() {
     # Try multiple methods to get local IP
     local local_ip=""
-    
+
     # Method 1: Use ip route to get default route interface IP
     if command -v ip &> /dev/null; then
         local_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -n1)
     fi
-    
+
     # Method 2: Use hostname -I as fallback
     if [ -z "$local_ip" ] && command -v hostname &> /dev/null; then
         local_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
     fi
-    
+
     # Method 3: Parse ip addr output as another fallback
     if [ -z "$local_ip" ] && command -v ip &> /dev/null; then
         local_ip=$(ip addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v "127.0.0.1" | head -n1)
     fi
-    
+
     echo "$local_ip"
+}
+
+# Reusable parallel K3s Phone Server scanner
+# Usage: scan_k3s_phone_server_parallel [subnet] [quiet_mode]
+# Returns: IP address of first found server, empty if none found
+scan_k3s_phone_server_parallel() {
+    local target_subnet="$1"
+    local quiet_mode="${2:-false}"
+    local local_ip=""
+    local subnet=""
+
+    # Determine target subnet
+    if [ -n "$target_subnet" ]; then
+        # Parse different subnet formats
+        if [[ "$target_subnet" =~ ^([0-9]{1,3}\.){2}[0-9]{1,3}$ ]]; then
+            # Format: 192.168.1 (missing last octet)
+            subnet="$target_subnet"
+        elif [[ "$target_subnet" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+            # Format: 192.168.1.0/24 (CIDR notation)
+            subnet=$(echo "$target_subnet" | cut -d'/' -f1 | cut -d. -f1-3)
+        elif [[ "$target_subnet" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            # Format: 192.168.1.0 (full IP, extract subnet)
+            subnet=$(echo "$target_subnet" | cut -d. -f1-3)
+        else
+            if [ "$quiet_mode" != "true" ]; then
+                log_error "Invalid subnet format: $target_subnet"
+                log_error "Supported formats: 192.168.1, 192.168.1.0, 192.168.1.0/24"
+            fi
+            return 1
+        fi
+
+        # Get local IP for informational purposes
+        local_ip=$(get_local_ip)
+    else
+        # Use default subnet 192.168.179.0/24
+        subnet="192.168.179"
+        local_ip=$(get_local_ip)
+    fi
+
+    # Validate subnet format
+    if ! [[ "$subnet" =~ ^([0-9]{1,3}\.){2}[0-9]{1,3}$ ]]; then
+        if [ "$quiet_mode" != "true" ]; then
+            log_error "Invalid subnet derived: $subnet"
+        fi
+        return 1
+    fi
+
+    # Check if required tools are available
+    if ! command -v curl &> /dev/null; then
+        if [ "$quiet_mode" != "true" ]; then
+            log_warn "curl not found, installing..."
+            sudo apt-get update -qq && sudo apt-get install -y curl
+        fi
+    fi
+
+    # Create temporary directory for parallel scan results
+    local temp_dir=$(mktemp -d)
+    local winner_file="$temp_dir/winner"
+
+    # Cleanup function - simplified to avoid scope issues
+    trap "rm -rf \"$temp_dir\" 2>/dev/null; kill \$(jobs -p) 2>/dev/null; wait 2>/dev/null" EXIT
+
+    # Launch parallel scans in batches to avoid overwhelming the system
+    batch_size=20
+    jobs_running=0
+
+    for i in {1..254}; do
+        target_ip="${subnet}.${i}"
+
+        # Skip our own IP if we know it and it's in the target subnet
+        if [ -n "$local_ip" ] && [ "$target_ip" = "$local_ip" ]; then
+            continue
+        fi
+
+        # Instead of background function, use a background command
+        (
+            # Check if someone already won
+            if [ -f "$winner_file" ]; then
+                exit 0
+            fi
+
+            # Test if port 8005 is open and returns K3s Phone Server response
+            response=$(curl -s --connect-timeout 1 --max-time 3 "http://${target_ip}:8005/status" 2>/dev/null || echo "")
+
+            if [ -n "$response" ] && [[ "$response" == *"K3s Phone Server"* ]]; then
+                # We found a winner! Try to claim it
+                if ! [ -f "$winner_file" ]; then
+                    echo "$target_ip" > "$winner_file" 2>/dev/null
+                fi
+            fi
+        ) &
+
+        jobs_running=$((jobs_running + 1))
+
+        # If we've hit batch size, wait for some jobs to complete
+        if [ $jobs_running -ge $batch_size ]; then
+            # Check if we have a winner while jobs are running
+            if [ -f "$winner_file" ]; then
+                break
+            fi
+
+            # Wait for batch to complete
+            wait
+            jobs_running=0
+
+            # Check again after batch completes
+            if [ -f "$winner_file" ]; then
+                break
+            fi
+        fi
+    done
+
+    # Wait for any remaining background jobs
+    wait 2>/dev/null
+
+    # Get result
+    local winner_ip=""
+    if [ -f "$winner_file" ]; then
+        winner_ip=$(cat "$winner_file" 2>/dev/null)
+    fi
+
+    # Return result
+    if [ -n "$winner_ip" ]; then
+        echo "$winner_ip"
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Function to scan for K3s Phone Server on the local subnet
 scan_for_k3s_server() {
     log_step "Scanning local subnet for K3s Phone Server..."
-    
+
     local local_ip=$(get_local_ip)
     if [ -z "$local_ip" ]; then
         log_error "Could not determine local IP address"
         return 1
     fi
-    
+
     log "Local IP: $local_ip"
-    
+
     # Extract subnet (assume /24)
     local subnet=$(echo "$local_ip" | cut -d. -f1-3)
-    log "Scanning subnet: ${subnet}.1/24 on port 8005"
-    
-    # Check if required tools are available
-    if ! command -v curl &> /dev/null; then
-        log_warn "curl not found, installing..."
-        sudo apt-get update -qq && sudo apt-get install -y curl
-    fi
-    
-    local found_server=""
-    local found_ip=""
-    
-    # Scan the subnet
-    for i in {1..254}; do
-        local target_ip="${subnet}.${i}"
-        
-        # Skip our own IP
-        if [ "$target_ip" = "$local_ip" ]; then
-            continue
-        fi
-        
-        log_verbose "Checking $target_ip:8005..."
-        
-        # Test if port 8005 is open and returns K3s Phone Server response
-        local response=$(curl -s --connect-timeout 2 --max-time 5 "http://${target_ip}:8005/status" 2>/dev/null || echo "")
-        
-        if [[ "$response" == *"K3s Phone Server"* ]]; then
-            log "✅ Found K3s Phone Server at $target_ip:8005"
-            found_server="$response"
-            found_ip="$target_ip"
-            break
-        fi
-    done
-    
+    log "Scanning subnet: ${subnet}.0/24 on port 8005"
+
+    # Use the parallel scanner with auto-detected local subnet
+    local found_ip=$(scan_k3s_phone_server_parallel "$subnet" "true")
+
     if [ -n "$found_ip" ]; then
         log "📱 K3s Phone Server discovered at: $found_ip:8005"
-        log_verbose "Server response: $found_server"
+
+        # Get server response for verbose logging
+        if [ "$VERBOSE" = true ]; then
+            local response=$(curl -s --connect-timeout 3 --max-time 5 "http://${found_ip}:8005/status" 2>/dev/null || echo "")
+            if [ -n "$response" ]; then
+                log_verbose "Server response: $response"
+            fi
+        fi
+
         echo "$found_ip"
         return 0
     else
         log_warn "❌ No K3s Phone Server found on local subnet"
         log_warn "⚠️  This means no location, image capture, or local AI capabilities will be available"
         log_warn "    Make sure the K3s Phone Server app is running on an Android device"
-        log_warn "    connected to the same network (${subnet}.1/24)"
+        log_warn "    connected to the same network (${subnet}.0/24)"
         return 1
     fi
 }
@@ -1394,14 +2018,14 @@ scan_for_k3s_server_verbose() {
     local custom_subnet="$1"
     log_step "Verbose K3s Phone Server Discovery Scan"
     echo ""
-    
+
     local local_ip=""
     local subnet=""
-    
+
     # Determine target subnet
     if [ -n "$custom_subnet" ]; then
         log "🎯 Using custom subnet specification: $custom_subnet"
-        
+
         # Parse different subnet formats
         if [[ "$custom_subnet" =~ ^([0-9]{1,3}\.){2}[0-9]{1,3}$ ]]; then
             # Format: 192.168.1 (missing last octet)
@@ -1427,204 +2051,169 @@ scan_for_k3s_server_verbose() {
             log_error "  • 192.168.1.0/24 (CIDR notation)"
             return 1
         fi
-        
+
         # Validate subnet format
         if ! [[ "$subnet" =~ ^([0-9]{1,3}\.){2}[0-9]{1,3}$ ]]; then
             log_error "Invalid subnet derived: $subnet"
             return 1
         fi
-        
+
         # Get local IP for informational purposes only
         local_ip=$(get_local_ip)
         if [ -n "$local_ip" ]; then
             log "   Local IP Address: $local_ip"
         fi
     else
-        # Auto-detect local subnet
+        # Use default subnet 192.168.179.0/24 instead of auto-detecting
+        subnet="192.168.179"
+        log "🌐 Using default subnet for K3s Phone Server discovery:"
+
+        # Get local IP for informational purposes
         local_ip=$(get_local_ip)
-        if [ -z "$local_ip" ]; then
-            log_error "Could not determine local IP address"
-            echo ""
-            log "Troubleshooting:"
-            log "  • Check network interface status: ip addr show"
-            log "  • Ensure network connectivity: ping 8.8.8.8"
-            log "  • Try manual IP detection: hostname -I"
-            log "  • Or specify subnet manually: ./setup.sh scan-for-server 192.168.1"
-            return 1
+        if [ -n "$local_ip" ]; then
+            log "   Local IP Address: $local_ip"
         fi
-        
-        log "🌐 Auto-detected Network Information:"
-        log "   Local IP Address: $local_ip"
-        
-        # Extract subnet (assume /24)
-        subnet=$(echo "$local_ip" | cut -d. -f1-3)
+
+        log "   Default Target: 192.168.179.0/24 (K3s Phone Server default network)"
     fi
-    
+
     log "   Target Subnet: ${subnet}.0/24"
     log "   Scan Range: ${subnet}.1 - ${subnet}.254"
     log "   Target Port: 8005 (K3s Phone Server)"
     echo ""
-    
+
     # Check if required tools are available
     if ! command -v curl &> /dev/null; then
         log_warn "curl not found, installing..."
         sudo apt-get update -qq && sudo apt-get install -y curl
     fi
-    
+
     local found_servers=()
     local scanned_count=0
     local responsive_count=0
     local k3s_servers_count=0
-    
-    log "🔍 Starting comprehensive subnet scan..."
+
+    log "🔍 Starting parallel subnet scan..."
     echo ""
-    
-    # Scan the subnet with detailed progress
-    for i in {1..254}; do
-        local target_ip="${subnet}.${i}"
-        scanned_count=$((scanned_count + 1))
-        
-        # Skip our own IP if we know it and it's in the target subnet
-        if [ -n "$local_ip" ] && [ "$target_ip" = "$local_ip" ]; then
-            log_verbose "   Skipping local IP: $target_ip"
-            continue
-        fi
-        
-        # Show progress every 50 IPs or for verbose mode
-        if [ "$VERBOSE" = true ] || [ $((i % 50)) -eq 0 ]; then
-            log_verbose "   Checking: $target_ip:8005 ($i/254)"
-        fi
-        
-        # Test if port 8005 is open and returns K3s Phone Server response
-        local response=$(curl -s --connect-timeout 2 --max-time 5 "http://${target_ip}:8005/status" 2>/dev/null || echo "")
-        
-        if [ -n "$response" ]; then
-            responsive_count=$((responsive_count + 1))
-            
-            if [[ "$response" == *"K3s Phone Server"* ]]; then
-                k3s_servers_count=$((k3s_servers_count + 1))
-                found_servers+=("$target_ip")
-                log "✅ K3s Phone Server found at: $target_ip:8005"
-                log_verbose "   Server Response: $response"
-                
-                # Try to get additional server information
-                local info_response=$(curl -s --connect-timeout 3 --max-time 7 "http://${target_ip}:8005/info" 2>/dev/null || echo "")
-                if [ -n "$info_response" ]; then
-                    log_verbose "   Server Info: $info_response"
+
+    log "🚀 Launching parallel scans across ${subnet}.1-254..."
+
+    # Use the working parallel scan function instead of the problematic embedded one
+    local winner_ip=$(scan_k3s_phone_server_parallel "$subnet" "false")
+
+    echo ""
+    if [ -n "$winner_ip" ]; then
+        log "✅ K3s Phone Server found at: $winner_ip:8005"
+
+        # Get additional server information for the winner
+        if [ "$VERBOSE" = true ]; then
+            log_verbose "   Getting detailed server information..."
+
+            local info_response=$(curl -s --connect-timeout 3 --max-time 7 "http://${winner_ip}:8005/info" 2>/dev/null || echo "")
+            if [ -n "$info_response" ]; then
+                log_verbose "   Server Info: $info_response"
+            fi
+
+            # Test individual endpoints
+            log_verbose "   Testing endpoints:"
+            local endpoints=("/status" "/location" "/orientation" "/help")
+            for endpoint in "${endpoints[@]}"; do
+                local test_url="http://${winner_ip}:8005${endpoint}"
+                if curl -s --connect-timeout 2 --max-time 4 "$test_url" >/dev/null 2>&1; then
+                    log_verbose "     ✅ $endpoint - Available"
+                else
+                    log_verbose "     ❌ $endpoint - Not responding"
                 fi
-                
-                # Test individual endpoints
-                log_verbose "   Testing endpoints:"
-                local endpoints=("/location" "/capture" "/ai/text" "/ai/object_detection")
-                for endpoint in "${endpoints[@]}"; do
-                    local test_url="http://${target_ip}:8005${endpoint}"
-                    if curl -s --connect-timeout 2 --max-time 4 "$test_url" >/dev/null 2>&1; then
-                        log_verbose "     ✅ $endpoint - Available"
-                    else
-                        log_verbose "     ❌ $endpoint - Not responding"
-                    fi
-                done
-                echo ""
-            else
-                log_verbose "   📡 HTTP service detected at $target_ip:8005 (not K3s Phone Server)"
-                log_verbose "   Response preview: $(echo "$response" | head -c 100)..."
-            fi
+            done
         fi
-    done
-    
-    echo ""
-    log "📊 Scan Results Summary:"
-    log "   Total IPs scanned: $scanned_count"
-    log "   HTTP responses: $responsive_count"
-    log "   K3s Phone Servers found: $k3s_servers_count"
-    echo ""
-    
-    if [ ${#found_servers[@]} -gt 0 ]; then
-        log "🎯 Discovered K3s Phone Servers:"
-        for server_ip in "${found_servers[@]}"; do
-            log "   📱 Server: http://$server_ip:8005"
-            
-            # Get detailed server capabilities
-            log "   Capabilities:"
-            local capabilities=$(curl -s --connect-timeout 3 --max-time 7 "http://$server_ip:8005/capabilities" 2>/dev/null || echo "")
-            if [ -n "$capabilities" ]; then
-                log "     $capabilities"
-            else
-                log "     • Location services (/location)"
-                log "     • Camera capture (/capture)"  
-                log "     • AI text generation (/ai/text)"
-                log "     • Object detection (/ai/object_detection)"
-            fi
-            
-            # Test network latency
-            local ping_result=$(ping -c 3 -W 2000 "$server_ip" 2>/dev/null | grep "avg" | cut -d'/' -f5 2>/dev/null || echo "unknown")
-            if [ "$ping_result" != "unknown" ]; then
-                log "     • Network latency: ${ping_result}ms average"
-            fi
-            echo ""
-        done
-        
-        if [ ${#found_servers[@]} -eq 1 ]; then
-            local primary_server="${found_servers[0]}"
-            log "💡 Configuration Recommendations:"
-            log "   To use this server with agent nodes:"
-            log "   1. Run: ./setup.sh setup-port"
-            log "   2. Or manually setup port forwarding:"
-            log "      socat TCP-LISTEN:8005,fork TCP:$primary_server:8005 &"
-            echo ""
-            log "   For agent node setup:"
-            log "   ./setup.sh hostname -t YOUR_TAILSCALE_KEY -k TOKEN -u https://SERVER_IP:6443"
+
+        echo ""
+        log "📊 Scan Results Summary:"
+        log "   Parallel scan completed"
+        log "   K3s Phone Server found: $winner_ip:8005"
+        echo ""
+
+        log "🎯 K3s Phone Server Details:"
+        log "   📱 Server: http://$winner_ip:8005"
+
+        # Get detailed server capabilities for the winner
+        log "   Capabilities:"
+        local capabilities=$(curl -s --connect-timeout 3 --max-time 7 "http://${winner_ip}:8005/capabilities" 2>/dev/null || echo "")
+        if [ -n "$capabilities" ]; then
+            log "     $capabilities"
         else
-            log "💡 Multiple servers found - choose the appropriate one for your setup"
+            log "     • Server status (/status)"
+            log "     • Location services (/location)"
+            log "     • Orientation data (/orientation)"
+            log "     • Help information (/help)"
+            log "     • Camera capture (/capture)"
+            log "     • AI text generation (/ai/text)"
+            log "     • Object detection (/ai/object_detection)"
         fi
+
+        # Test network latency
+        local ping_result=$(ping -c 3 -W 2000 "$winner_ip" 2>/dev/null | grep "avg" | cut -d'/' -f5 2>/dev/null || echo "unknown")
+        if [ "$ping_result" != "unknown" ]; then
+            log "     • Network latency: ${ping_result}ms average"
+        fi
+        echo ""
+
+        log "💡 Configuration Recommendations:"
+        log "   To use this server with agent nodes:"
+        log "   1. Run: ./setup.sh setup-port"
+        log "   2. Or manually setup port forwarding:"
+        log "      socat TCP-LISTEN:8005,fork TCP:$winner_ip:8005 &"
+        echo ""
+        log "   For agent node setup:"
+        log "   • Make sure the Android app stays running"
+        log "   • Ensure both devices are on the same network"
+        log "   • Test connection: curl http://$winner_ip:8005/status"
+        echo ""
+
+        echo "$winner_ip"  # Return the IP for potential use in scripts
+        return 0
     else
-        log "❌ No K3s Phone Servers found on subnet ${subnet}.0/24"
+        log "❌ No K3s Phone Server found"
+        log "   Scanned ${subnet}.1-254 on port 8005"
+        log "   No devices responded with 'K3s Phone Server' identification"
         echo ""
-        log "🔧 Troubleshooting steps:"
-        log "   1. Ensure K3s Phone Server app is running on Android device"
-        log "   2. Verify Android device is on same network (${subnet}.0/24)"
-        log "   3. Check Android device firewall/security settings"
-        log "   4. Test manually: curl http://DEVICE_IP:8005/status"
-        log "   5. Try different network ranges if using VPN/multiple networks"
-        echo ""
-        log "📱 Android App Requirements:"
-        log "   • K3s Phone Server app must be started and running"
-        log "   • Device should show 'Server running on port 8005'"
-        log "   • Ensure device is not in sleep/doze mode"
+        log "💡 Troubleshooting:"
+        log "   • Ensure K3s Phone Server Android app is running"
+        log "   • Check if devices are on the same network"
+        log "   • Try scanning a different subnet: ./setup.sh scan-for-server 192.168.1"
+        log "   • Verify port 8005 is not blocked by firewalls"
         echo ""
         return 1
     fi
-    
-    return 0
 }
 
 # Function to setup port forwarding using socat
 setup_port_forwarding() {
     log_step "Setting up K3s Phone Server port forwarding..."
-    
+
     # Check if socat is available
     if ! command -v socat &> /dev/null; then
         log "Installing socat..."
         sudo apt-get update -qq && sudo apt-get install -y socat
     fi
-    
+
     # Scan for the server
     local server_ip=$(scan_for_k3s_server)
     if [ $? -ne 0 ] || [ -z "$server_ip" ]; then
         log_error "Cannot setup port forwarding without a detected K3s Phone Server"
         return 1
     fi
-    
+
     # Store the server IP in a config file
     local config_file="/etc/k3s-phone-server.conf"
     echo "K3S_PHONE_SERVER_IP=$server_ip" | sudo tee "$config_file" > /dev/null
     log "📁 Server IP stored in $config_file"
-    
+
     # Check if port 8005 is already in use locally
     if ss -tuln 2>/dev/null | grep -q ':8005 ' || netstat -tuln 2>/dev/null | grep -q ':8005 '; then
         log_warn "⚠️  Port 8005 is already in use locally"
         log "Checking if existing service is our port forwarding..."
-        
+
         # Check if it's our socat process
         if pgrep -f "socat.*TCP-LISTEN:8005.*TCP:.*:8005" > /dev/null; then
             log "✅ Port forwarding to K3s Phone Server is already active"
@@ -1635,10 +2224,10 @@ setup_port_forwarding() {
             return 1
         fi
     fi
-    
+
     # Create intelligent port forwarding script with IP reevaluation
     log "Creating intelligent port forwarding script..."
-    
+
     cat << 'EOF' | sudo tee /usr/local/bin/k3s-phone-forward.sh > /dev/null
 #!/bin/bash
 
@@ -1662,28 +2251,100 @@ log_error() {
 
 # Function to scan for K3s Phone Server
 scan_for_server() {
-    local network_range="192.168.0.0/24"
-    
     # Try to determine network range automatically
     local default_route=$(ip route | grep default | head -n1)
+    local target_subnet=""
+
     if [ -n "$default_route" ]; then
         local gateway=$(echo "$default_route" | awk '{print $3}')
         if [[ "$gateway" =~ ^192\.168\.([0-9]+)\.1$ ]]; then
-            network_range="192.168.${BASH_REMATCH[1]}.0/24"
+            target_subnet="192.168.${BASH_REMATCH[1]}"
         fi
     fi
-    
-    log_info "Scanning network $network_range for K3s Phone Server..."
-    
-    # Scan common ports 8005 on the network
-    for i in {1..254}; do
-        local ip=$(echo "$network_range" | sed "s/0\/24/$i/")
-        if timeout 2 curl -s "http://$ip:8005/status" 2>/dev/null | grep -q "K3s Phone Server"; then
-            echo "$ip"
+
+    # Default to 192.168.179 if we can't determine the subnet
+    if [ -z "$target_subnet" ]; then
+        target_subnet="192.168.179"
+    fi
+
+    log_info "Scanning network ${target_subnet}.0/24 for K3s Phone Server..."
+
+    # Use the reusable parallel scanner with quiet mode
+    # Note: We need to source the main functions, but since this runs in a systemd script,
+    # we'll use a simplified parallel approach
+
+    # Create temporary directory for parallel scan results
+    local temp_dir=$(mktemp -d)
+    local winner_file="$temp_dir/winner"
+
+    # Cleanup function
+    cleanup_embedded_scan() {
+        jobs -p | xargs -r kill 2>/dev/null
+        wait 2>/dev/null
+        rm -rf "$temp_dir" 2>/dev/null
+    }
+    trap cleanup_embedded_scan EXIT INT TERM
+
+    # Function to test a single IP (will run in background)
+    test_single_ip() {
+        local ip="$1"
+        local winner_file="$2"
+
+        # Check if someone already won
+        if [ -f "$winner_file" ]; then
             return 0
         fi
+
+        if timeout 1 curl -s "http://$ip:8005/status" 2>/dev/null | grep -q "K3s Phone Server"; then
+            # Try to claim the win
+            if ! [ -f "$winner_file" ]; then
+                echo "$ip" > "$winner_file" 2>/dev/null
+            fi
+        fi
+    }
+
+    # Launch parallel scans in batches
+    local batch_size=20
+    local jobs_running=0
+
+    for i in {1..254}; do
+        local ip="${target_subnet}.${i}"
+
+        # Launch background job
+        test_single_ip "$ip" "$winner_file" &
+        jobs_running=$((jobs_running + 1))
+
+        # If we've hit batch size, wait and check for winner
+        if [ $jobs_running -ge $batch_size ]; then
+            if [ -f "$winner_file" ]; then
+                break
+            fi
+            wait
+            jobs_running=0
+            if [ -f "$winner_file" ]; then
+                break
+            fi
+        fi
     done
-    
+
+    # Wait for remaining jobs
+    wait 2>/dev/null
+
+    # Get result
+    local winner_ip=""
+    if [ -f "$winner_file" ]; then
+        winner_ip=$(cat "$winner_file" 2>/dev/null)
+    fi
+
+    # Cleanup
+    cleanup_embedded_scan
+    trap - EXIT INT TERM
+
+    if [ -n "$winner_ip" ]; then
+        echo "$winner_ip"
+        return 0
+    fi
+
     return 1
 }
 
@@ -1698,12 +2359,12 @@ main_loop() {
     local current_server_ip=""
     local last_check=0
     local socat_pid=""
-    
+
     while true; do
         local now=$(date +%s)
         local should_check=false
         local check_interval=60  # Default: check every 60 seconds if working
-        
+
         # If no current server IP or socat process died, scan immediately
         if [ -z "$current_server_ip" ] || ! kill -0 "$socat_pid" 2>/dev/null; then
             should_check=true
@@ -1714,10 +2375,10 @@ main_loop() {
         elif [ $((now - last_check)) -ge $check_interval ]; then
             should_check=true
         fi
-        
+
         if [ "$should_check" = true ]; then
             last_check=$now
-            
+
             # Test current server if we have one
             if [ -n "$current_server_ip" ] && test_connection "$current_server_ip"; then
                 log_info "Server $current_server_ip still responsive"
@@ -1725,27 +2386,27 @@ main_loop() {
                 # Current server not working, scan for new one
                 log_info "Scanning for K3s Phone Server..."
                 local new_server_ip=$(scan_for_server)
-                
+
                 if [ $? -eq 0 ] && [ -n "$new_server_ip" ]; then
                     if [ "$new_server_ip" != "$current_server_ip" ]; then
                         log_info "Found K3s Phone Server at $new_server_ip"
-                        
+
                         # Kill old socat process
                         if [ -n "$socat_pid" ] && kill -0 "$socat_pid" 2>/dev/null; then
                             log_info "Stopping old port forwarding to $current_server_ip"
                             kill "$socat_pid" 2>/dev/null
                             wait "$socat_pid" 2>/dev/null
                         fi
-                        
+
                         # Start new socat process
                         log_info "Starting port forwarding localhost:8005 -> $new_server_ip:8005"
                         socat TCP-LISTEN:8005,fork,reuseaddr TCP:$new_server_ip:8005 &
                         socat_pid=$!
                         current_server_ip="$new_server_ip"
-                        
+
                         # Update config file
                         echo "K3S_PHONE_SERVER_IP=$new_server_ip" > "$CONFIG_FILE"
-                        
+
                         check_interval=60  # Check every 60 seconds when working
                     fi
                 else
@@ -1756,7 +2417,7 @@ main_loop() {
                 fi
             fi
         fi
-        
+
         sleep 5  # Main loop runs every 5 seconds for responsiveness
     done
 }
@@ -1776,12 +2437,12 @@ trap cleanup SIGTERM SIGINT
 log_info "Starting intelligent K3s Phone Server port forwarding"
 main_loop
 EOF
-    
+
     sudo chmod +x /usr/local/bin/k3s-phone-forward.sh
-    
+
     # Create systemd service for intelligent port forwarding
     log "Creating systemd service for intelligent port forwarding..."
-    
+
     cat << EOF | sudo tee /etc/systemd/system/k3s-phone-server-forward.service > /dev/null
 [Unit]
 Description=K3s Phone Server Intelligent Port Forwarding
@@ -1801,12 +2462,12 @@ TimeoutStopSec=30
 [Install]
 WantedBy=multi-user.target
 EOF
-    
+
     # Enable and start the service
     sudo systemctl daemon-reload
     sudo systemctl enable k3s-phone-server-forward.service
     sudo systemctl start k3s-phone-server-forward.service
-    
+
     # Wait a moment and check if service started successfully
     sleep 2
     if sudo systemctl is-active --quiet k3s-phone-server-forward.service; then
@@ -1815,13 +2476,15 @@ EOF
         log ""
         log "📱 K3s Phone Server capabilities now available:"
         log "   • Location services (/location)"
+        log "   • Orientation data (/orientation)"
+        log "   • Help information (/help)"
         log "   • Camera capture (/capture)"
         log "   • AI text generation (/ai/text)"
         log "   • Object detection (/ai/object_detection)"
         log ""
         log "Test the connection:"
         log "   curl http://localhost:8005/status"
-        
+
         # Test the forwarding
         log_verbose "Testing port forwarding..."
         local test_response=$(curl -s --connect-timeout 5 --max-time 10 "http://localhost:8005/status" 2>/dev/null || echo "")
@@ -1830,7 +2493,7 @@ EOF
         else
             log_warn "⚠️  Port forwarding test failed - may need a moment to stabilize"
         fi
-        
+
         # Update Kubernetes ConfigMap for sample_app to use the local forwarded port
         log_verbose "Updating phone-server-config ConfigMap for sample_app..."
         if command -v kubectl &> /dev/null && sudo kubectl cluster-info &> /dev/null; then
@@ -1841,7 +2504,7 @@ EOF
                 --from-literal=phone.server.enabled=true \
                 --from-literal=phone.server.timeout=3000 \
                 --dry-run=client -o yaml | sudo kubectl apply -f - &> /dev/null
-            
+
             if [ $? -eq 0 ]; then
                 log "📋 Updated phone-server-config ConfigMap for sample_app"
             else
@@ -1855,7 +2518,7 @@ EOF
         sudo systemctl status k3s-phone-server-forward.service
         return 1
     fi
-    
+
     return 0
 }
 
@@ -1974,7 +2637,7 @@ deploy_geocoder_service() {
             # Run build with output shown
             if ./build.sh; then
                 log "✅ Geocoder service Docker image built successfully"
-                
+
                 # Verify the image was created
                 if docker images | grep -q "reverse-geocoder.*latest"; then
                     log_verbose "✅ Docker image 'reverse-geocoder:latest' confirmed in local registry"
@@ -1994,7 +2657,7 @@ deploy_geocoder_service() {
             # Run build with output hidden
             if ./build.sh >/dev/null 2>&1; then
                 log "✅ Geocoder service Docker image built successfully"
-                
+
                 # Verify the image was created
                 if docker images | grep -q "reverse-geocoder.*latest"; then
                     log_verbose "✅ Docker image 'reverse-geocoder:latest' confirmed in local registry"
@@ -2220,15 +2883,15 @@ log_error() {
 # Function to get Kubernetes API credentials
 get_k8s_api_credentials() {
     local kubeconfig="${KUBECONFIG:-/etc/rancher/k3s/k3s.yaml}"
-    
+
     if [ ! -f "$kubeconfig" ]; then
         return 1
     fi
-    
+
     # Extract server URL and token from kubeconfig
     K3S_URL=$(grep -E '^\s*server:' "$kubeconfig" | awk '{print $2}' | head -1)
     K3S_TOKEN=$(grep -E '^\s*token:' "$kubeconfig" | awk '{print $2}' | head -1)
-    
+
     if [ -n "$K3S_URL" ] && [ -n "$K3S_TOKEN" ]; then
         return 0
     else
@@ -2241,17 +2904,17 @@ k8s_api_call() {
     local method="$1"
     local endpoint="$2"
     local data="$3"
-    
+
     # Get API credentials if not already set
     if [ -z "$K3S_URL" ] || [ -z "$K3S_TOKEN" ]; then
         if ! get_k8s_api_credentials; then
             return 1
         fi
     fi
-    
+
     local url="${K3S_URL}${endpoint}"
     local curl_opts="-s -k -H \"Authorization: Bearer $K3S_TOKEN\""
-    
+
     if [ "$method" = "GET" ]; then
         curl -s -k -H "Authorization: Bearer $K3S_TOKEN" "$url"
     elif [ "$method" = "PATCH" ]; then
@@ -2298,10 +2961,10 @@ get_phone_location() {
 get_current_labels() {
     local node_response
     node_response=$(k8s_api_call "GET" "/api/v1/nodes/$NODE_NAME")
-    
+
     if [ $? -eq 0 ] && [ -n "$node_response" ]; then
         local latitude longitude altitude
-        
+
         # Extract latitude, longitude, altitude from API response
         latitude=$(echo "$node_response" | grep -o "\"$LABEL_PREFIX/latitude\":\"[^\"]*\"" | cut -d'"' -f4)
         longitude=$(echo "$node_response" | grep -o "\"$LABEL_PREFIX/longitude\":\"[^\"]*\"" | cut -d'"' -f4)
@@ -2344,43 +3007,43 @@ update_node_labels() {
 # Function to update labels via node-labeler service
 update_labels_via_service() {
     local latitude="$1"
-    local longitude="$2" 
+    local longitude="$2"
     local altitude="$3"
-    
+
     # Get API credentials if not already set
     if [ -z "$K3S_URL" ] || [ -z "$K3S_TOKEN" ]; then
         if ! get_k8s_api_credentials; then
             return 1
         fi
     fi
-    
+
     # Get node-labeler service endpoint
     local service_response service_ip service_port
     service_response=$(curl -s -k \
         -H "Authorization: Bearer $K3S_TOKEN" \
         "${K3S_URL}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
-    
+
     if [ $? -ne 0 ] || ! echo "$service_response" | grep -q '"kind":"Service"'; then
         return 1
     fi
-    
+
     # Extract service IP and port
     service_ip=$(echo "$service_response" | grep -o '"clusterIP":"[^"]*"' | cut -d'"' -f4)
     service_port=$(echo "$service_response" | grep -o '"port":[0-9]*' | head -1 | cut -d':' -f2)
-    
+
     if [ -z "$service_ip" ] || [ -z "$service_port" ]; then
         return 1
     fi
-    
+
     # Call node-labeler service geolocation endpoint
     local labeler_url="http://${service_ip}:${service_port}"
     local request_data="{\"latitude\":$latitude,\"longitude\":$longitude"
-    
+
     if [ -n "$altitude" ] && [ "$altitude" != "0" ]; then
         request_data="$request_data,\"altitude\":$altitude"
     fi
     request_data="$request_data}"
-    
+
     local response
     response=$(curl -s --connect-timeout 10 --max-time 15 \
         -X POST \
@@ -2388,7 +3051,7 @@ update_labels_via_service() {
         -H "Authorization: Bearer $K3S_TOKEN" \
         -d "$request_data" \
         "${labeler_url}/api/v1/node/${NODE_NAME}/geolocation" 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && echo "$response" | grep -q '"success":true'; then
         return 0
     else
@@ -2400,40 +3063,40 @@ update_labels_via_service() {
 update_city_via_service() {
     local city_name="$1"
     local timestamp="$2"
-    
+
     # Get API credentials if not already set
     if [ -z "$K3S_URL" ] || [ -z "$K3S_TOKEN" ]; then
         if ! get_k8s_api_credentials; then
             return 1
         fi
     fi
-    
+
     # Get node-labeler service endpoint
     local service_response service_ip service_port
     service_response=$(curl -s -k \
         -H "Authorization: Bearer $K3S_TOKEN" \
         "${K3S_URL}/api/v1/namespaces/kube-system/services/node-labeler-service" 2>/dev/null)
-    
+
     if [ $? -ne 0 ] || ! echo "$service_response" | grep -q '"kind":"Service"'; then
         return 1
     fi
-    
+
     # Extract service IP and port
     service_ip=$(echo "$service_response" | grep -o '"clusterIP":"[^"]*"' | cut -d'"' -f4)
     service_port=$(echo "$service_response" | grep -o '"port":[0-9]*' | head -1 | cut -d':' -f2)
-    
+
     if [ -z "$service_ip" ] || [ -z "$service_port" ]; then
         return 1
     fi
-    
+
     # Escape special characters for Kubernetes labels
     local escaped_city
     escaped_city=$(echo "$city_name" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/^_*//;s/_*$//')
-    
+
     # Call node-labeler service city endpoint
     local labeler_url="http://${service_ip}:${service_port}"
     local request_data="{\"city\":\"$escaped_city\",\"timestamp\":\"$timestamp\"}"
-    
+
     local response
     response=$(curl -s --connect-timeout 10 --max-time 15 \
         -X POST \
@@ -2441,7 +3104,7 @@ update_city_via_service() {
         -H "Authorization: Bearer $K3S_TOKEN" \
         -d "$request_data" \
         "${labeler_url}/api/v1/node/${NODE_NAME}/city" 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && echo "$response" | grep -q '"success":true'; then
         return 0
     else
@@ -2543,7 +3206,7 @@ update_city_label() {
         local timestamp
         timestamp=$(date '+%Y-%m-%dT%H:%M:%SZ')
 
-        # Update with unknown city via node-labeler service  
+        # Update with unknown city via node-labeler service
         if update_city_via_service "Unknown" "$timestamp"; then
             log_info "Updated city label via service: Unknown"
         else
@@ -2750,12 +3413,12 @@ install_location_monitoring() {
     log_step "Setting up location monitoring service..."
     log "📍 This service will monitor location via port forwarding to K3s Phone Server"
     log "   Port forwarding maps localhost:8005 -> K3s Phone Server IP:8005"
-    
+
     # Create the location updater script embedded in setup.sh
     local script_path="/usr/local/bin/update-node-locations.sh"
-    
+
     log_verbose "Creating location updater script at $script_path"
-    
+
     sudo tee "$script_path" > /dev/null << 'LOCATION_SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -2827,12 +3490,12 @@ check_kubectl() {
         log_error "kubectl not found. Please install kubectl and configure access to the cluster."
         exit 1
     fi
-    
+
     if ! kubectl cluster-info >/dev/null 2>&1; then
         log_error "kubectl cannot connect to cluster. Please check your kubeconfig."
         exit 1
     fi
-    
+
     log_verbose "kubectl is available and cluster is accessible"
 }
 
@@ -2841,18 +3504,18 @@ get_phone_nodes() {
     local nodes
     # Get nodes with device-type=phone label, fall back to all nodes if none found
     nodes=$(kubectl get nodes -l device-type=phone -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
-    
+
     if [ -z "$nodes" ]; then
         log_verbose "No nodes with device-type=phone found, checking all nodes..."
         # Fall back to all nodes and filter for likely phone hostnames
         nodes=$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -E '(phone|android|mobile)' || true)
     fi
-    
+
     if [ -z "$nodes" ]; then
         log_warn "No phone nodes found. Make sure nodes are labeled with device-type=phone"
         return 1
     fi
-    
+
     echo "$nodes"
 }
 
@@ -2860,31 +3523,31 @@ get_phone_nodes() {
 query_node_location() {
     local node="$1"
     local port="$2"
-    
+
     log_verbose "Querying location from node: $node (port: $port)"
-    
+
     # Try to get location data via SSH and curl from the Android app
     local location_data
     location_data=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" \
         "curl -s --connect-timeout 3 --max-time 5 http://localhost:$port/location 2>/dev/null" 2>/dev/null || true)
-    
+
     if [ -z "$location_data" ]; then
         log_verbose "No location data from $node (app may not be running on port $port)"
         return 1
     fi
-    
+
     # Parse JSON response (basic parsing without jq dependency)
     local latitude longitude altitude city
     latitude=$(echo "$location_data" | grep -o '"latitude":[^,}]*' | cut -d':' -f2 | tr -d ' "' || true)
     longitude=$(echo "$location_data" | grep -o '"longitude":[^,}]*' | cut -d':' -f2 | tr -d ' "' || true)
     altitude=$(echo "$location_data" | grep -o '"altitude":[^,}]*' | cut -d':' -f2 | tr -d ' "' || true)
     city=$(echo "$location_data" | grep -o '"city":"[^"]*"' | cut -d':' -f2 | tr -d '"' || true)
-    
+
     if [ -z "$latitude" ] || [ -z "$longitude" ]; then
         log_warn "Invalid location data from $node: $location_data"
         return 1
     fi
-    
+
     log_verbose "Retrieved coordinates from $node: lat=$latitude, lng=$longitude, alt=$altitude, city=$city"
     echo "$latitude,$longitude,$altitude,$city"
 }
@@ -2893,33 +3556,33 @@ query_node_location() {
 update_node_labels() {
     local node="$1"
     local location_data="$2"
-    
+
     IFS=',' read -r latitude longitude altitude city <<< "$location_data"
-    
+
     log_verbose "Updating labels for node $node..."
-    
+
     # Build label update command
     local labels=()
     labels+=("phone.location/latitude=$latitude")
     labels+=("phone.location/longitude=$longitude")
     labels+=("phone.location/updated=$(date -u +%Y-%m-%dT%H:%M:%SZ)")
     labels+=("phone.location/status=active")
-    
+
     if [ -n "$altitude" ] && [ "$altitude" != "null" ]; then
         labels+=("phone.location/altitude=$altitude")
     fi
-    
+
     if [ -n "$city" ] && [ "$city" != "null" ]; then
         # Replace spaces and special chars for k8s label compatibility
         local city_clean
         city_clean=$(echo "$city" | sed 's/[^a-zA-Z0-9-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
         labels+=("phone.location/city=$city_clean")
     fi
-    
+
     # Also ensure device-type=phone label is set
     labels+=("device-type=phone")
     labels+=("node-role.kubernetes.io/phone=true")
-    
+
     # Apply all labels at once
     log_verbose "Applying ${#labels[@]} labels to node $node"
     if kubectl label node "$node" "${labels[@]}" --overwrite >/dev/null 2>&1; then
@@ -2940,15 +3603,15 @@ update_all_locations() {
     if ! nodes=$(get_phone_nodes); then
         return 1
     fi
-    
+
     local total_nodes=0
     local success_count=0
-    
+
     for node in $nodes; do
         total_nodes=$((total_nodes + 1))
-        
+
         log_verbose "Processing node: $node"
-        
+
         local location_data
         if location_data=$(query_node_location "$node" "$DEFAULT_GEO_PORT"); then
             if update_node_labels "$node" "$location_data"; then
@@ -2958,9 +3621,9 @@ update_all_locations() {
             log_warn "Could not retrieve location from $node"
         fi
     done
-    
+
     log "Processed $total_nodes nodes, $success_count successful updates"
-    
+
     if [ $success_count -eq 0 ] && [ $total_nodes -gt 0 ]; then
         log_warn "No successful location updates. Check that:"
         log_warn "  1. SSH access to phone nodes is working"
@@ -2968,35 +3631,35 @@ update_all_locations() {
         log_warn "  3. App is serving location data at /location endpoint"
         return 1
     fi
-    
+
     return 0
 }
 
 # Main function
 main() {
     parse_args "$@"
-    
+
     log "Node Location Updater starting..."
     log "Update interval: ${INTERVAL}s, Port: $DEFAULT_GEO_PORT, Run once: $RUN_ONCE"
-    
+
     # Check prerequisites
     check_kubectl
-    
+
     if [ "$RUN_ONCE" = true ]; then
         log "Running single location update..."
         update_all_locations
         exit $?
     fi
-    
+
     # Continuous mode
     log "Starting continuous location monitoring (press Ctrl+C to stop)..."
-    
+
     # Trap for graceful shutdown
     trap 'log "Shutting down location updater..."; exit 0' INT TERM
-    
+
     while true; do
         update_all_locations || log_warn "Update cycle failed, continuing..."
-        
+
         log_verbose "Waiting ${INTERVAL}s until next update..."
         sleep "$INTERVAL"
     done
@@ -3010,10 +3673,10 @@ LOCATION_SCRIPT
 
     # Make the script executable
     sudo chmod +x "$script_path"
-    
+
     # Create systemd service for automatic location monitoring (optional)
     local service_file="/etc/systemd/system/location-monitor.service"
-    
+
     log_verbose "Creating location monitoring systemd service..."
     sudo tee "$service_file" > /dev/null << EOF
 [Unit]
@@ -3037,7 +3700,7 @@ EOF
     # Enable but don't start the service (let user decide)
     sudo systemctl daemon-reload
     sudo systemctl enable location-monitor
-    
+
     log "✅ Location monitoring setup complete"
     log "   Script installed at: $script_path"
     log "   Systemd service: location-monitor (enabled but not started)"
@@ -3053,24 +3716,24 @@ EOF
     log "     1. SSH passwordless access from server to phone nodes"
     log "     2. Android geolocation app running on port 8005"
     log "     3. App serving JSON data at /location endpoint"
-    
+
     return 0
 }
 
 # Function to simply label the current node as a phone
 simple_label_node_as_phone() {
     log_step "Labeling current node as a phone..."
-    
+
     local node_name
     node_name=$(hostname)
-    
+
     log_verbose "Applying phone labels to node: $node_name"
-    
+
     # Simple labeling with kubectl
     if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info >/dev/null 2>&1; then
         kubectl label node "$node_name" device-type=phone --overwrite >/dev/null 2>&1 || true
         kubectl label node "$node_name" node-role.kubernetes.io/phone=true --overwrite >/dev/null 2>&1 || true
-        
+
         # Verify labels were applied
         if kubectl get node "$node_name" -o jsonpath='{.metadata.labels.device-type}' 2>/dev/null | grep -q "phone"; then
             log "✅ Node $node_name successfully labeled as phone"
@@ -3101,14 +3764,14 @@ check_geolocation_provider() {
     # First try to find the geocoder service in Kubernetes (if kubectl is available)
     if command -v kubectl >/dev/null 2>&1 && kubectl cluster-info &>/dev/null 2>&1; then
         log_verbose "Checking for geocoder service in cluster..."
-        
+
         # Check if deployment exists
         if ! sudo kubectl get deployment reverse-geocoder &>/dev/null 2>&1; then
             log_warn "⚠️  Geocoder deployment not found in cluster"
             log_warn "⚠️  Geocoder service was not deployed or deployment failed"
             return 1
         fi
-        
+
         # Check deployment readiness
         local ready_replicas
         ready_replicas=$(sudo kubectl get deployment reverse-geocoder -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
@@ -3117,7 +3780,7 @@ check_geolocation_provider() {
             return 1
         fi
         log_verbose "✅ Geocoder deployment is ready"
-        
+
         # Get service IP
         local service_ip
         service_ip=$(sudo kubectl get service reverse-geocoder -o jsonpath='{.spec.clusterIP}' 2>/dev/null)
@@ -3137,7 +3800,7 @@ check_geolocation_provider() {
     log_verbose "Testing geocoder health endpoint..."
     local health_response
     health_response=$(curl -s --connect-timeout 5 --max-time 10 "${api_url}/health" 2>/dev/null)
-    
+
     if [ $? -eq 0 ] && echo "$health_response" | grep -q "ok"; then
         log "✅ Reverse geolocation provider is accessible"
         provider_available=true
@@ -3182,7 +3845,7 @@ check_geolocation_provider() {
         log_warn "  • City name resolution: ❌ Not available"
         log_warn "  • Solution: Check geocoder service status on the master node"
         log_warn "  • Alternative: City names can be added manually via kubectl labels"
-        
+
         # Provide troubleshooting information
         if command -v kubectl >/dev/null 2>&1; then
             log_warn ""
@@ -3192,22 +3855,22 @@ check_geolocation_provider() {
             log_warn "  • Check service: kubectl get service reverse-geocoder"
             log_warn "  • Check logs: kubectl logs deployment/reverse-geocoder"
         fi
-        
+
         return 1
     fi
 }
 
 check_and_reinstall_tailscale_for_agent() {
     log_step "Setting up Tailscale for agent mode (always reinstalling for clean setup)..."
-    
+
     # Always reinstall Tailscale in agent mode for clean configuration
     if command -v tailscale &> /dev/null; then
         log "Tailscale is installed - removing for clean agent setup..."
-        
+
         # Log out and disconnect from Tailscale
         log_verbose "Logging out from Tailscale..."
         sudo tailscale logout 2>/dev/null || log_warn "Failed to logout from Tailscale (may not be logged in)"
-        
+
         # Stop the Tailscale daemon
         log_verbose "Stopping Tailscale daemon..."
         if command -v systemctl &>/dev/null; then
@@ -3215,38 +3878,38 @@ check_and_reinstall_tailscale_for_agent() {
             # Wait for daemon to fully stop
             sleep 3
         fi
-        
+
         # Purge Tailscale package to ensure clean reinstall
         log_verbose "Removing Tailscale package..."
         if command -v apt-get &>/dev/null; then
             sudo apt-get remove -y tailscale 2>/dev/null || log_warn "Failed to remove Tailscale package"
             sudo apt-get purge -y tailscale 2>/dev/null || log_warn "Failed to purge Tailscale package"
         fi
-        
+
         # Remove state directory to ensure clean state
         log_verbose "Cleaning Tailscale state..."
         sudo rm -rf /var/lib/tailscale 2>/dev/null || log_warn "Failed to remove Tailscale state directory"
-        
+
         # Ensure daemon is completely stopped
         log_verbose "Ensuring Tailscale daemon is fully stopped..."
         sudo pkill -f tailscaled 2>/dev/null || true
         sleep 2
-        
+
         log_verbose "Installing fresh Tailscale for agent..."
     else
         log "Installing Tailscale for agent mode..."
     fi
-    
+
     # Install and configure Tailscale (fresh install)
     setup_tailscale_for_agent
-    
+
     # Test connectivity to K3s server after Tailscale setup
     test_k3s_server_connectivity
 }
 
 setup_tailscale_for_agent() {
     log_step "Installing and configuring Tailscale for agent..."
-    
+
     # Check network connectivity first
     if ! ping -c 1 8.8.8.8 &>/dev/null; then
         log_error "No internet connectivity - cannot install Tailscale"
@@ -3257,7 +3920,7 @@ setup_tailscale_for_agent() {
     # Install Tailscale if not already installed
     if ! command -v tailscale &> /dev/null; then
         log_verbose "Installing Tailscale"
-        
+
         # Try the official installer with better error handling
         if ! curl -fsSL https://tailscale.com/install.sh | sh; then
             log_error "Failed to install Tailscale via official installer"
@@ -3270,14 +3933,14 @@ setup_tailscale_for_agent() {
             echo ""
             exit $EXIT_INSTALL_FAILED
         fi
-        
+
         # Verify installation
         if ! command -v tailscale &> /dev/null; then
             log_error "Tailscale installation completed but command not found"
             echo "Try: sudo apt-get install tailscale"
             exit $EXIT_INSTALL_FAILED
         fi
-        
+
         log "Tailscale installed successfully"
     else
         log "Tailscale is already installed"
@@ -3289,10 +3952,10 @@ setup_tailscale_for_agent() {
     if command -v systemctl &>/dev/null; then
         sudo systemctl enable tailscaled 2>/dev/null || log_warn "Failed to enable Tailscale service"
         sudo systemctl start tailscaled 2>/dev/null || log_warn "Failed to start Tailscale service"
-        
+
         # Wait for daemon to initialize
         sleep 3
-        
+
         # Check if daemon is running
         if ! sudo systemctl is-active tailscaled &>/dev/null; then
             log_error "Tailscale daemon failed to start"
@@ -3308,12 +3971,12 @@ setup_tailscale_for_agent() {
         log_verbose "Connecting to Tailscale with validated auth key"
         log_verbose "Auth key starts with: $(echo "$TAILSCALE_AUTH_KEY" | cut -c1-15)..."
         log_verbose "Hostname for auth: $HOSTNAME"
-        
+
         # Always run tailscale up in agent mode, even if already connected
         log "Authenticating with Tailscale using provided auth key (forced in agent mode)..."
         if sudo tailscale up --auth-key="$TAILSCALE_AUTH_KEY" --hostname="$HOSTNAME" --force-reauth; then
             log "Successfully connected to Tailscale"
-            
+
             # Show connection status
             sleep 2
             if sudo tailscale status &>/dev/null; then
@@ -3394,32 +4057,32 @@ setup_kubectl_for_agent() {
 
     # On agent nodes, kubectl needs to use the server's kubeconfig
     # or connect through the agent's configuration
-    
+
     # First, wait for K3s agent to create its config (give it time to connect)
     local agent_config="/etc/rancher/k3s/k3s.yaml"
     local wait_count=0
     local max_wait=60  # Wait up to 60 seconds for agent to connect
-    
+
     log_verbose "Waiting for K3s agent to connect and create config file..."
     while [ $wait_count -lt $max_wait ]; do
         if [ -f "$agent_config" ]; then
             log_verbose "K3s agent config found after ${wait_count}s"
             break
         fi
-        
+
         # Show progress every 10 seconds
         if [ $((wait_count % 10)) -eq 0 ] && [ $wait_count -gt 0 ]; then
             log_verbose "⏳ Still waiting for agent to connect... (${wait_count}s/${max_wait}s)"
             log_verbose "Agent status: $(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')"
         fi
-        
+
         sleep 2
         wait_count=$((wait_count + 2))
     done
-    
+
     if [ -f "$agent_config" ]; then
         log_verbose "Found K3s agent config at $agent_config"
-        
+
         # Set up KUBECONFIG environment variable for current user
         local user_home
         if [ "$USER" = "root" ]; then
@@ -3427,7 +4090,7 @@ setup_kubectl_for_agent() {
         else
             user_home="/home/$USER"
         fi
-        
+
         # Create .bashrc entry for KUBECONFIG
         if [ -f "$user_home/.bashrc" ]; then
             if ! grep -q "KUBECONFIG.*k3s.yaml" "$user_home/.bashrc"; then
@@ -3440,43 +4103,43 @@ setup_kubectl_for_agent() {
                 log_verbose "KUBECONFIG already configured in .bashrc"
             fi
         fi
-        
+
         # Also set it for the current session
         export KUBECONFIG="$agent_config"
         log_verbose "Set KUBECONFIG for current session"
-        
+
         # Copy the config to user's .kube directory for convenience
         local kube_dir="$user_home/.kube"
         if [ ! -d "$kube_dir" ]; then
             mkdir -p "$kube_dir"
             log_verbose "Created $kube_dir directory"
         fi
-        
+
         # Copy the config file (with proper permissions)
         sudo cp "$agent_config" "$kube_dir/config"
         sudo chown "$USER:$(id -gn)" "$kube_dir/config"
         chmod 600 "$kube_dir/config"
         log_verbose "Copied kubeconfig to $kube_dir/config"
-        
+
         # Test kubectl connectivity with retries
         log_verbose "Testing kubectl connectivity..."
         local test_count=0
         local max_test=15  # Try for 30 seconds
-        
+
         while [ $test_count -lt $max_test ]; do
             if KUBECONFIG="$agent_config" kubectl cluster-info &> /dev/null; then
                 log "✅ kubectl configured successfully for agent node"
                 return 0
             fi
-            
+
             if [ $((test_count % 5)) -eq 0 ] && [ $test_count -gt 0 ]; then
                 log_verbose "⏳ kubectl connectivity test ongoing... (${test_count}/${max_test})"
             fi
-            
+
             sleep 2
             test_count=$((test_count + 1))
         done
-        
+
         # If direct test failed, try sourcing bashrc
         log_verbose "Direct kubectl test failed, trying after sourcing bashrc..."
         if [ -f "$user_home/.bashrc" ]; then
@@ -3487,7 +4150,7 @@ setup_kubectl_for_agent() {
                 return 0
             fi
         fi
-        
+
         log_warn "⚠️  kubectl configuration found but connection test failed"
         log_warn "The agent may still be connecting to the cluster"
         log_warn "kubectl should work once the agent fully connects"
@@ -3497,11 +4160,11 @@ setup_kubectl_for_agent() {
         log_warn "⚠️  K3s agent config not found at $agent_config after ${max_wait}s"
         log_warn "This indicates the agent cannot connect to the K3s server"
         echo ""
-        
+
         # Extract server hostname for debugging
         local server_host
         server_host=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|' 2>/dev/null || echo '<server-hostname>')
-        
+
         log_warn "� DEBUGGING AGENT CONNECTION FAILURE:"
         echo ""
         log_warn "Connection Details:"
@@ -3509,7 +4172,7 @@ setup_kubectl_for_agent() {
         log_warn "  • Server Host: $server_host"
         log_warn "  • Agent Status: $(sudo systemctl is-active k3s-agent 2>/dev/null || echo 'unknown')"
         echo ""
-        
+
         log_warn "Network Tests:"
         # Test basic connectivity
         if ping -c 1 "$server_host" >/dev/null 2>&1; then
@@ -3517,7 +4180,7 @@ setup_kubectl_for_agent() {
         else
             log_warn "  • Ping to server: ❌ FAILED"
         fi
-        
+
         # Test port 6443 connectivity
         if command -v nc >/dev/null 2>&1; then
             if nc -z "$server_host" 6443 >/dev/null 2>&1; then
@@ -3528,25 +4191,25 @@ setup_kubectl_for_agent() {
         else
             log_warn "  • Port 6443 access: ⚠️  Cannot test (nc not available)"
         fi
-        
+
         # Check Tailscale connectivity if available
         if command -v tailscale >/dev/null 2>&1; then
             local tailscale_status
             tailscale_status=$(tailscale status 2>/dev/null | head -1 || echo "Not connected")
             log_warn "  • Tailscale Status: $tailscale_status"
-            
+
             local my_tailscale_ip
             my_tailscale_ip=$(tailscale ip -4 2>/dev/null || echo "unknown")
             log_warn "  • My Tailscale IP: $my_tailscale_ip"
         fi
-        
+
         echo ""
         log_warn "📱 ANDROID USERS: Even with ports allowed, check for:"
         log_warn "  1. � Additional Linux Terminal App notifications"
         log_warn "  2. 🔗 Network connectivity changes (WiFi/cellular switch)"
         log_warn "  3. 🏠 VPN interference (if using other VPNs)"
         echo ""
-        
+
         log_warn "🔧 TROUBLESHOOTING STEPS:"
         log_warn "  1. Check agent logs for specific errors:"
         log_warn "     sudo journalctl -u k3s-agent -f --no-pager"
@@ -3629,7 +4292,7 @@ uninstall_existing_k3s() {
     else
         user_home="/home/$USER"
     fi
-    
+
     # Remove KUBECONFIG from .bashrc if it exists
     if [ -f "$user_home/.bashrc" ] && grep -q "KUBECONFIG.*k3s.yaml" "$user_home/.bashrc"; then
         log_verbose "Removing KUBECONFIG from ~/.bashrc"
@@ -3637,7 +4300,7 @@ uninstall_existing_k3s() {
         cp "$user_home/.bashrc" "$user_home/.bashrc.k3s-backup"
         grep -v "KUBECONFIG.*k3s.yaml\|# K3s kubectl configuration" "$user_home/.bashrc.k3s-backup" > "$user_home/.bashrc"
     fi
-    
+
     # Remove .kube directory if it contains K3s config
     if [ -d "$user_home/.kube" ] && [ -f "$user_home/.kube/config" ]; then
         log_verbose "Removing kubectl config directory"
@@ -3679,11 +4342,11 @@ install_k3s_agent() {
         log_verbose "Using K3S_NODE_NAME to preserve system hostname"
         current_hostname=$(hostname)
         log_verbose "Installing K3s agent with preserved hostname: $current_hostname"
-        
+
         # Show the exact command being executed
         log "Executing K3s agent installation command:"
         log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" K3S_NODE_NAME=\"$current_hostname\" sh -"
-        
+
         curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_NAME="$current_hostname" sh - || {
             log_error "Failed to install K3s agent"
             log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
@@ -3692,11 +4355,11 @@ install_k3s_agent() {
     else
         # Normal mode - let K3s handle hostname
         log_verbose "Installing K3s agent with auto-generated hostname"
-        
+
         # Show the exact command being executed
         log "Executing K3s agent installation command:"
         log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" sh -"
-        
+
         curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
             log_error "Failed to install K3s agent"
             log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
@@ -3706,11 +4369,11 @@ install_k3s_agent() {
 
     log "✅ K3s agent installation completed"
     log_verbose "K3s installer automatically set up and started the k3s-agent systemd service"
-    
+
     # Give the service a moment to start up
     log "Waiting for k3s-agent service to initialize..."
     sleep 10
-    
+
     # Check if the service is running (simple check)
     if sudo systemctl is-active --quiet k3s-agent; then
         log "✅ k3s-agent service is running"
@@ -3747,7 +4410,7 @@ install_k3s_agent() {
             fi
             log_verbose "Configuring Docker for insecure registry at $REGISTRY_HOST:5000"
             log_verbose "Debug: REGISTRY_HOST='$REGISTRY_HOST'"
-            
+
             # Test connectivity to registry before configuring Docker
             log_verbose "Testing connectivity to registry at $REGISTRY_HOST:5000..."
             if command -v nc &>/dev/null; then
@@ -3761,7 +4424,7 @@ install_k3s_agent() {
             else
                 log_verbose "nc (netcat) not available, skipping connectivity test"
             fi
-            
+
             log_verbose "Debug: Calling setup_docker_insecure_registry with: '$REGISTRY_HOST'"
             if setup_docker_insecure_registry "$REGISTRY_HOST"; then
                 log_verbose "✅ Docker registry configuration completed"
@@ -3859,7 +4522,7 @@ show_agent_completion_info() {
 
     # Check if we can get node status from the cluster
     local kubectl_working=false
-    
+
     if command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1; then
         kubectl_working=true
     else
@@ -3871,7 +4534,7 @@ show_agent_completion_info() {
         else
             user_home="/home/$USER"
         fi
-        
+
         if [ -f "$user_home/.bashrc" ]; then
             # Test kubectl in a subshell with sourced bashrc
             if (source "$user_home/.bashrc" && command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null 2>&1); then
@@ -3880,7 +4543,7 @@ show_agent_completion_info() {
             fi
         fi
     fi
-    
+
     if [ "$kubectl_working" = true ]; then
         log "Cluster Connection: ✅ Connected"
 
@@ -4438,298 +5101,6 @@ validate_local_params() {
     return 0
 }
 
-# Argument parsing
-parse_arguments() {
-    if [ $# -eq 0 ]; then
-        show_help
-        exit $EXIT_SUCCESS
-    fi
-
-    # Check for help/version flags first
-    if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
-        show_help
-        exit $EXIT_SUCCESS
-    fi
-
-    if [ "$1" = "--version" ]; then
-        show_version
-        exit $EXIT_SUCCESS
-    fi
-
-    # Check if first argument is 'test-geocoder'
-    if [ "$1" = "test-geocoder" ]; then
-        TEST_GEOCODER_MODE=true
-        shift
-
-        # Parse test-geocoder-specific options
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                -v|--verbose)
-                    VERBOSE=true
-                    shift
-                    ;;
-                -h|--help)
-                    show_help
-                    exit $EXIT_SUCCESS
-                    ;;
-                --version)
-                    show_version
-                    exit $EXIT_SUCCESS
-                    ;;
-                *)
-                    log_error "Unknown test-geocoder option: $1"
-                    echo ""
-                    show_help
-                    exit $EXIT_INVALID_ARGS
-                    ;;
-            esac
-        done
-        return 0
-    fi
-
-    # Check if first argument is 'cleanup'
-    if [ "$1" = "cleanup" ]; then
-        CLEANUP_MODE=true
-        shift
-
-        # Parse cleanup-specific options
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                --remove-from-tailscale)
-                    REMOVE_FROM_TAILSCALE=true
-                    shift
-                    ;;
-                -v|--verbose)
-                    VERBOSE=true
-                    shift
-                    ;;
-                -h|--help)
-                    show_help
-                    exit $EXIT_SUCCESS
-                    ;;
-                --version)
-                    show_version
-                    exit $EXIT_SUCCESS
-                    ;;
-                *)
-                    log_error "Unknown cleanup option: $1"
-                    echo ""
-                    show_help
-                    exit $EXIT_INVALID_ARGS
-                    ;;
-            esac
-        done
-        return 0
-    fi
-
-    # Check for integrated script commands
-    if [ "$1" = "clean" ]; then
-        echo "🧹 Running cluster cleanup..."
-        # Source and run the clean script functionality
-        if [ -f "$(dirname "$0")/clean.sh" ]; then
-            bash "$(dirname "$0")/clean.sh" "${@:2}"
-        else
-            log_error "clean.sh not found in script directory"
-            exit $EXIT_FAILURE
-        fi
-        exit $?
-    fi
-
-    if [ "$1" = "status" ]; then
-        echo "📊 Showing cluster status..."
-        # Source and run the status script functionality
-        if [ -f "$(dirname "$0")/status.sh" ]; then
-            bash "$(dirname "$0")/status.sh" "${@:2}"
-        else
-            log_error "status.sh not found in script directory"
-            exit $EXIT_FAILURE
-        fi
-        exit $?
-    fi
-
-    if [ "$1" = "reset" ]; then
-        echo "🔄 Resetting cluster (WARNING: This is destructive!)..."
-        # Source and run the reset script functionality
-        if [ -f "$(dirname "$0")/reset.sh" ]; then
-            bash "$(dirname "$0")/reset.sh" "${@:2}"
-        else
-            log_error "reset.sh not found in script directory"
-            exit $EXIT_FAILURE
-        fi
-        exit $?
-    fi
-
-    if [ "$1" = "test-location" ]; then
-        echo "📍 Testing simplified location monitoring..."
-        # Source and run the test-simplified-location script functionality
-        if [ -f "$(dirname "$0")/test-simplified-location.sh" ]; then
-            bash "$(dirname "$0")/test-simplified-location.sh" "${@:2}"
-        else
-            log_error "test-simplified-location.sh not found in script directory"
-            exit $EXIT_FAILURE
-        fi
-        exit $?
-    fi
-
-    if [ "$1" = "setup-port" ]; then
-        echo "🔌 Setting up K3s Phone Server port forwarding..."
-        setup_port_forwarding
-        exit $?
-    fi
-
-    if [ "$1" = "scan-for-server" ]; then
-        echo "🔍 Scanning for K3s Phone Server..."
-        # Enable verbose mode by default for this command
-        VERBOSE=true
-        shift
-        
-        # Check if first argument is a subnet specification
-        local custom_subnet=""
-        if [[ $# -gt 0 && "$1" != -* ]]; then
-            custom_subnet="$1"
-            shift
-        fi
-        
-        # Parse scan-for-server-specific options
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                -v|--verbose)
-                    VERBOSE=true
-                    shift
-                    ;;
-                -q|--quiet)
-                    VERBOSE=false
-                    shift
-                    ;;
-                -h|--help)
-                    show_help
-                    exit $EXIT_SUCCESS
-                    ;;
-                --version)
-                    show_version
-                    exit $EXIT_SUCCESS
-                    ;;
-                *)
-                    log_error "Unknown scan-for-server option: $1"
-                    echo ""
-                    show_help
-                    exit $EXIT_INVALID_ARGS
-                    ;;
-            esac
-        done
-        
-        # Run the verbose scan with optional custom subnet
-        scan_for_k3s_server_verbose "$custom_subnet"
-        exit $?
-    fi
-
-    if [ "$1" = "dashboard" ]; then
-        echo "🌐 Starting K3s Phone Cluster Dashboard..."
-        # Source and run the dashboard script functionality
-        if [ -f "$(dirname "$0")/dashboard.sh" ]; then
-            bash "$(dirname "$0")/dashboard.sh" "${@:2}"
-        else
-            log_error "dashboard.sh not found in script directory"
-            exit $EXIT_FAILURE
-        fi
-        exit $?
-    fi
-
-    # Check if first argument is '--local'
-    if [ "$1" = "--local" ]; then
-        LOCAL_MODE=true
-        shift
-
-        # Parse remaining options for local mode
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                -t|--tailscale-key)
-                    TAILSCALE_AUTH_KEY="$2"
-                    shift 2
-                    ;;
-                -k|--k3s-token)
-                    K3S_TOKEN="$2"
-                    shift 2
-                    ;;
-                -u|--k3s-url)
-                    K3S_URL="$2"
-                    shift 2
-                    ;;
-                --force)
-                    FORCE_MODE=true
-                    shift
-                    ;;
-                -v|--verbose)
-                    VERBOSE=true
-                    shift
-                    ;;
-                -h|--help)
-                    show_help
-                    exit $EXIT_SUCCESS
-                    ;;
-                --version)
-                    show_version
-                    exit $EXIT_SUCCESS
-                    ;;
-                *)
-                    log_error "Unknown option for --local mode: $1"
-                    echo ""
-                    show_help
-                    exit $EXIT_INVALID_ARGS
-                    ;;
-            esac
-        done
-        return 0
-    fi
-
-    # Regular hostname-based setup
-    HOSTNAME="$1"
-    shift
-
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -t|--tailscale-key)
-                TAILSCALE_AUTH_KEY="$2"
-                shift 2
-                ;;
-            -k|--k3s-token)
-                K3S_TOKEN="$2"
-                shift 2
-                ;;
-            -u|--k3s-url)
-                K3S_URL="$2"
-                shift 2
-                ;;
-            --local)
-                LOCAL_MODE=true
-                shift
-                ;;
-            --force)
-                FORCE_MODE=true
-                shift
-                ;;
-            -v|--verbose)
-                VERBOSE=true
-                shift
-                ;;
-            -h|--help)
-                show_help
-                exit $EXIT_SUCCESS
-                ;;
-            --version)
-                show_version
-                exit $EXIT_SUCCESS
-                ;;
-            *)
-                log_error "Unknown option: $1"
-                echo ""
-                show_help
-                exit $EXIT_INVALID_ARGS
-                ;;
-        esac
-    done
-}
-
 # Function to handle test-geocoder mode
 handle_test_geocoder_mode() {
     log "=============================================="
@@ -4763,18 +5134,15 @@ handle_test_geocoder_mode() {
     return 0
 }
 
-# Main function
-main() {
-    # Parse command line arguments
-    parse_arguments "$@"
-
+# Main function for setup operations
+main_setup() {
     # Handle test-geocoder mode
     if [ "$TEST_GEOCODER_MODE" = true ]; then
         handle_test_geocoder_mode
         return $?
     fi
 
-    # Handle cleanup mode
+    # Handle cleanup mode (legacy)
     if [ "$CLEANUP_MODE" = true ]; then
         log "=============================================="
         log "K3s on Phone Cleanup v${VERSION}"
@@ -4807,9 +5175,9 @@ main() {
     # Regular setup mode - validate arguments
     log_verbose "Validating configuration parameters..."
 
-    validate_hostname || exit $EXIT_INVALID_ARGS
-    validate_k3s_params || exit $EXIT_INVALID_ARGS
-    validate_local_params || exit $EXIT_INVALID_ARGS
+    validate_hostname || exit 1
+    validate_k3s_params || exit 1
+    validate_local_params || exit 1
 
     # Validate Tailscale key (requires internet connectivity, so do pre-flight checks first)
     check_sudo
@@ -4827,7 +5195,7 @@ main() {
             echo "3. Ensure the key is set to 'Reusable' if you plan to use it multiple times"
             echo "4. Run './tailscale-troubleshoot.sh' for additional help"
             echo ""
-            exit $EXIT_INVALID_ARGS
+            exit 1
         }
     else
         check_internet
@@ -4848,7 +5216,7 @@ main() {
         log "K3s Mode: Agent (Worker Node)"
         log "K3s Server URL: $K3S_URL"
         log "K3s Token: ***provided***"
-        
+
         # Check if Android app is running before proceeding
         log_step "Checking if K3s Phone Server Android app is running..."
         if ! curl -s --connect-timeout 5 --max-time 10 "http://localhost:8005/status" >/dev/null 2>&1; then
@@ -4856,7 +5224,7 @@ main() {
             log_error "📱 Please ensure the Android app is installed and RUNNING before setup"
             log_error "💡 Steps to fix:"
             log_error "   1. Install K3s Phone Server APK on this device"
-            log_error "   2. Open the app and ensure it starts successfully" 
+            log_error "   2. Open the app and ensure it starts successfully"
             log_error "   3. Verify the app shows 'Server running on port 8005'"
             log_error "   4. Test manually: curl http://localhost:8005/status"
             exit 1
@@ -4880,7 +5248,7 @@ main() {
         set_hostname
         install_docker
         setup_ssh
-        
+
         # Skip Tailscale setup in agent mode - let install_k3s_agent handle it
         if [ -z "$K3S_TOKEN" ] || [ -z "$K3S_URL" ]; then
             # Server mode - set up Tailscale normally
@@ -4898,7 +5266,7 @@ main() {
     # Install K3s (server or agent based on parameters)
     if [ -n "$K3S_TOKEN" ] && [ -n "$K3S_URL" ]; then
         install_k3s_agent
-        
+
         # Setup port forwarding to K3s Phone Server for enhanced capabilities (agent mode only)
         log_step "Setting up K3s Phone Server integration for agent node..."
         if scan_for_k3s_server > /dev/null 2>&1; then
@@ -4927,5 +5295,79 @@ main() {
     echo ""
 }
 
-# Run main function with all arguments
-main "$@"
+# Check and offer completion installation
+check_completion_installation() {
+    local completion_installed=false
+
+    # Check if completions are already installed
+    if [[ "$SHELL" == */zsh* ]]; then
+        # Check zsh completion
+        if [[ -n "$fpath" ]] && printf '%s\n' "${fpath[@]}" | grep -q "_k3s_setup"; then
+            completion_installed=true
+        elif [[ -f "$HOME/.zshrc" ]] && grep -q "k3s-completion.sh" "$HOME/.zshrc"; then
+            completion_installed=true
+        fi
+    elif [[ "$SHELL" == */bash* ]]; then
+        # Check bash completion
+        if [[ -f "$HOME/.bashrc" ]] && grep -q "k3s-completion.sh" "$HOME/.bashrc"; then
+            completion_installed=true
+        elif [[ -f "$HOME/.bash_completion" ]] && grep -q "k3s-completion.sh" "$HOME/.bash_completion"; then
+            completion_installed=true
+        fi
+    fi
+
+    # If not installed, offer to install
+    if [[ "$completion_installed" == "false" ]] && [[ -f "./install-completion.sh" ]]; then
+        echo "📝 Tab completion not detected for your shell ($SHELL)"
+        echo "   Would you like to install tab completion? (y/N)"
+        echo "   This enables: ./setup.sh <TAB> for command completion"
+        echo ""
+        read -r response
+
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            echo "🔧 Installing tab completion..."
+            if ./install-completion.sh; then
+                echo "✅ Tab completion installed successfully!"
+                echo "   Restart your shell or run: source ~/.${SHELL##*/}rc"
+                echo ""
+            else
+                echo "❌ Failed to install tab completion"
+                echo ""
+            fi
+        else
+            echo "ℹ️  You can install tab completion later with: ./install-completion.sh"
+            echo ""
+        fi
+    fi
+}
+
+# Auto-install completion on first successful setup command
+auto_install_completion() {
+    local command="$1"
+
+    # Only offer completion after successful setup operations
+    case "$command" in
+        scan-for-server|setup-port|status|dashboard)
+            # Only check if this is an interactive session
+            if [[ -t 0 ]] && [[ -t 1 ]]; then
+                check_completion_installation
+            fi
+            ;;
+    esac
+}
+
+# Wrapper for command completion that checks for auto-install
+command_exit() {
+    local exit_code="$1"
+    local command_name="$2"
+
+    # Only offer completion installation on successful commands
+    if [[ "$exit_code" -eq 0 ]]; then
+        auto_install_completion "$command_name"
+    fi
+
+    exit "$exit_code"
+}
+
+# Script entry point
+parse_command "$@"

@@ -11,6 +11,7 @@ Kubernetes cluster deployment on Android devices with on-device AI inference.
 - **REST API server** on port 8005 with AI, camera, and location endpoints
 - **Location tracking** for automatic node labeling
 - **Sample applications** including geocoder and cluster dashboard
+- **Unified CLI interface** with command-specific help and discovery
 
 ## Android App Features
 
@@ -20,6 +21,17 @@ Kubernetes cluster deployment on Android devices with on-device AI inference.
 - **Camera Integration**: Front/rear camera with zoom and base64 encoding
 - **Device Sensors**: Compass orientation and device data
 - **Model Management**: Download, test, and manage AI models with performance metrics
+
+## CLI Management Features
+
+- **Unified Command Interface**: All operations through `./setup.sh` with consistent syntax
+- **Command-Specific Help**: Detailed help for each command with examples and options
+- **Tab Completion**: Project-specific autocompletion for commands, options, and arguments (bash/zsh)
+- **Parallel Network Discovery**: Fast server scanning with concurrent connections
+- **Endpoint Validation**: Automatic testing of server capabilities during discovery
+- **Interactive Guidance**: Clear error messages and troubleshooting suggestions
+- **Auto-completion Installation**: Automatically offers tab completion after successful operations
+- **Legacy Compatibility**: Backward compatibility with existing script workflows
 
 ## Quick Start
 
@@ -44,6 +56,44 @@ curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup
 curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup.sh | bash -s -- phone-02 -t YOUR_TAILSCALE_KEY -k K3S_TOKEN -u https://phone-01:6443
 ```
 
+## Tab Completion
+
+Install project-specific tab completion for enhanced productivity:
+
+```bash
+# Install completion for current shell (bash/zsh) - user level only
+./install-completion.sh
+
+# Or install manually:
+# For bash:
+source k3s-completion.sh
+
+# For zsh:
+source _k3s_setup
+
+# Uninstall if needed:
+./install-completion.sh uninstall
+```
+
+**Features:**
+- **Project-specific**: Only activates for K3s Phone Setup scripts, won't conflict with other projects
+- **Command completion**: `./setup.sh sca<TAB>` → `./setup.sh scan-for-server`
+- **Option completion**: `./setup.sh scan-for-server --<TAB>` → shows all options
+- **Smart suggestions**: Subnet patterns, hostnames, Kubernetes namespaces
+- **Context-aware**: Different options per command
+- **User-level**: No sudo required, installs only for current user
+- **Auto-installation**: Automatically offers to install after successful commands
+
+**Examples:**
+```bash
+./setup.sh <TAB><TAB>              # Show all commands
+./setup.sh scan-for-server <TAB>   # Show scan options and subnet suggestions  
+./setup.sh phone-<TAB>             # Complete to phone-01, phone-02, etc.
+./setup.sh status -n <TAB>         # Show available Kubernetes namespaces
+```
+
+**Note**: The completion system is designed to be project-specific. It only activates for setup.sh files containing K3s Phone Setup code, preventing conflicts with other projects that might have their own setup.sh files.
+
 ## API Endpoints (Port 8005)
 
 ### AI Services
@@ -57,6 +107,37 @@ curl -sfL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/setup
 - `GET /orientation` - Compass data (azimuth, pitch, roll)
 - `GET /capture` - Camera capture with zoom support
 - `GET /status` - Server status and capabilities
+- `GET /help` - Available endpoints and documentation
+
+## Server Discovery
+
+Server discovery with parallel scanning for network discovery:
+
+### Automatic Scanning
+```bash
+# Scan for K3s Phone Servers with parallel processing
+./setup.sh scan-for-server 192.168.179.0/24
+
+# Scan default subnet (192.168.179.0/24)
+./setup.sh scan-for-server
+
+# Scan with verbose endpoint testing
+./setup.sh scan-for-server 192.168.1.0/24 --verbose
+```
+
+### Discovery Features
+- **Parallel Scanning**: High-performance batch processing (20 concurrent scans)
+- **Early Termination**: Stops at first responsive server found
+- **Endpoint Testing**: Validates `/status`, `/location`, `/orientation`, `/help` endpoints
+- **Health Verification**: Confirms server responds with "K3s Phone Server" identification
+- **Network Latency**: Reports average ping times for discovered servers
+- **Capability Detection**: Lists available AI models and device features
+
+### Integration with Setup
+Server discovery is automatically used during cluster setup:
+- Worker nodes automatically scan for master servers
+- Health monitoring uses the same discovery logic
+- Port forwarding adapts to server changes automatically
 
 ## Sample Applications
 
@@ -75,17 +156,25 @@ cd sample_app && ./deploy.sh
 ## Cluster Management
 
 ```bash
+# Get help for any command
+./setup.sh --help                             # Show all available commands
+./setup.sh COMMAND --help                     # Get command-specific help
+
+# Server discovery and scanning
+./setup.sh scan-for-server 192.168.179.0/24  # Parallel subnet scan
+./setup.sh scan-for-server                    # Scan default subnet
+
 # Cluster status with locations and object detection
-./status.sh -v --object-detection -w
+./setup.sh status -v --object-detection -w
 
 # Interactive dashboard
-./dashboard.sh
+./setup.sh dashboard
 
 # Clean unreachable nodes  
-./clean.sh
+./setup.sh clean
 
 # Reset cluster
-./reset.sh --force
+./setup.sh reset --force
 ```
 
 ## Monitoring & Dashboard
@@ -131,13 +220,33 @@ k3s-on-phone/
 - **App Connection**: Ensure Android app is running on port 8005
 - **Location Updates**: Verify SSH keys between server and agents
 
+### Tab Completion Issues
+- **Test Synchronization**: Run `./test-completions.sh` to verify completion files are synchronized
+- **Reload Shell**: After installation, restart your shell or run `source ~/.bashrc` (bash) or `source ~/.zshrc` (zsh)
+- **Wrong Completions**: The system only activates for K3s Phone Setup scripts - other setup.sh files get default completion
+
 ## 📄 License
 
 Apache 2.0 License - Educational/experimental use only.
 
 ```bash
-# Show comprehensive help
+# Show comprehensive help and command overview
 ./setup.sh --help
+
+# Get command-specific help
+./setup.sh scan-for-server --help    # Detailed scanning options and examples
+./setup.sh my-phone-01 --help        # Node setup help and configuration
+./setup.sh clean --help              # Cleanup options and safety features
+./setup.sh status --help             # Status and monitoring options
+./setup.sh reset --help              # Reset options with safety warnings
+
+# Server discovery and network scanning
+./setup.sh scan-for-server                   # Scan default subnet (192.168.179.0/24)
+./setup.sh scan-for-server 192.168.1.0/24    # Scan specific subnet with parallel processing
+./setup.sh scan-for-server --verbose       # Verbose scanning with endpoint testing
+
+# Port forwarding setup
+./setup.sh setup-port                        # Setup port forwarding to discovered server
 
 # Cluster status and diagnostics
 ./setup.sh status                    # Basic cluster overview
@@ -670,6 +779,10 @@ journalctl -u tailscaled -f
 The unified command interface makes troubleshooting easier:
 
 ```bash
+# Discover available K3s Phone Servers
+./setup.sh scan-for-server            # Find servers on default subnet
+./setup.sh scan-for-server 192.168.1.0/24  # Scan specific network
+
 # Get comprehensive cluster overview
 ./setup.sh status -v
 
@@ -689,10 +802,12 @@ sudo systemctl status location-monitor
 ```
 
 **First Steps for Any Issue:**
-1. `./setup.sh status` - Get cluster overview
-2. `kubectl get nodes` - Check node status  
-3. `tailscale status` - Verify VPN connectivity
-4. `./setup.sh clean --dry-run` - Check for dead nodes
+0. `./setup.sh --help` - Get overview of all available commands
+1. `./setup.sh scan-for-server` - Discover available K3s Phone Servers
+2. `./setup.sh status` - Get cluster overview
+3. `kubectl get nodes` - Check node status  
+4. `tailscale status` - Verify VPN connectivity
+5. `./setup.sh clean --dry-run` - Check for dead nodes
 
 ## Troubleshooting
 
@@ -780,7 +895,8 @@ The simplified Android app now uses minimal dependencies:
 - K3s: Apache 2.0 License
 - Tailscale (with headscale support being planned)
 
-# Roadmap
+
+## Roadmap
 
 - [ ] test it with one phone as the basic k3s client
     - the computer being the host
