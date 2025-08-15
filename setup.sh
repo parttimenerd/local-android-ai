@@ -75,6 +75,7 @@ USAGE:
     ./setup.sh cleanup [OPTIONS]
     ./setup.sh test-geocoder [OPTIONS]
     ./setup.sh setup-port
+    ./setup.sh scan-for-server [SUBNET] [OPTIONS]
     ./setup.sh dashboard [start|stop|help]
 
 ARGUMENTS:
@@ -82,6 +83,8 @@ ARGUMENTS:
     cleanup                     Remove not-ready nodes from cluster
     test-geocoder               Test the geocoder service with sample German city coordinates
     setup-port                  Scan local subnet for K3s Phone Server and setup port forwarding
+    scan-for-server             Verbose scan of local subnet for K3s Phone Server (no setup)
+                                SUBNET can be specified as: 192.168.1 or 192.168.1.0/24
     dashboard                   Launch web dashboard showing node locations and camera feeds
 
 OPTIONS:
@@ -128,6 +131,12 @@ EXAMPLES:
     # Setup port forwarding to K3s Phone Server on local network
     ./setup.sh setup-port
 
+    # Verbose scan for K3s Phone Server (no setup/forwarding)
+    ./setup.sh scan-for-server -v
+
+    # Scan specific subnet for K3s Phone Server
+    ./setup.sh scan-for-server 192.168.1 -v
+
     # Launch web dashboard to monitor cluster
     ./setup.sh dashboard
 
@@ -172,6 +181,7 @@ ADDITIONAL COMMANDS:
     ./setup.sh reset         - Completely reset the entire cluster (destructive)
     ./setup.sh test-location - Test the simplified location monitoring system
     ./setup.sh setup-port    - Setup port forwarding to K3s Phone Server (for agent nodes)
+    ./setup.sh scan-for-server - Verbose scan for K3s Phone Server (no setup/forwarding)
     ./setup.sh dashboard     - Launch web dashboard (map + object detection)
     
     For registry management, use ./registry.sh
@@ -1377,6 +1387,215 @@ scan_for_k3s_server() {
         log_warn "    connected to the same network (${subnet}.1/24)"
         return 1
     fi
+}
+
+# Function to perform a verbose scan for K3s Phone Server (standalone command)
+scan_for_k3s_server_verbose() {
+    local custom_subnet="$1"
+    log_step "Verbose K3s Phone Server Discovery Scan"
+    echo ""
+    
+    local local_ip=""
+    local subnet=""
+    
+    # Determine target subnet
+    if [ -n "$custom_subnet" ]; then
+        log "🎯 Using custom subnet specification: $custom_subnet"
+        
+        # Parse different subnet formats
+        if [[ "$custom_subnet" =~ ^([0-9]{1,3}\.){2}[0-9]{1,3}$ ]]; then
+            # Format: 192.168.1 (missing last octet)
+            subnet="$custom_subnet"
+            log "   Interpreted as: ${subnet}.0/24"
+        elif [[ "$custom_subnet" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+            # Format: 192.168.1.0/24 (CIDR notation)
+            subnet=$(echo "$custom_subnet" | cut -d'/' -f1 | cut -d. -f1-3)
+            local cidr=$(echo "$custom_subnet" | cut -d'/' -f2)
+            log "   Interpreted as: ${subnet}.0/$cidr"
+            if [ "$cidr" != "24" ]; then
+                log_warn "   Note: Only /24 subnets are supported, treating as ${subnet}.0/24"
+            fi
+        elif [[ "$custom_subnet" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+            # Format: 192.168.1.0 (full IP, extract subnet)
+            subnet=$(echo "$custom_subnet" | cut -d. -f1-3)
+            log "   Interpreted as: ${subnet}.0/24"
+        else
+            log_error "Invalid subnet format: $custom_subnet"
+            log_error "Supported formats:"
+            log_error "  • 192.168.1 (subnet without last octet)"
+            log_error "  • 192.168.1.0 (subnet with zero last octet)"
+            log_error "  • 192.168.1.0/24 (CIDR notation)"
+            return 1
+        fi
+        
+        # Validate subnet format
+        if ! [[ "$subnet" =~ ^([0-9]{1,3}\.){2}[0-9]{1,3}$ ]]; then
+            log_error "Invalid subnet derived: $subnet"
+            return 1
+        fi
+        
+        # Get local IP for informational purposes only
+        local_ip=$(get_local_ip)
+        if [ -n "$local_ip" ]; then
+            log "   Local IP Address: $local_ip"
+        fi
+    else
+        # Auto-detect local subnet
+        local_ip=$(get_local_ip)
+        if [ -z "$local_ip" ]; then
+            log_error "Could not determine local IP address"
+            echo ""
+            log "Troubleshooting:"
+            log "  • Check network interface status: ip addr show"
+            log "  • Ensure network connectivity: ping 8.8.8.8"
+            log "  • Try manual IP detection: hostname -I"
+            log "  • Or specify subnet manually: ./setup.sh scan-for-server 192.168.1"
+            return 1
+        fi
+        
+        log "🌐 Auto-detected Network Information:"
+        log "   Local IP Address: $local_ip"
+        
+        # Extract subnet (assume /24)
+        subnet=$(echo "$local_ip" | cut -d. -f1-3)
+    fi
+    
+    log "   Target Subnet: ${subnet}.0/24"
+    log "   Scan Range: ${subnet}.1 - ${subnet}.254"
+    log "   Target Port: 8005 (K3s Phone Server)"
+    echo ""
+    
+    # Check if required tools are available
+    if ! command -v curl &> /dev/null; then
+        log_warn "curl not found, installing..."
+        sudo apt-get update -qq && sudo apt-get install -y curl
+    fi
+    
+    local found_servers=()
+    local scanned_count=0
+    local responsive_count=0
+    local k3s_servers_count=0
+    
+    log "🔍 Starting comprehensive subnet scan..."
+    echo ""
+    
+    # Scan the subnet with detailed progress
+    for i in {1..254}; do
+        local target_ip="${subnet}.${i}"
+        scanned_count=$((scanned_count + 1))
+        
+        # Skip our own IP if we know it and it's in the target subnet
+        if [ -n "$local_ip" ] && [ "$target_ip" = "$local_ip" ]; then
+            log_verbose "   Skipping local IP: $target_ip"
+            continue
+        fi
+        
+        # Show progress every 50 IPs or for verbose mode
+        if [ "$VERBOSE" = true ] || [ $((i % 50)) -eq 0 ]; then
+            log_verbose "   Checking: $target_ip:8005 ($i/254)"
+        fi
+        
+        # Test if port 8005 is open and returns K3s Phone Server response
+        local response=$(curl -s --connect-timeout 2 --max-time 5 "http://${target_ip}:8005/status" 2>/dev/null || echo "")
+        
+        if [ -n "$response" ]; then
+            responsive_count=$((responsive_count + 1))
+            
+            if [[ "$response" == *"K3s Phone Server"* ]]; then
+                k3s_servers_count=$((k3s_servers_count + 1))
+                found_servers+=("$target_ip")
+                log "✅ K3s Phone Server found at: $target_ip:8005"
+                log_verbose "   Server Response: $response"
+                
+                # Try to get additional server information
+                local info_response=$(curl -s --connect-timeout 3 --max-time 7 "http://${target_ip}:8005/info" 2>/dev/null || echo "")
+                if [ -n "$info_response" ]; then
+                    log_verbose "   Server Info: $info_response"
+                fi
+                
+                # Test individual endpoints
+                log_verbose "   Testing endpoints:"
+                local endpoints=("/location" "/capture" "/ai/text" "/ai/object_detection")
+                for endpoint in "${endpoints[@]}"; do
+                    local test_url="http://${target_ip}:8005${endpoint}"
+                    if curl -s --connect-timeout 2 --max-time 4 "$test_url" >/dev/null 2>&1; then
+                        log_verbose "     ✅ $endpoint - Available"
+                    else
+                        log_verbose "     ❌ $endpoint - Not responding"
+                    fi
+                done
+                echo ""
+            else
+                log_verbose "   📡 HTTP service detected at $target_ip:8005 (not K3s Phone Server)"
+                log_verbose "   Response preview: $(echo "$response" | head -c 100)..."
+            fi
+        fi
+    done
+    
+    echo ""
+    log "📊 Scan Results Summary:"
+    log "   Total IPs scanned: $scanned_count"
+    log "   HTTP responses: $responsive_count"
+    log "   K3s Phone Servers found: $k3s_servers_count"
+    echo ""
+    
+    if [ ${#found_servers[@]} -gt 0 ]; then
+        log "🎯 Discovered K3s Phone Servers:"
+        for server_ip in "${found_servers[@]}"; do
+            log "   📱 Server: http://$server_ip:8005"
+            
+            # Get detailed server capabilities
+            log "   Capabilities:"
+            local capabilities=$(curl -s --connect-timeout 3 --max-time 7 "http://$server_ip:8005/capabilities" 2>/dev/null || echo "")
+            if [ -n "$capabilities" ]; then
+                log "     $capabilities"
+            else
+                log "     • Location services (/location)"
+                log "     • Camera capture (/capture)"  
+                log "     • AI text generation (/ai/text)"
+                log "     • Object detection (/ai/object_detection)"
+            fi
+            
+            # Test network latency
+            local ping_result=$(ping -c 3 -W 2000 "$server_ip" 2>/dev/null | grep "avg" | cut -d'/' -f5 2>/dev/null || echo "unknown")
+            if [ "$ping_result" != "unknown" ]; then
+                log "     • Network latency: ${ping_result}ms average"
+            fi
+            echo ""
+        done
+        
+        if [ ${#found_servers[@]} -eq 1 ]; then
+            local primary_server="${found_servers[0]}"
+            log "💡 Configuration Recommendations:"
+            log "   To use this server with agent nodes:"
+            log "   1. Run: ./setup.sh setup-port"
+            log "   2. Or manually setup port forwarding:"
+            log "      socat TCP-LISTEN:8005,fork TCP:$primary_server:8005 &"
+            echo ""
+            log "   For agent node setup:"
+            log "   ./setup.sh hostname -t YOUR_TAILSCALE_KEY -k TOKEN -u https://SERVER_IP:6443"
+        else
+            log "💡 Multiple servers found - choose the appropriate one for your setup"
+        fi
+    else
+        log "❌ No K3s Phone Servers found on subnet ${subnet}.0/24"
+        echo ""
+        log "🔧 Troubleshooting steps:"
+        log "   1. Ensure K3s Phone Server app is running on Android device"
+        log "   2. Verify Android device is on same network (${subnet}.0/24)"
+        log "   3. Check Android device firewall/security settings"
+        log "   4. Test manually: curl http://DEVICE_IP:8005/status"
+        log "   5. Try different network ranges if using VPN/multiple networks"
+        echo ""
+        log "📱 Android App Requirements:"
+        log "   • K3s Phone Server app must be started and running"
+        log "   • Device should show 'Server running on port 8005'"
+        log "   • Ensure device is not in sleep/doze mode"
+        echo ""
+        return 1
+    fi
+    
+    return 0
 }
 
 # Function to setup port forwarding using socat
@@ -4355,6 +4574,52 @@ parse_arguments() {
     if [ "$1" = "setup-port" ]; then
         echo "🔌 Setting up K3s Phone Server port forwarding..."
         setup_port_forwarding
+        exit $?
+    fi
+
+    if [ "$1" = "scan-for-server" ]; then
+        echo "🔍 Scanning for K3s Phone Server..."
+        # Enable verbose mode by default for this command
+        VERBOSE=true
+        shift
+        
+        # Check if first argument is a subnet specification
+        local custom_subnet=""
+        if [[ $# -gt 0 && "$1" != -* ]]; then
+            custom_subnet="$1"
+            shift
+        fi
+        
+        # Parse scan-for-server-specific options
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                -v|--verbose)
+                    VERBOSE=true
+                    shift
+                    ;;
+                -q|--quiet)
+                    VERBOSE=false
+                    shift
+                    ;;
+                -h|--help)
+                    show_help
+                    exit $EXIT_SUCCESS
+                    ;;
+                --version)
+                    show_version
+                    exit $EXIT_SUCCESS
+                    ;;
+                *)
+                    log_error "Unknown scan-for-server option: $1"
+                    echo ""
+                    show_help
+                    exit $EXIT_INVALID_ARGS
+                    ;;
+            esac
+        done
+        
+        # Run the verbose scan with optional custom subnet
+        scan_for_k3s_server_verbose "$custom_subnet"
         exit $?
     fi
 
