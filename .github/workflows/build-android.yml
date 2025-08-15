@@ -9,6 +9,11 @@ on:
     paths: [ 'android/**' ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
