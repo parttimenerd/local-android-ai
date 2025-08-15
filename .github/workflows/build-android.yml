@@ -3,10 +3,16 @@ name: Build Android App
 on:
   push:
     branches: [ main ]
-    paths: [ 'android/**' ]
+    paths: 
+      - 'android/**'
+      - '.github/workflows/build-android.yml'
+      - '.github/workflows/*.yml'
   pull_request:
     branches: [ main ]
-    paths: [ 'android/**' ]
+    paths: 
+      - 'android/**'
+      - '.github/workflows/build-android.yml'
+      - '.github/workflows/*.yml'
   workflow_dispatch:
 
 permissions:
@@ -76,6 +82,15 @@ jobs:
         echo "Release APK:"
         file android/app/build/outputs/apk/release/app-release-unsigned.apk
         
+    - name: Rename APK files with descriptive names
+      run: |
+        cd android/app/build/outputs/apk
+        cp debug/app-debug.apk debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        cp release/app-release-unsigned.apk release/K3s-Phone-Release-${{ github.run_number }}.apk
+        echo "Renamed APK files:"
+        ls -la debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        ls -la release/K3s-Phone-Release-${{ github.run_number }}.apk
+        
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -89,15 +104,6 @@ jobs:
         name: K3s-Phone-Release-${{ github.run_number }}
         path: android/app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
         retention-days: 30
-        
-    - name: Rename APK files with descriptive names
-      run: |
-        cd android/app/build/outputs/apk
-        cp debug/app-debug.apk debug/K3s-Phone-Debug-${{ github.run_number }}.apk
-        cp release/app-release-unsigned.apk release/K3s-Phone-Release-${{ github.run_number }}.apk
-        echo "Renamed APK files:"
-        ls -la debug/K3s-Phone-Debug-${{ github.run_number }}.apk
-        ls -la release/K3s-Phone-Release-${{ github.run_number }}.apk
         
     - name: Get current date
       id: date
