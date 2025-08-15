@@ -76,19 +76,48 @@ jobs:
         echo "Release APK:"
         file android/app/build/outputs/apk/release/app-release-unsigned.apk
         
+    - name: Upload Debug APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: K3s-Phone-Debug-${{ github.run_number }}
+        path: android/app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        retention-days: 30
+        
+    - name: Upload Release APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: K3s-Phone-Release-${{ github.run_number }}
+        path: android/app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
+        retention-days: 30
+        
+    - name: Rename APK files with descriptive names
+      run: |
+        cd android/app/build/outputs/apk
+        cp debug/app-debug.apk debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        cp release/app-release-unsigned.apk release/K3s-Phone-Release-${{ github.run_number }}.apk
+        echo "Renamed APK files:"
+        ls -la debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        ls -la release/K3s-Phone-Release-${{ github.run_number }}.apk
+        
+    - name: Get current date
+      id: date
+      run: echo "date=$(date +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+        
     - name: Create Snapshot Release
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: snapshot-${{ github.run_number }}-${{ github.sha }}
+        tag_name: android-snapshot-${{ github.run_number }}-${{ github.sha }}
         name: Android Snapshot Build ${{ github.run_number }}
         body: |
           ## 📱 Android APK Snapshot Build
           
           **Build Info:**
           - Build Number: `${{ github.run_number }}`
-          - Commit: `${{ github.sha }}`
+          - Commit: [`${{ github.sha }}`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})
           - Branch: `${{ github.ref_name }}`
           - Triggered by: ${{ github.event_name }}
+          - Build Time: ${{ steps.date.outputs.date }}
           
           **Direct APK Downloads:**
           - 🐛 **Debug APK**: Development build with debugging enabled
@@ -96,10 +125,10 @@ jobs:
           
           ## Features
           - REST API server on port 8005
-          - GPS location and orientation sensors  
+          - GPS location and orientation sensors (background support on Android 10+)
           - MediaPipe LLM inference (Gemma, DeepSeek-R1, Llama 3.2, TinyLlama)
           - Object detection with EfficientDet Lite 2
-          - Camera capture with front/rear support
+          - Camera capture with front/rear support (app must be visible per Android privacy requirements)
           - Model management with download and testing
           - Performance metrics (tokens/second)
           - Streaming text generation with cancellation
@@ -123,10 +152,49 @@ jobs:
           ---
           *This is an automated snapshot build. For stable releases, check the main releases page.*
         files: |
-          android/app/build/outputs/apk/debug/app-debug.apk
-          android/app/build/outputs/apk/release/app-release-unsigned.apk
+          android/app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+          android/app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
         draft: false
         prerelease: true
         fail_on_unmatched_files: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Cleanup old snapshot releases
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        # Keep only the latest 5 snapshot releases
+        gh release list --repo ${{ github.repository }} --json tagName,createdAt --jq '
+          [.[] | select(.tagName | startswith("android-snapshot-"))] |
+          sort_by(.createdAt) |
+          reverse |
+          .[5:] |
+          .[].tagName
+        ' | while read -r tag; do
+          if [ -n "$tag" ]; then
+            echo "Deleting old snapshot release: $tag"
+            gh release delete "$tag" --repo ${{ github.repository }} --yes || true
+          fi
+        done
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Build Summary
+      run: |
+        echo "## 📱 Android Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 APK Artifacts Available:" >> $GITHUB_STEP_SUMMARY
+        echo "- **Debug APK**: K3s-Phone-Debug-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release APK**: K3s-Phone-Release-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📥 Download Options:" >> $GITHUB_STEP_SUMMARY
+        echo "1. **GitHub Actions Artifacts**: Download from the 'Artifacts' section above" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ github.ref }}" = "refs/heads/main" ] && [ "${{ github.event_name }}" = "push" ]; then
+          echo "2. **Snapshot Release**: Available at [Releases](https://github.com/${{ github.repository }}/releases)" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Features:" >> $GITHUB_STEP_SUMMARY
+        echo "- REST API server on port 8005" >> $GITHUB_STEP_SUMMARY
+        echo "- GPS location (background support on Android 10+)" >> $GITHUB_STEP_SUMMARY
+        echo "- Camera capture (app visibility required)" >> $GITHUB_STEP_SUMMARY
+        echo "- MediaPipe LLM inference and object detection" >> $GITHUB_STEP_SUMMARY
