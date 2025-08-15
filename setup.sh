@@ -2187,6 +2187,39 @@ scan_for_k3s_server_verbose() {
     fi
 }
 
+# Function to setup port forwarding to a specific IP (for immediate use)
+setup_port_forwarding_to_network_ip() {
+    local target_ip="$1"
+    
+    if [ -z "$target_ip" ]; then
+        log_error "No target IP provided for port forwarding"
+        return 1
+    fi
+    
+    # Check if socat is available
+    if ! command -v socat &> /dev/null; then
+        log "Installing socat for port forwarding..."
+        sudo apt-get update -qq && sudo apt-get install -y socat >/dev/null 2>&1
+    fi
+    
+    # Kill any existing socat processes on port 8005
+    sudo pkill -f "socat.*8005" 2>/dev/null || true
+    
+    # Start port forwarding in background
+    log "Starting port forwarding: localhost:8005 → ${target_ip}:8005"
+    sudo socat TCP-LISTEN:8005,fork,reuseaddr TCP:${target_ip}:8005 &
+    
+    # Wait a moment and test
+    sleep 2
+    if curl -s --connect-timeout 3 --max-time 5 "http://localhost:8005/status" >/dev/null 2>&1; then
+        log "✅ Port forwarding active and working"
+        return 0
+    else
+        log_error "❌ Port forwarding setup failed"
+        return 1
+    fi
+}
+
 # Function to setup port forwarding using socat
 setup_port_forwarding() {
     log_step "Setting up K3s Phone Server port forwarding..."
@@ -5219,17 +5252,34 @@ main_setup() {
 
         # Check if Android app is running before proceeding
         log_step "Checking if K3s Phone Server Android app is running..."
-        if ! curl -s --connect-timeout 5 --max-time 10 "http://localhost:8005/status" >/dev/null 2>&1; then
+        
+        # For Android setups, the app binds to network interface, not localhost
+        # Go straight to network discovery instead of trying localhost first
+        log "🔍 Discovering K3s Phone Server on network..."
+        discovered_ip=$(scan_k3s_phone_server_parallel "" "true" 2>/dev/null | head -1)
+        
+        if [ -n "$discovered_ip" ] && curl -s --connect-timeout 3 --max-time 5 "http://${discovered_ip}:8005/status" >/dev/null 2>&1; then
+            log "✅ Found K3s Phone Server on network IP: $discovered_ip"
+            echo "$discovered_ip" > /tmp/k3s_phone_server_ip
+            
+            # Set up port forwarding from localhost to network IP
+            log_step "Setting up port forwarding: localhost:8005 → ${discovered_ip}:8005"
+            if setup_port_forwarding_to_network_ip "$discovered_ip"; then
+                log "✅ K3s Phone Server accessible via localhost:8005"
+            else
+                log_error "❌ Failed to setup port forwarding"
+                exit 1
+            fi
+        else
             log_error "❌ K3s Phone Server Android app is not responding on port 8005"
             log_error "📱 Please ensure the Android app is installed and RUNNING before setup"
             log_error "💡 Steps to fix:"
             log_error "   1. Install K3s Phone Server APK on this device"
             log_error "   2. Open the app and ensure it starts successfully"
             log_error "   3. Verify the app shows 'Server running on port 8005'"
-            log_error "   4. Test manually: curl http://localhost:8005/status"
+            log_error "   4. Test network discovery: ./setup.sh scan-for-server"
+            log_error "   5. Ensure device is on same network as setup machine"
             exit 1
-        else
-            log "✅ K3s Phone Server Android app is running and responding"
         fi
     else
         log "K3s Mode: Server (Master Node)"
