@@ -7,6 +7,7 @@ import com.k3s.phoneserver.lifecycle.SimpleLifecycleOwner
 import com.k3s.phoneserver.logging.RequestLogger
 import com.k3s.phoneserver.manager.AppPermissionManager
 import com.k3s.phoneserver.services.CameraService
+import com.k3s.phoneserver.services.DisplayService
 import com.k3s.phoneserver.services.SharedCameraService
 import com.k3s.phoneserver.services.LocationService
 import com.k3s.phoneserver.services.OrientationService
@@ -39,6 +40,7 @@ class WebServer(private val context: Context) {
     private val orientationService = OrientationService(context)
     private val cameraService = CameraService(context)
     private val sharedCameraService = SharedCameraService(context)
+    private val displayService = DisplayService(context)
     private val permissionManager = AppPermissionManager.getInstance()
     private val aiService = AIService(context)
     private val objectDetectionService = com.k3s.phoneserver.ai.ObjectDetectionService(context)
@@ -227,13 +229,20 @@ class WebServer(private val context: Context) {
                             "endpoints" to listOf("/ai/text", "/ai/models", "/ai/models/status"),
                             "methods" to listOf("GET", "POST"),
                             "description" to "LLM text generation with MediaPipe inference"
+                        ),
+                        "display" to mapOf(
+                            "available" to true,
+                            "endpoints" to listOf("/display"),
+                            "methods" to listOf("POST"),
+                            "description" to "Full-screen text display with custom colors and duration"
                         )
                     ),
                     "features" to mapOf(
                         "location" to hasBasicLocation,
                         "orientation" to true,
                         "camera" to hasCamera,
-                        "ai" to aiService.getStatus().isEnabled
+                        "ai" to aiService.getStatus().isEnabled,
+                        "display" to true
                     ),
                     "port" to 8005,
                     "timestamp" to System.currentTimeMillis()
@@ -1015,6 +1024,72 @@ class WebServer(private val context: Context) {
                 }
             }
             
+            // Display endpoint for full-screen text messages
+            post("/display") {
+                try {
+                    val request = call.receive<Map<String, Any>>()
+                    
+                    val text = request["text"]?.toString() ?: ""
+                    if (text.isBlank()) {
+                        call.respond(
+                            HttpStatusCode.BadRequest,
+                            mapOf(
+                                "success" to false,
+                                "error" to "Text parameter is required and cannot be empty",
+                                "code" to "MISSING_TEXT"
+                            )
+                        )
+                        return@post
+                    }
+                    
+                    val backgroundColor = request["backgroundColor"]?.toString() ?: "#000000"
+                    val textColor = request["textColor"]?.toString() ?: "#FFFFFF"
+                    val duration = (request["duration"] as? Number)?.toLong() ?: 3000L
+                    
+                    val displayRequest = DisplayService.DisplayRequest(
+                        text = text,
+                        backgroundColor = backgroundColor,
+                        textColor = textColor,
+                        duration = duration
+                    )
+                    
+                    val result = displayService.showDisplay(displayRequest)
+                    
+                    if (result.success) {
+                        call.respond(mapOf(
+                            "success" to true,
+                            "message" to result.message,
+                            "displayId" to result.displayId,
+                            "parameters" to mapOf(
+                                "text" to text,
+                                "backgroundColor" to backgroundColor,
+                                "textColor" to textColor,
+                                "duration" to duration
+                            )
+                        ))
+                    } else {
+                        call.respond(
+                            HttpStatusCode.BadRequest,
+                            mapOf(
+                                "success" to false,
+                                "error" to result.message,
+                                "code" to "DISPLAY_FAILED"
+                            )
+                        )
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error handling display request")
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        mapOf(
+                            "success" to false,
+                            "error" to "Failed to show display: ${e.message}",
+                            "code" to "INTERNAL_ERROR"
+                        )
+                    )
+                }
+            }
+            
             // API Documentation endpoint
             // COPILOT INSTRUCTIONS: When adding new endpoints, always update this /help endpoint with:
             // 1. Endpoint path and HTTP method
@@ -1423,6 +1498,47 @@ class WebServer(private val context: Context) {
                                 "message" to "No model is currently being loaded"
                             ),
                             "sample_request" to "GET /ai/models/loading-status"
+                        ),
+                        
+                        // Display Services
+                        "POST /display" to mapOf(
+                            "description" to "Display full-screen text message with custom colors and duration",
+                            "permissions" to "None required",
+                            "request_body" to mapOf(
+                                "text" to "Required: Text message to display",
+                                "backgroundColor" to "Optional: Background color (default: '#000000')",
+                                "textColor" to "Optional: Text color (default: '#FFFFFF')",
+                                "duration" to "Optional: Display duration in milliseconds (default: 3000, max: 30000)"
+                            ),
+                            "color_formats" to mapOf(
+                                "hex" to "#FF0000, #00FF00, #0000FF",
+                                "named" to "red, green, blue, white, black, yellow, cyan, magenta, gray, transparent"
+                            ),
+                            "response_success" to mapOf(
+                                "success" to true,
+                                "message" to "Display started successfully",
+                                "displayId" to "display_1692720000000",
+                                "parameters" to mapOf(
+                                    "text" to "Hello World!",
+                                    "backgroundColor" to "#000000",
+                                    "textColor" to "#FFFFFF",
+                                    "duration" to 3000
+                                )
+                            ),
+                            "response_error" to mapOf(
+                                "success" to false,
+                                "error" to "Text parameter is required and cannot be empty",
+                                "code" to "MISSING_TEXT"
+                            ),
+                            "features" to listOf(
+                                "Full-screen immersive display",
+                                "Customizable background and text colors",
+                                "Auto-dismiss after specified duration",
+                                "Tap-to-dismiss functionality",
+                                "Back button to dismiss",
+                                "Screen wake and keep-on functionality"
+                            ),
+                            "sample_request" to "POST /display\n{\n  \"text\": \"Server Status: Online\",\n  \"backgroundColor\": \"#008000\",\n  \"textColor\": \"#FFFFFF\",\n  \"duration\": 5000\n}"
                         )
                     ),
                     
@@ -1461,7 +1577,7 @@ class WebServer(private val context: Context) {
                     "available_endpoints" to listOf(
                         "/status", "/health", "/capabilities", "/help",
                         "/location", "/orientation", 
-                        "/capture",
+                        "/capture", "/display",
                         "/ai/text", "/ai/object_detection", "/ai/models", "/ai/models/download", 
                         "/ai/models/status", "/ai/models/{modelName}/status",
                         "/ai/models/cleanup", "/ai/models/{modelName}"

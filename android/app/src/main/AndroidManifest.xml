@@ -90,6 +90,14 @@
             android:parentActivityName=".MainActivity"
             android:label="AI Text Generation" />
         
+        <activity
+            android:name=".services.DisplayActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleTask" />
+        
         <service
             android:name=".server.WebServerService"
             android:enabled="true"
