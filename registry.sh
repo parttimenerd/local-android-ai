@@ -148,18 +148,27 @@ check_dependencies() {
 
 # Function to get master node IP
 get_master_ip() {
-    # Try multiple methods to get the master IP
+    # Try multiple methods to get the master IP, preferring Tailscale IP
     local master_ip
     
-    # Method 1: Use hostname -I
+    # Method 1: Try Tailscale IP first (best for cross-node connectivity)
+    if command -v tailscale &>/dev/null; then
+        master_ip=$(tailscale ip -4 2>/dev/null | head -1 || echo "")
+        if [ -n "$master_ip" ] && [ "$master_ip" != "" ]; then
+            echo "$master_ip"
+            return
+        fi
+    fi
+    
+    # Method 2: Use hostname -I
     master_ip=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "")
     
-    # Method 2: Use ip route
+    # Method 3: Use ip route
     if [ -z "$master_ip" ]; then
         master_ip=$(ip route get 8.8.8.8 | awk '{print $7; exit}' 2>/dev/null || echo "")
     fi
     
-    # Method 3: Use kubectl to get node IP
+    # Method 4: Use kubectl to get node IP
     if [ -z "$master_ip" ] && command -v k3s &>/dev/null; then
         local node_name
         node_name=$(hostname)

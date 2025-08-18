@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Simple Node Location Updater
-# Queries geolocation from Android apps via SSH and updates node labels
+# Queries geolocation from Android apps via direct HTTP API and updates node labels
 #
 # Usage: ./update-node-locations.sh [--interval SECONDS] [--once]
 
@@ -22,12 +22,12 @@ NC='\033[0m' # No Color
 
 # Logging functions
 log() {
-    echo -e "${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "${GREEN}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" >&2
 }
 
 log_verbose() {
     if [ "$VERBOSE" = true ]; then
-        echo -e "${YELLOW}[VERBOSE]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+        echo -e "${YELLOW}[VERBOSE]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" >&2
     fi
 }
 
@@ -36,14 +36,14 @@ log_error() {
 }
 
 log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"
+    echo -e "${YELLOW}[WARN]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1" >&2
 }
 
 show_help() {
     cat << EOF
 Node Location Updater v${SCRIPT_VERSION}
 
-Queries geolocation from Android phone nodes via SSH and updates Kubernetes node labels.
+Queries geolocation from Android phone nodes via direct HTTP API and updates Kubernetes node labels.
 
 USAGE:
     $0 [OPTIONS]
@@ -63,7 +63,7 @@ EXAMPLES:
 
 REQUIREMENTS:
     - kubectl must be available and configured
-    - SSH access to phone nodes (passwordless via keys)
+    - Direct network access to phone nodes on port $DEFAULT_GEO_PORT
     - Android geolocation app running on port $DEFAULT_GEO_PORT
 
 EOF
@@ -119,38 +119,43 @@ check_kubectl() {
 
 # Get list of phone nodes
 get_phone_nodes() {
+    # Get all nodes labeled with device-type=phone
     local nodes
-    # Get nodes with device-type=phone label, fall back to all nodes if none found
     nodes=$(kubectl get nodes -l device-type=phone -o jsonpath='{.items[*].metadata.name}' 2>/dev/null || true)
     
     if [ -z "$nodes" ]; then
-        log_verbose "No nodes with device-type=phone found, checking all nodes..."
-        # Fall back to all nodes and filter for likely phone hostnames
-        nodes=$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -E '(phone|android|mobile)' || true)
-    fi
-    
-    if [ -z "$nodes" ]; then
-        log_warn "No phone nodes found. Make sure nodes are labeled with device-type=phone"
+        log_warn "No phone nodes found. Make sure nodes are labeled with device-type=phone during installation"
+        log_verbose "Phone nodes should have device-type=phone label applied automatically during K3s agent setup"
         return 1
     fi
     
     echo "$nodes"
 }
 
-# Query geolocation from a node via SSH
+# Query geolocation from a node via direct HTTP API access
 query_node_location() {
     local node="$1"
     local port="$2"
     
     log_verbose "Querying location from node: $node (port: $port)"
     
-    # Try to get location data via SSH and curl from the Android app
+    # Get the node's IP address from Kubernetes
+    local node_ip
+    node_ip=$(kubectl get node "$node" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || true)
+    
+    if [ -z "$node_ip" ]; then
+        log_verbose "Could not get IP address for node $node"
+        return 1
+    fi
+    
+    log_verbose "Using node IP: $node_ip"
+    
+    # Try to get location data directly from the Android app via HTTP
     local location_data
-    location_data=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" \
-        "curl -s --connect-timeout 3 --max-time 5 http://localhost:$port/location 2>/dev/null" 2>/dev/null || true)
+    location_data=$(curl -s --connect-timeout 3 --max-time 5 "http://$node_ip:$port/location" 2>/dev/null || true)
     
     if [ -z "$location_data" ]; then
-        log_verbose "No location data from $node (app may not be running on port $port)"
+        log_verbose "No location data from $node_ip:$port (app may not be running or not accessible)"
         return 1
     fi
     
@@ -162,7 +167,7 @@ query_node_location() {
     city=$(echo "$location_data" | grep -o '"city":"[^"]*"' | cut -d':' -f2 | tr -d '"' || true)
     
     if [ -z "$latitude" ] || [ -z "$longitude" ]; then
-        log_warn "Invalid location data from $node: $location_data"
+        log_warn "Invalid location data from $node_ip:$port: $location_data"
         return 1
     fi
     

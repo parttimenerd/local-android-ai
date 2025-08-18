@@ -33,11 +33,11 @@ spec:
                 operator: In
                 values:
                 - phone
-          # Fallback: avoid master nodes if phone nodes not available
+          # Fallback: avoid control-plane nodes if phone nodes not available
           - weight: 50
             preference:
               matchExpressions:
-              - key: node-role.kubernetes.io/master
+              - key: node-role.kubernetes.io/control-plane
                 operator: DoesNotExist
         # Spread pods across different nodes
         podAntiAffinity:
@@ -53,10 +53,10 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
       - name: server-info-server
-        image: localhost:5000/server-info-server:latest
+        image: 100.90.0.4:5000/server-info-server:latest
         imagePullPolicy: Always  # Always pull from registry
         ports:
-        - containerPort: 8080
+        - containerPort: 8081
           name: http
         env:
         - name: HOSTNAME
@@ -81,15 +81,13 @@ spec:
               key: phone.server.enabled
         resources:
           requests:
-            memory: "71Mi"
             cpu: "50m"
           limits:
-            memory: "106Mi"
             cpu: "200m"
         livenessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8081
           initialDelaySeconds: 10
           periodSeconds: 30
           timeoutSeconds: 5
@@ -97,7 +95,7 @@ spec:
         readinessProbe:
           httpGet:
             path: /health
-            port: 8080
+            port: 8081
           initialDelaySeconds: 5
           periodSeconds: 10
           timeoutSeconds: 3

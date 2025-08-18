@@ -91,6 +91,10 @@ COMMANDS:
     # Legacy Commands (deprecated)
     cleanup [OPTIONS]          Use 'clean' instead
 
+    # Troubleshooting
+    troubleshoot-ssh           Diagnose SSH connectivity issues
+    validate-registry HOST     Validate Docker and K3s registry configuration
+
 GLOBAL OPTIONS:
     -h, --help                  Show help (use with command for specific help)
     --version                   Show version information
@@ -415,6 +419,67 @@ TESTING:
 EOF
 }
 
+show_troubleshoot_ssh_help() {
+    cat << 'EOF'
+K3s SSH Troubleshooting Tool v1.0.0
+
+Diagnose and troubleshoot SSH connectivity issues on nodes.
+
+USAGE:
+    ./setup.sh troubleshoot-ssh [OPTIONS]
+
+OPTIONS:
+    -h, --help                  Show this help
+
+DESCRIPTION:
+    Comprehensive SSH diagnostics including service status, configuration
+    validation, network connectivity, firewall rules, and connection examples.
+
+EXAMPLES:
+    ./setup.sh troubleshoot-ssh    # Full SSH diagnostics
+
+DIAGNOSTICS:
+    • SSH service status and configuration
+    • Network interfaces and IP addresses  
+    • Firewall rules and port availability
+    • Connection examples and troubleshooting steps
+
+EOF
+}
+
+show_validate_registry_help() {
+    cat << 'EOF'
+K3s Registry Validation Tool v1.0.0
+
+Validate Docker and K3s containerd registry configuration for agent nodes.
+
+USAGE:
+    ./setup.sh validate-registry HOST [OPTIONS]
+
+ARGUMENTS:
+    HOST                        Registry hostname or IP address
+
+OPTIONS:
+    -h, --help                  Show this help
+    -v, --verbose               Enable verbose output
+
+DESCRIPTION:
+    Validates both Docker daemon.json and K3s registries.yaml configuration
+    for insecure registry access. Tests connectivity and configuration files.
+
+EXAMPLES:
+    ./setup.sh validate-registry 192.168.1.100    # Validate registry config
+    ./setup.sh validate-registry phone-server -v  # Verbose validation
+
+VALIDATION CHECKS:
+    • Docker daemon.json insecure-registries configuration
+    • K3s registries.yaml containerd configuration  
+    • Registry connectivity and reachability
+    • Configuration file syntax and content
+
+EOF
+}
+
 # Parse command line arguments and determine execution mode
 parse_command() {
     if [ $# -eq 0 ]; then
@@ -455,6 +520,14 @@ parse_command() {
                 ;;
             test-geocoder)
                 show_test_geocoder_help
+                exit 0
+                ;;
+            troubleshoot-ssh)
+                show_troubleshoot_ssh_help
+                exit 0
+                ;;
+            validate-registry)
+                show_validate_registry_help
                 exit 0
                 ;;
             --local)
@@ -515,6 +588,14 @@ parse_command() {
         test-geocoder)
             shift
             handle_test_geocoder_command "$@"
+            ;;
+        troubleshoot-ssh)
+            shift
+            handle_troubleshoot_ssh_command "$@"
+            ;;
+        validate-registry)
+            shift
+            handle_validate_registry_command "$@"
             ;;
         cleanup)
             # Legacy command - redirect to clean
@@ -650,6 +731,74 @@ handle_test_location_command() {
 
 handle_test_geocoder_command() {
     handle_test_geocoder_mode
+    exit $?
+}
+
+handle_troubleshoot_ssh_command() {
+    # Parse options for troubleshoot-ssh command
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_troubleshoot_ssh_help
+                exit 0
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option for troubleshoot-ssh: $1"
+                show_troubleshoot_ssh_help
+                exit $EXIT_INVALID_ARGS
+                ;;
+        esac
+    done
+    
+    # Run SSH troubleshooting
+    troubleshoot_ssh
+    exit $?
+}
+
+handle_validate_registry_command() {
+    local registry_host=""
+    
+    # Parse options for validate-registry command
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -h|--help)
+                show_validate_registry_help
+                exit 0
+                ;;
+            -v|--verbose)
+                VERBOSE=true
+                shift
+                ;;
+            -*)
+                log_error "Unknown option for validate-registry: $1"
+                show_validate_registry_help
+                exit $EXIT_INVALID_ARGS
+                ;;
+            *)
+                if [ -z "$registry_host" ]; then
+                    registry_host="$1"
+                else
+                    log_error "Too many arguments for validate-registry"
+                    show_validate_registry_help
+                    exit $EXIT_INVALID_ARGS
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    if [ -z "$registry_host" ]; then
+        log_error "Registry host is required"
+        show_validate_registry_help
+        exit $EXIT_INVALID_ARGS
+    fi
+    
+    # Run registry validation
+    validate_registry_setup "$registry_host"
     exit $?
 }
 
@@ -1119,6 +1268,133 @@ EOF
     return 0
 }
 
+# Function to setup K3s containerd registry configuration
+setup_k3s_registry_config() {
+    log_step "Configuring K3s containerd for insecure registry..."
+
+    local master_ip="$1"
+    local registry_port="${2:-5000}"
+    local registry_address="${master_ip}:${registry_port}"
+
+    # Validate input parameters
+    if [ -z "$master_ip" ]; then
+        log_error "Master IP address is required for K3s registry configuration"
+        return 1
+    fi
+
+    log_verbose "Configuring K3s containerd for registry: $registry_address"
+
+    # Create K3s config directory if it doesn't exist
+    sudo mkdir -p /etc/rancher/k3s
+
+    # Create registries.yaml for K3s containerd configuration
+    local registries_config="/etc/rancher/k3s/registries.yaml"
+    local backup_config="/etc/rancher/k3s/registries.yaml.backup"
+
+    # Backup existing configuration if present
+    if [ -f "$registries_config" ]; then
+        log_verbose "Backing up existing K3s registries configuration"
+        sudo cp "$registries_config" "$backup_config"
+    fi
+
+    # Create the registries.yaml configuration
+    log_verbose "Creating K3s registries.yaml configuration"
+    sudo tee "$registries_config" >/dev/null << EOF
+mirrors:
+  "$registry_address":
+    endpoint:
+      - "http://$registry_address"
+configs:
+  "$registry_address":
+    tls:
+      insecure_skip_verify: true
+    auth:
+      username: ""
+      password: ""
+EOF
+
+    # Verify the configuration was written correctly
+    if [ -f "$registries_config" ]; then
+        log_verbose "✅ K3s registries.yaml created successfully"
+        if [ "$VERBOSE" = true ]; then
+            log_verbose "Contents of $registries_config:"
+            log_verbose "$(cat "$registries_config" 2>/dev/null | sed 's/^/  /')"
+        fi
+    else
+        log_error "Failed to create K3s registries.yaml configuration"
+        return 1
+    fi
+
+    # The configuration will be picked up by K3s automatically
+    # No need to restart K3s as it reads this file on startup and for new operations
+    log "✅ K3s containerd registry configuration completed"
+    log_verbose "K3s will use this configuration for container image pulls from $registry_address"
+    
+    return 0
+}
+
+# Function to validate registry configuration
+validate_registry_setup() {
+    log_step "Validating registry configuration..."
+    
+    local registry_host="$1"
+    local registry_port="${2:-5000}"
+    local registry_address="${registry_host}:${registry_port}"
+    
+    if [ -z "$registry_host" ]; then
+        log_error "Registry host is required for validation"
+        return 1
+    fi
+    
+    local issues=0
+    
+    # Check Docker daemon.json
+    if [ -f /etc/docker/daemon.json ]; then
+        if grep -q "$registry_address" /etc/docker/daemon.json; then
+            log "✅ Docker daemon.json contains registry $registry_address"
+        else
+            log "❌ Docker daemon.json missing registry $registry_address"
+            issues=$((issues + 1))
+        fi
+    else
+        log "❌ Docker daemon.json not found"
+        issues=$((issues + 1))
+    fi
+    
+    # Check K3s registries.yaml
+    if [ -f /etc/rancher/k3s/registries.yaml ]; then
+        if grep -q "$registry_address" /etc/rancher/k3s/registries.yaml; then
+            log "✅ K3s registries.yaml contains registry $registry_address"
+        else
+            log "❌ K3s registries.yaml missing registry $registry_address"
+            issues=$((issues + 1))
+        fi
+    else
+        log "❌ K3s registries.yaml not found"
+        issues=$((issues + 1))
+    fi
+    
+    # Test connectivity
+    log_verbose "Testing registry connectivity..."
+    if command -v nc &>/dev/null; then
+        if nc -z -w5 "$registry_host" "$registry_port" 2>/dev/null; then
+            log "✅ Registry $registry_address is reachable"
+        else
+            log "⚠️  Registry $registry_address is not reachable (may be normal if registry is down)"
+        fi
+    else
+        log_verbose "nc (netcat) not available, skipping connectivity test"
+    fi
+    
+    if [ $issues -eq 0 ]; then
+        log "✅ Registry configuration validation passed"
+        return 0
+    else
+        log "❌ Registry configuration validation failed ($issues issues found)"
+        return 1
+    fi
+}
+
 # Function to setup local Docker registry
 setup_local_registry() {
     log_step "Setting up local Docker registry..."
@@ -1165,13 +1441,46 @@ setup_ssh() {
         sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup
     fi
 
-    # Enable root login (configure as needed for security)
+    # Enable root login and password authentication
+    log_verbose "Configuring SSH authentication settings"
+    
+    # Enable root login
     if grep -q "^#PermitRootLogin" /etc/ssh/sshd_config; then
         sudo sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     elif grep -q "^PermitRootLogin" /etc/ssh/sshd_config; then
         sudo sed -i 's/^PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
     else
         echo "PermitRootLogin yes" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    fi
+
+    # Enable password authentication
+    if grep -q "^#PasswordAuthentication" /etc/ssh/sshd_config; then
+        sudo sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    elif grep -q "^PasswordAuthentication" /etc/ssh/sshd_config; then
+        sudo sed -i 's/^PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    else
+        echo "PasswordAuthentication yes" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    fi
+
+    # Disable public key only authentication to allow password auth
+    if grep -q "^#PubkeyAuthentication" /etc/ssh/sshd_config; then
+        sudo sed -i 's/^#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+    elif ! grep -q "^PubkeyAuthentication" /etc/ssh/sshd_config; then
+        echo "PubkeyAuthentication yes" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    fi
+
+    # Ensure SSH listens on all interfaces
+    if grep -q "^#ListenAddress" /etc/ssh/sshd_config; then
+        sudo sed -i 's/^#ListenAddress 0.0.0.0/ListenAddress 0.0.0.0/' /etc/ssh/sshd_config
+    elif ! grep -q "^ListenAddress" /etc/ssh/sshd_config; then
+        echo "ListenAddress 0.0.0.0" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+    fi
+
+    # Set SSH port explicitly
+    if grep -q "^#Port 22" /etc/ssh/sshd_config; then
+        sudo sed -i 's/^#Port 22/Port 22/' /etc/ssh/sshd_config
+    elif ! grep -q "^Port" /etc/ssh/sshd_config; then
+        echo "Port 22" | sudo tee -a /etc/ssh/sshd_config > /dev/null
     fi
 
     log_verbose "Setting root password to 'root'"
@@ -1227,8 +1536,147 @@ setup_ssh() {
         log_warn "Check with: sudo systemctl status $ssh_service"
     fi
 
+    # Verify SSH configuration
+    log_verbose "Testing SSH configuration..."
+    if sudo sshd -t 2>/dev/null; then
+        log_verbose "SSH configuration is valid"
+    else
+        log_error "SSH configuration has errors:"
+        sudo sshd -t
+        exit $EXIT_CONFIG_FAILED
+    fi
+
+    # Check if SSH port is listening
+    log_verbose "Checking if SSH is listening on port 22..."
+    if netstat -tln 2>/dev/null | grep -q ":22 " || ss -tln 2>/dev/null | grep -q ":22 "; then
+        log_verbose "SSH is listening on port 22"
+    else
+        log_warn "SSH may not be listening on port 22"
+        log_warn "Check with: sudo netstat -tln | grep :22"
+    fi
+
+    # Get current IP addresses for connection testing
+    log_verbose "Node IP addresses for SSH access:"
+    if command -v ip &> /dev/null; then
+        ip addr show | grep "inet " | grep -v "127.0.0.1" | awk '{print "  " $2}' | head -5
+    else
+        ifconfig 2>/dev/null | grep "inet " | grep -v "127.0.0.1" | awk '{print "  " $2}' | head -5
+    fi
+
+    # Check firewall status (common issue)
+    if command -v ufw &> /dev/null; then
+        UFW_STATUS=$(sudo ufw status 2>/dev/null | head -1)
+        if echo "$UFW_STATUS" | grep -q "Status: active"; then
+            log_warn "UFW firewall is active - may block SSH"
+            log_warn "Allow SSH with: sudo ufw allow ssh"
+        else
+            log_verbose "UFW firewall is not blocking SSH"
+        fi
+    fi
+
     log "SSH server configured successfully"
     log_warn "Root SSH login enabled with password 'root' - consider changing for security"
+}
+
+# SSH troubleshooting function
+troubleshoot_ssh() {
+    log_step "Troubleshooting SSH connectivity..."
+    
+    # Check SSH service status
+    local ssh_service
+    ssh_service=$(detect_ssh_service_name)
+    
+    if [ -n "$ssh_service" ]; then
+        log "SSH service status:"
+        sudo systemctl status "$ssh_service" --no-pager -l
+        echo ""
+    fi
+    
+    # Check SSH configuration
+    log "Testing SSH configuration..."
+    if sudo sshd -t; then
+        log "✅ SSH configuration is valid"
+    else
+        log_error "❌ SSH configuration has errors"
+    fi
+    echo ""
+    
+    # Check listening ports
+    log "Checking SSH port status..."
+    if netstat -tln 2>/dev/null | grep -q ":22 "; then
+        log "✅ SSH is listening on port 22"
+        netstat -tln | grep ":22 "
+    elif ss -tln 2>/dev/null | grep -q ":22 "; then
+        log "✅ SSH is listening on port 22"
+        ss -tln | grep ":22 "
+    else
+        log_error "❌ SSH is not listening on port 22"
+    fi
+    echo ""
+    
+    # Show network interfaces
+    log "Network interfaces and IP addresses:"
+    if command -v ip &> /dev/null; then
+        ip addr show | grep -E "(inet |^[0-9]+:)" | sed 's/^/  /'
+    else
+        ifconfig 2>/dev/null | grep -E "(inet |^[a-z])" | sed 's/^/  /'
+    fi
+    echo ""
+    
+    # Check firewall
+    log "Firewall status:"
+    if command -v ufw &> /dev/null; then
+        UFW_STATUS=$(sudo ufw status verbose 2>/dev/null)
+        echo "$UFW_STATUS" | sed 's/^/  /'
+        if echo "$UFW_STATUS" | grep -q "Status: active"; then
+            if echo "$UFW_STATUS" | grep -q "22/tcp"; then
+                log "✅ SSH port 22 is allowed in UFW firewall"
+            else
+                log_warn "⚠️  SSH port 22 may not be allowed in UFW firewall"
+                log_warn "Run: sudo ufw allow ssh"
+            fi
+        fi
+    else
+        log_verbose "UFW not installed"
+    fi
+    echo ""
+    
+    # Check iptables if available
+    if command -v iptables &> /dev/null; then
+        log "iptables rules for SSH:"
+        sudo iptables -L INPUT -n | grep ":22 " | sed 's/^/  /' || log_verbose "No specific SSH rules found"
+    fi
+    echo ""
+    
+    # Show SSH connection examples
+    log "SSH connection examples:"
+    if command -v ip &> /dev/null; then
+        MAIN_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K\S+' | head -1)
+    else
+        MAIN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    
+    if [ -n "$MAIN_IP" ]; then
+        echo "  ssh root@$MAIN_IP"
+        echo "  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@$MAIN_IP"
+    fi
+    
+    # Show Tailscale IP if available
+    if command -v tailscale &> /dev/null; then
+        TAILSCALE_IP=$(tailscale ip -4 2>/dev/null | head -1)
+        if [ -n "$TAILSCALE_IP" ]; then
+            echo "  ssh root@$TAILSCALE_IP  # via Tailscale"
+        fi
+    fi
+    echo ""
+    
+    log "Common troubleshooting steps:"
+    echo "1. Check service: sudo systemctl status $ssh_service"
+    echo "2. Restart service: sudo systemctl restart $ssh_service"
+    echo "3. Check config: sudo sshd -t"
+    echo "4. Check logs: sudo journalctl -u $ssh_service -f"
+    echo "5. Allow firewall: sudo ufw allow ssh"
+    echo "6. Test locally: ssh -v root@localhost"
 }
 
 setup_tailscale() {
@@ -1376,6 +1824,93 @@ check_tailscale_local_mode() {
     log "✅ Tailscale is running"
     log_verbose "Tailscale IP: $tailscale_ip"
     log_verbose "Tailscale hostname: $tailscale_hostname"
+}
+
+# Function to generate random lowercase hostname for phones
+generate_phone_hostname() {
+    # Generate a random lowercase hostname with format: phone-[6 random chars]
+    local random_suffix=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 6 | head -n 1)
+    echo "phone-${random_suffix}"
+}
+
+# Function to clean up inaccessible devices from Tailscale
+cleanup_tailscale_devices() {
+    log_step "Cleaning up inaccessible devices from Tailscale and Kubernetes..."
+    
+    if ! command -v tailscale &> /dev/null; then
+        log_warn "Tailscale not available, skipping device cleanup"
+        return 0
+    fi
+    
+    # Get list of devices and check their status
+    local devices_to_remove=""
+    local cleanup_count=0
+    local k8s_cleanup_count=0
+    
+    log_verbose "Checking Tailscale device status..."
+    
+    # Get device list in JSON format for parsing
+    if command -v jq &> /dev/null; then
+        # Use jq for better JSON parsing
+        local offline_devices=$(tailscale status --json 2>/dev/null | jq -r '.Peer[] | select(.Online == false and (.HostName | startswith("phone-"))) | .HostName' 2>/dev/null || echo "")
+        
+        if [ -n "$offline_devices" ]; then
+            log "Found offline phone devices:"
+            echo "$offline_devices" | while read -r device; do
+                if [ -n "$device" ]; then
+                    log "  - $device (offline)"
+                    # Note: We can only log here, actual removal requires different approach
+                fi
+            done
+            
+            # Check if kubectl is available and we're on master for K8s cleanup
+            if command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null; then
+                log_verbose "Checking for corresponding Kubernetes nodes to remove..."
+                echo "$offline_devices" | while read -r device; do
+                    if [ -n "$device" ] && kubectl get node "$device" &> /dev/null; then
+                        log "Removing inaccessible K8s node: $device"
+                        kubectl delete node "$device" || log_warn "Failed to remove node $device from Kubernetes"
+                        k8s_cleanup_count=$((k8s_cleanup_count + 1))
+                    fi
+                done
+            fi
+        fi
+    else
+        # Fallback without jq
+        log_verbose "jq not available, using basic parsing"
+        local offline_count=$(tailscale status 2>/dev/null | grep -c "phone-.*offline" || echo "0")
+        if [ "$offline_count" -gt 0 ]; then
+            log "Found $offline_count offline phone devices"
+            local offline_list=$(tailscale status 2>/dev/null | grep "phone-.*offline" | awk '{print $2}' || echo "")
+            
+            if [ -n "$offline_list" ]; then
+                echo "$offline_list" | while read -r device; do
+                    log "  - $device (offline)"
+                done
+                
+                # Check if kubectl is available and we're on master for K8s cleanup
+                if command -v kubectl &> /dev/null && kubectl cluster-info &> /dev/null; then
+                    log_verbose "Checking for corresponding Kubernetes nodes to remove..."
+                    echo "$offline_list" | while read -r device; do
+                        if [ -n "$device" ] && kubectl get node "$device" &> /dev/null; then
+                            log "Removing inaccessible K8s node: $device"
+                            kubectl delete node "$device" || log_warn "Failed to remove node $device from Kubernetes"
+                        fi
+                    done
+                fi
+            fi
+        fi
+    fi
+    
+    # Note about manual cleanup (since programmatic removal requires admin access)
+    local total_phones=$(tailscale status 2>/dev/null | grep -c "phone-" || echo "0")
+    if [ "$total_phones" -gt 0 ]; then
+        log_verbose "Total phone devices in Tailscale: $total_phones"
+        log_verbose "To remove offline devices, visit: https://login.tailscale.com/admin/machines"
+        log_verbose "Or use: tailscale admin delete-device <hostname>"
+    fi
+    
+    log "✅ Tailscale device status checked, Kubernetes nodes cleaned up"
 }
 
 set_hostname() {
@@ -3463,11 +3998,11 @@ EOF
 # Function to set device type via node-labeler service
 
 
-# Function to install location monitoring service (for agent nodes with port forwarding)
+# Function to install location monitoring service (for master nodes)
 install_location_monitoring() {
     log_step "Setting up location monitoring service..."
-    log "📍 This service will monitor location via port forwarding to K3s Phone Server"
-    log "   Port forwarding maps localhost:8005 -> K3s Phone Server IP:8005"
+    log "📍 This service will monitor phone node locations via direct HTTP API access"
+    log "   Connects directly to Android app on each phone node's IP:8005"
 
     # Create the location updater script embedded in setup.sh
     local script_path="/usr/local/bin/update-node-locations.sh"
@@ -3479,7 +4014,7 @@ install_location_monitoring() {
 set -euo pipefail
 
 # Simple Node Location Updater
-# Queries geolocation from Android apps via SSH and updates node labels
+# Queries geolocation from Android apps via direct HTTP API and updates node labels
 DEFAULT_INTERVAL=30
 DEFAULT_GEO_PORT=8005
 INTERVAL=${INTERVAL:-$DEFAULT_INTERVAL}
@@ -3581,13 +4116,23 @@ query_node_location() {
 
     log_verbose "Querying location from node: $node (port: $port)"
 
-    # Try to get location data via SSH and curl from the Android app
+    # Get the node's IP address from Kubernetes
+    local node_ip
+    node_ip=$(kubectl get node "$node" -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}' 2>/dev/null || true)
+    
+    if [ -z "$node_ip" ]; then
+        log_verbose "Could not get IP address for node $node"
+        return 1
+    fi
+    
+    log_verbose "Using node IP: $node_ip"
+
+    # Try to get location data directly from the Android app via HTTP
     local location_data
-    location_data=$(ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "$node" \
-        "curl -s --connect-timeout 3 --max-time 5 http://localhost:$port/location 2>/dev/null" 2>/dev/null || true)
+    location_data=$(curl -s --connect-timeout 3 --max-time 5 "http://$node_ip:$port/location" 2>/dev/null || true)
 
     if [ -z "$location_data" ]; then
-        log_verbose "No location data from $node (app may not be running on port $port)"
+        log_verbose "No location data from $node_ip:$port (app may not be running or not accessible)"
         return 1
     fi
 
@@ -3599,7 +4144,7 @@ query_node_location() {
     city=$(echo "$location_data" | grep -o '"city":"[^"]*"' | cut -d':' -f2 | tr -d '"' || true)
 
     if [ -z "$latitude" ] || [ -z "$longitude" ]; then
-        log_warn "Invalid location data from $node: $location_data"
+        log_warn "Invalid location data from $node_ip:$port: $location_data"
         return 1
     fi
 
@@ -4245,7 +4790,7 @@ install_k3s_agent() {
         log "Executing K3s agent installation command:"
         log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" K3S_NODE_NAME=\"$current_hostname\" sh -"
 
-        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_NAME="$current_hostname" sh - || {
+        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_NAME="$current_hostname" K3S_NODE_LABEL="device-type=phone" sh - || {
             log_error "Failed to install K3s agent"
             log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
             exit $EXIT_INSTALL_FAILED
@@ -4256,9 +4801,9 @@ install_k3s_agent() {
 
         # Show the exact command being executed
         log "Executing K3s agent installation command:"
-        log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" sh -"
+        log "curl -sfL https://get.k3s.io | K3S_URL=\"$K3S_URL\" K3S_TOKEN=\"[REDACTED]\" K3S_NODE_LABEL=\"device-type=phone\" sh -"
 
-        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" sh - || {
+        curl -sfL https://get.k3s.io | K3S_URL="$K3S_URL" K3S_TOKEN="$K3S_TOKEN" K3S_NODE_LABEL="device-type=phone" sh - || {
             log_error "Failed to install K3s agent"
             log_error "If download failed due to connectivity, try restarting and reinstalling Debian"
             exit $EXIT_INSTALL_FAILED
@@ -4282,34 +4827,72 @@ install_k3s_agent() {
     fi
 
     # NOW configure Docker registry AFTER K3s agent is installed and running
-    # Extract master IP from K3S_URL for registry configuration
+    # Use Tailscale IP for registry configuration to ensure connectivity
     log_verbose "Configuring Docker for insecure registry access..."
+    
+    # Get the Tailscale IP of the master node for registry access
+    local REGISTRY_HOST=""
     if [ -n "$K3S_URL" ]; then
         # Extract hostname/IP from URL like https://192.168.1.100:6443 or https://thinkstation:6443
         MASTER_HOST=$(echo "$K3S_URL" | sed -E 's|https?://([^:]+):.*|\1|')
         log_verbose "Debug: Extracted MASTER_HOST='$MASTER_HOST' from K3S_URL='$K3S_URL'"
-        if [ -n "$MASTER_HOST" ]; then
-            # Try to resolve hostname to IP if it's not already an IP
+        
+        # Try to get the Tailscale IP of the master node
+        log_verbose "Looking up Tailscale IP for master node..."
+        if command -v tailscale &>/dev/null; then
+            # Try to get the Tailscale IP by hostname lookup or ping
+            TAILSCALE_IP=""
             if [[ "$MASTER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-                REGISTRY_HOST="$MASTER_HOST"
-                log_verbose "Using IP address for registry: $REGISTRY_HOST:5000"
+                # If K3S_URL contains an IP, try to find corresponding Tailscale IP
+                log_verbose "K3S_URL contains IP address, looking for Tailscale network..."
+                # Get the Tailscale status and find nodes
+                TAILSCALE_IP=$(tailscale status --json 2>/dev/null | grep -o '"TailscaleIPs":\["[^"]*"' | head -1 | grep -o '[0-9.]*' | head -1)
             else
-                # It's a hostname, try to resolve it
-                RESOLVED_IP=$(getent hosts "$MASTER_HOST" 2>/dev/null | awk '{print $1}' | head -1)
-                log_verbose "Debug: getent returned RESOLVED_IP='$RESOLVED_IP'"
-                if [ -n "$RESOLVED_IP" ]; then
-                    REGISTRY_HOST="$RESOLVED_IP"
-                    log_verbose "Resolved hostname $MASTER_HOST to IP: $REGISTRY_HOST:5000"
-                else
-                    # Use hostname directly if resolution fails
-                    REGISTRY_HOST="$MASTER_HOST"
-                    log_verbose "Using hostname for registry (could not resolve): $REGISTRY_HOST:5000"
+                # Try to resolve the hostname via Tailscale
+                log_verbose "Attempting to resolve $MASTER_HOST via Tailscale..."
+                TAILSCALE_IP=$(tailscale ping --timeout=3s "$MASTER_HOST" 2>/dev/null | grep -o 'via [0-9.]*' | cut -d' ' -f2 | head -1)
+                if [ -z "$TAILSCALE_IP" ]; then
+                    # Alternative: get Tailscale IP from status
+                    TAILSCALE_IP=$(tailscale status 2>/dev/null | grep "$MASTER_HOST" | awk '{print $1}' | head -1)
                 fi
             fi
-            log_verbose "Configuring Docker for insecure registry at $REGISTRY_HOST:5000"
-            log_verbose "Debug: REGISTRY_HOST='$REGISTRY_HOST'"
+            
+            if [ -n "$TAILSCALE_IP" ]; then
+                REGISTRY_HOST="$TAILSCALE_IP"
+                log "Using Tailscale IP for registry: $REGISTRY_HOST:5000"
+            else
+                log_warn "Could not determine Tailscale IP, trying original host..."
+                # Fallback to original logic
+                if [[ "$MASTER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    REGISTRY_HOST="$MASTER_HOST"
+                else
+                    RESOLVED_IP=$(getent hosts "$MASTER_HOST" 2>/dev/null | awk '{print $1}' | head -1)
+                    if [ -n "$RESOLVED_IP" ]; then
+                        REGISTRY_HOST="$RESOLVED_IP"
+                    else
+                        REGISTRY_HOST="$MASTER_HOST"
+                    fi
+                fi
+                log_warn "Fallback: Using IP $REGISTRY_HOST:5000 for registry"
+            fi
+        else
+            log_warn "Tailscale not available, using standard hostname resolution..."
+            # Original logic as fallback
+            if [[ "$MASTER_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                REGISTRY_HOST="$MASTER_HOST"
+            else
+                RESOLVED_IP=$(getent hosts "$MASTER_HOST" 2>/dev/null | awk '{print $1}' | head -1)
+                if [ -n "$RESOLVED_IP" ]; then
+                    REGISTRY_HOST="$RESOLVED_IP"
+                else
+                    REGISTRY_HOST="$MASTER_HOST"
+                fi
+            fi
+            log_warn "No Tailscale: Using IP $REGISTRY_HOST:5000 for registry"
+        fi
 
-            # Test connectivity to registry before configuring Docker
+        # Test connectivity to registry before configuring Docker
+        if [ -n "$REGISTRY_HOST" ]; then
             log_verbose "Testing connectivity to registry at $REGISTRY_HOST:5000..."
             if command -v nc &>/dev/null; then
                 if nc -z -w5 "$REGISTRY_HOST" 5000 2>/dev/null; then
@@ -4326,6 +4909,36 @@ install_k3s_agent() {
             log_verbose "Debug: Calling setup_docker_insecure_registry with: '$REGISTRY_HOST'"
             if setup_docker_insecure_registry "$REGISTRY_HOST"; then
                 log_verbose "✅ Docker registry configuration completed"
+                
+                # Also configure K3s/containerd registry
+                log_verbose "Configuring K3s containerd registry..."
+                if setup_k3s_registry_config "$REGISTRY_HOST"; then
+                    log_verbose "✅ K3s containerd registry configuration completed"
+                    
+                    # Restart K3s agent to pick up the new registry configuration
+                    log_verbose "Restarting K3s agent to apply registry configuration..."
+                    if sudo systemctl restart k3s-agent; then
+                        log_verbose "✅ K3s agent restarted successfully"
+                        
+                        # Wait a moment for the service to stabilize
+                        sleep 5
+                        
+                        # Validate the complete registry setup
+                        log_verbose "Validating complete registry configuration..."
+                        if validate_registry_setup "$REGISTRY_HOST"; then
+                            log "✅ Registry configuration validation passed"
+                        else
+                            log_warn "⚠️  Registry configuration validation failed"
+                            log_warn "Some image pulls may fail - check /etc/docker/daemon.json and /etc/rancher/k3s/registries.yaml"
+                        fi
+                    else
+                        log_warn "⚠️  Failed to restart K3s agent - registry config may not be active"
+                        log_warn "Try manually restarting: sudo systemctl restart k3s-agent"
+                    fi
+                else
+                    log_warn "⚠️  K3s containerd registry configuration failed, but Docker config succeeded"
+                    log_warn "Some image pulls may still work via Docker, but containerd pulls may fail"
+                fi
             else
                 log_error "❌ Docker registry configuration failed - this is critical for agent functionality"
                 log_error "Agent nodes require access to the master's Docker registry for image distribution"
@@ -4341,7 +4954,7 @@ install_k3s_agent() {
                 exit $EXIT_CONFIG_FAILED
             fi
         else
-            log_error "❌ Could not extract valid host from K3S_URL: $K3S_URL"
+            log_error "❌ Could not determine registry host from K3S_URL: $K3S_URL"
             log_error "Registry configuration failed - agent nodes require registry access"
             log_error "Please ensure K3S_URL is correctly formatted (e.g., https://master-host:6443)"
             exit $EXIT_CONFIG_FAILED
@@ -4408,11 +5021,17 @@ show_agent_completion_info() {
     log "  Node IP: $node_ip"
 
     # Docker registry configuration status
-    if [ -f /etc/docker/daemon.json ]; then
-        log "  Docker Registry: ✅ Configured for local registry access"
+    local registry_status=""
+    if [ -f /etc/docker/daemon.json ] && [ -f /etc/rancher/k3s/registries.yaml ]; then
+        registry_status="✅ Docker + K3s containerd configured"
+    elif [ -f /etc/docker/daemon.json ]; then
+        registry_status="⚠️  Docker configured, K3s containerd missing"
+    elif [ -f /etc/rancher/k3s/registries.yaml ]; then
+        registry_status="⚠️  K3s containerd configured, Docker missing"
     else
-        log "  Docker Registry: ⚠️  No insecure registry configuration"
+        registry_status="❌ No registry configuration found"
     fi
+    log "  Docker Registry: $registry_status"
 
     log "  Geolocation Service: N/A (handled by K3s server only)"
 
@@ -4791,10 +5410,14 @@ validate_hostname() {
 
     # Check for auto-hostname pattern and expand it
     if echo "$HOSTNAME" | grep -q '%d'; then
-        log_verbose "Auto-hostname pattern detected, expanding %d with timestamp"
-        local timestamp_b64
-        timestamp_b64=$(echo "$(date +%s)" | base64 | tr -d '=' | tr '/' '-' | cut -c1-8)
-        HOSTNAME=$(echo "$HOSTNAME" | sed "s/%d/$timestamp_b64/g")
+        log_verbose "Auto-hostname pattern detected, expanding %d with random identifier"
+        # Replace each %d with a unique random value
+        while echo "$HOSTNAME" | grep -q '%d'; do
+            local random_id
+            # Generate a random lowercase alphanumeric string (6 characters)
+            random_id=$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 6 | head -n 1)
+            HOSTNAME=$(echo "$HOSTNAME" | sed "s/%d/$random_id/")
+        done
         log_verbose "Expanded hostname: $HOSTNAME"
     fi
 
@@ -5041,6 +5664,22 @@ main_setup() {
 
     # Main installation steps
     if [ "$LOCAL_MODE" = false ]; then
+        # For agent nodes, generate random hostname if not provided or if it's not phone-specific
+        if [ -n "$K3S_TOKEN" ] && [ -n "$K3S_URL" ]; then
+            # This is an agent node - generate random phone hostname
+            if [ -z "$HOSTNAME" ] || [[ ! "$HOSTNAME" =~ ^phone- ]]; then
+                HOSTNAME=$(generate_phone_hostname)
+                log "Generated random hostname for agent node: $HOSTNAME"
+            else
+                # Ensure hostname is lowercase
+                HOSTNAME=$(echo "$HOSTNAME" | tr '[:upper:]' '[:lower:]')
+                log "Using provided hostname (converted to lowercase): $HOSTNAME"
+            fi
+        else
+            # This is a server node - clean up inaccessible phones from Tailscale
+            cleanup_tailscale_devices
+        fi
+        
         set_hostname
         install_docker
         setup_ssh

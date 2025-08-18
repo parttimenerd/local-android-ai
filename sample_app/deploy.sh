@@ -142,23 +142,41 @@ else
     log_warn "Registry script not found, using default: $REGISTRY_ADDRESS"
 fi
 
-# Get number of agent nodes for replica scaling (exclude master/control-plane nodes)
-AGENT_NODE_COUNT=$(kubectl get nodes --no-headers | grep -v "control-plane\|master" | wc -l)
-log_info "Found $AGENT_NODE_COUNT agent nodes in the cluster"
+# Get number of phone nodes for replica scaling (nodes with names starting with "phone-")
+PHONE_NODE_COUNT=$(kubectl get nodes --no-headers | grep "^phone-" | wc -l)
+log_info "Found $PHONE_NODE_COUNT phone nodes in the cluster (names starting with 'phone-')"
 
-if [ "$AGENT_NODE_COUNT" -eq 0 ]; then
-    log_warn "No agent nodes found. Apps will only deploy to nodes without master role."
-    log_info "If you have agent nodes, check node labels with: kubectl get nodes --show-labels"
-    # Fall back to total node count but with warning
-    AGENT_NODE_COUNT=$(kubectl get nodes --no-headers | wc -l)
-    log_warn "Using total node count ($AGENT_NODE_COUNT) as fallback"
+# Show available phone nodes
+if [ "$PHONE_NODE_COUNT" -gt 0 ]; then
+    log_info "Available phone nodes:"
+    kubectl get nodes --no-headers | grep "^phone-" | awk '{print "  - " $1 " (" $2 ")"}'
 fi
 
-# Default to 1 replica per agent node, but allow override via environment variable
-DEFAULT_REPLICAS="$AGENT_NODE_COUNT"
+# Also check for nodes with device-type=phone label as backup
+LABELED_PHONE_COUNT=$(kubectl get nodes -l device-type=phone --no-headers 2>/dev/null | wc -l || echo "0")
+if [ "$LABELED_PHONE_COUNT" -gt 0 ]; then
+    log_info "Found $LABELED_PHONE_COUNT nodes with device-type=phone label"
+fi
+
+if [ "$PHONE_NODE_COUNT" -eq 0 ]; then
+    if [ "$LABELED_PHONE_COUNT" -gt 0 ]; then
+        log_warn "No nodes with names starting with 'phone-' found, but found $LABELED_PHONE_COUNT labeled phone nodes"
+        PHONE_NODE_COUNT="$LABELED_PHONE_COUNT"
+    else
+        log_warn "No phone nodes found (neither by name pattern nor device-type label)"
+        log_info "Check available nodes with: kubectl get nodes --show-labels"
+        # Fall back to agent nodes
+        AGENT_NODE_COUNT=$(kubectl get nodes --no-headers | grep -v "control-plane\|master" | wc -l)
+        PHONE_NODE_COUNT="$AGENT_NODE_COUNT"
+        log_warn "Using agent node count ($PHONE_NODE_COUNT) as fallback"
+    fi
+fi
+
+# Default to 1 replica per phone node, but allow override via environment variable
+DEFAULT_REPLICAS="$PHONE_NODE_COUNT"
 DESIRED_REPLICAS="${REPLICAS:-$DEFAULT_REPLICAS}"
 
-log_info "Scaling deployment to $DESIRED_REPLICAS replicas (default: 1 per agent node)"
+log_info "Scaling deployment to $DESIRED_REPLICAS replicas (default: 1 per phone node)"
 log_info "To override replica count, set REPLICAS environment variable: REPLICAS=5 ./deploy.sh"
 
 # Update deployment replicas to match desired count
@@ -167,7 +185,7 @@ if [ -f "k8s/deployment.yaml" ]; then
     sed -e "s/replicas: 1/replicas: $DESIRED_REPLICAS/" \
         -e "s|image: [^/]*:[0-9]*/server-info-server:latest|image: $REGISTRY_ADDRESS/server-info-server:latest|g" \
         k8s/deployment.yaml > /tmp/deployment-scaled.yaml
-    log_info "Deploying $DESIRED_REPLICAS replicas across $AGENT_NODE_COUNT agent nodes"
+    log_info "Deploying $DESIRED_REPLICAS replicas across $PHONE_NODE_COUNT phone nodes"
     log_info "Using image: $REGISTRY_ADDRESS/server-info-server:latest"
 else
     log_error "Deployment manifest not found at k8s/deployment.yaml"
@@ -176,6 +194,13 @@ fi
 
 # Apply Kubernetes manifests
 log_info "Applying Kubernetes manifests..."
+
+# Apply RBAC configuration first (required for node-reader service account)
+log_info "Applying RBAC configuration..."
+kubectl apply -f k8s/node-reader-rbac.yaml || {
+    log_error "Failed to apply RBAC configuration"
+    exit 1
+}
 
 # Deploy the scaled deployment
 kubectl apply -f /tmp/deployment-scaled.yaml || {
