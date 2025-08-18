@@ -14,7 +14,11 @@ data class RequestLog(
     val responseTime: Long,
     val userAgent: String? = null,
     val responseData: String? = null,
-    val responseType: String? = null // "json", "image", "text", etc.
+    val responseType: String? = null,
+    val requestBody: String? = null, // Add request body field
+    val requestId: String = "${timestamp}_${method}_${path}_${System.nanoTime()}", // Unique identifier for updates
+    val startTime: Long = System.currentTimeMillis(), // Track when request started
+    val isOngoing: Boolean = statusCode == 0 // 0 status code indicates ongoing request
 )
 
 object RequestLogger {
@@ -33,10 +37,11 @@ object RequestLogger {
         responseTime: Long,
         userAgent: String? = null,
         responseData: String? = null,
-        responseType: String? = null
-    ) {
+        responseType: String? = null,
+        requestBody: String? = null
+    ): String {
         val timestamp = dateFormat.format(Date())
-        val newLog = RequestLog(timestamp, method, path, clientIp, statusCode, responseTime, userAgent, responseData, responseType)
+        val newLog = RequestLog(timestamp, method, path, clientIp, statusCode, responseTime, userAgent, responseData, responseType, requestBody)
         
         val currentLogs = _requestLogs.value ?: emptyList()
         val updatedLogs = (listOf(newLog) + currentLogs).take(maxLogs)
@@ -45,6 +50,62 @@ object RequestLogger {
         val cleanedLogs = cleanupOldImageData(updatedLogs)
         
         _requestLogs.postValue(cleanedLogs)
+        
+        return newLog.requestId
+    }
+    
+    fun updateRequest(
+        requestId: String,
+        statusCode: Int,
+        responseTime: Long,
+        responseData: String? = null,
+        responseType: String? = null
+    ) {
+        val currentLogs = _requestLogs.value ?: emptyList()
+        val updatedLogs = currentLogs.map { log ->
+            if (log.requestId == requestId) {
+                log.copy(
+                    statusCode = statusCode,
+                    responseTime = responseTime,
+                    responseData = responseData,
+                    responseType = responseType,
+                    isOngoing = false // Request is now complete
+                )
+            } else {
+                log
+            }
+        }
+        
+        // Clean up old image data to preserve memory
+        val cleanedLogs = cleanupOldImageData(updatedLogs)
+        
+        _requestLogs.postValue(cleanedLogs)
+    }
+    
+    /**
+     * Get current duration for ongoing requests
+     */
+    fun getCurrentDuration(requestLog: RequestLog): Long {
+        return if (requestLog.isOngoing) {
+            System.currentTimeMillis() - requestLog.startTime
+        } else {
+            requestLog.responseTime
+        }
+    }
+    
+    /**
+     * Refresh durations for ongoing requests - call this periodically to update UI
+     */
+    fun refreshOngoingDurations() {
+        val currentLogs = _requestLogs.value ?: emptyList()
+        val hasOngoingRequests = currentLogs.any { it.isOngoing }
+        
+        if (hasOngoingRequests) {
+            // Force a UI update by posting the same list with a timestamp change
+            // This ensures the adapter gets notified even if DiffUtil thinks nothing changed
+            _requestLogs.postValue(currentLogs.toList()) // Create a new list instance
+            android.util.Log.d("RequestLogger", "Refreshed durations for ${currentLogs.count { it.isOngoing }} ongoing requests")
+        }
     }
     
     private fun cleanupOldImageData(logs: List<RequestLog>): List<RequestLog> {

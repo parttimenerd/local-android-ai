@@ -26,7 +26,13 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
     }
 
     override fun onBindViewHolder(holder: RequestLogViewHolder, position: Int) {
-        holder.bind(getItem(position))
+        val requestLog = getItem(position)
+        holder.bind(requestLog)
+        
+        // For ongoing requests, force refresh to show live duration
+        if (requestLog.isOngoing) {
+            android.util.Log.d("RequestLogAdapter", "Binding ongoing request at position $position")
+        }
     }
 
     class RequestLogViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -40,18 +46,34 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
             textTimestamp.text = requestLog.timestamp
             textMethod.text = requestLog.method
             textPath.text = requestLog.path
-            textStatusCode.text = requestLog.statusCode.toString()
-            textResponseTime.text = "${requestLog.responseTime}ms"
-
-            // Color code status codes
-            val statusColor = when (requestLog.statusCode) {
-                in 200..299 -> Color.parseColor("#4CAF50") // Green for success
-                in 300..399 -> Color.parseColor("#FF9800") // Orange for redirect
-                in 400..499 -> Color.parseColor("#F44336") // Red for client error
-                in 500..599 -> Color.parseColor("#9C27B0") // Purple for server error
-                else -> Color.parseColor("#757575") // Gray for unknown
+            
+            if (requestLog.isOngoing) {
+                textStatusCode.text = "..."
+                textStatusCode.setTextColor(Color.parseColor("#2196F3")) // Blue for ongoing
+                
+                // Show live duration for ongoing requests
+                val currentDuration = com.k3s.phoneserver.logging.RequestLogger.getCurrentDuration(requestLog)
+                val durationSeconds = currentDuration / 1000.0
+                textResponseTime.text = String.format("%.2fs", durationSeconds)
+                textResponseTime.setTextColor(Color.parseColor("#2196F3")) // Blue for ongoing
+                
+                android.util.Log.d("RequestLogAdapter", "Ongoing request: ${requestLog.path}, duration: ${String.format("%.2fs", durationSeconds)}")
+            } else {
+                textStatusCode.text = requestLog.statusCode.toString()
+                val durationSeconds = requestLog.responseTime / 1000.0
+                textResponseTime.text = String.format("%.2fs", durationSeconds)
+                
+                // Color code status codes for completed requests
+                val statusColor = when (requestLog.statusCode) {
+                    in 200..299 -> Color.parseColor("#4CAF50") // Green for success
+                    in 300..399 -> Color.parseColor("#FF9800") // Orange for redirect
+                    in 400..499 -> Color.parseColor("#F44336") // Red for client error
+                    in 500..599 -> Color.parseColor("#9C27B0") // Purple for server error
+                    else -> Color.parseColor("#757575") // Gray for unknown
+                }
+                textStatusCode.setTextColor(statusColor)
+                textResponseTime.setTextColor(Color.parseColor("#757575")) // Gray for completed
             }
-            textStatusCode.setTextColor(statusColor)
 
             // Color code methods
             val methodColor = when (requestLog.method) {
@@ -95,7 +117,8 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
             }
             
             val textView = TextView(context).apply {
-                text = "Image captured at ${requestLog.timestamp}\nResponse time: ${requestLog.responseTime}ms\nStatus: ${requestLog.statusCode}"
+                val durationSeconds = requestLog.responseTime / 1000.0
+                text = "Image captured at ${requestLog.timestamp}\nResponse time: ${String.format("%.2fs", durationSeconds)}\nStatus: ${requestLog.statusCode}"
                 setPadding(16, 16, 16, 8)
                 textSize = 14f
             }
@@ -139,7 +162,14 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
             val context = itemView.context
             
             // For JSON responses, create a formatted dialog with syntax highlighting
-            if (requestLog.responseType == "json" && !requestLog.responseData.isNullOrBlank()) {
+            val isJsonResponse = (requestLog.responseType == "json" || 
+                                 requestLog.responseType == "ai_text_success" ||
+                                 requestLog.responseType == "ai_text_error" ||
+                                 requestLog.responseData?.startsWith("{") == true ||
+                                 requestLog.responseData?.startsWith("[") == true) && 
+                                 !requestLog.responseData.isNullOrBlank()
+                                 
+            if (isJsonResponse) {
                 showFormattedJsonDialog(requestLog)
                 return
             }
@@ -152,7 +182,8 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
                 appendLine("Path: ${requestLog.path}")
                 appendLine("Client IP: ${requestLog.clientIp}")
                 appendLine("Status Code: ${requestLog.statusCode}")
-                appendLine("Response Time: ${requestLog.responseTime}ms")
+                val durationSeconds = requestLog.responseTime / 1000.0
+                appendLine("Response Time: ${String.format("%.2fs", durationSeconds)}")
                 if (!requestLog.userAgent.isNullOrBlank()) {
                     appendLine("User Agent: ${requestLog.userAgent}")
                 }
@@ -170,6 +201,22 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
                 }
                 appendLine()
                 appendLine("Status: $statusDescription")
+                
+                // Add request body if available
+                if (!requestLog.requestBody.isNullOrBlank()) {
+                    appendLine()
+                    appendLine("Request Body:")
+                    appendLine()
+                    
+                    // Format JSON request body with highlighting
+                    try {
+                        val formatted = ResponseFormatter.getInstance().formatJsonWithHighlighting(requestLog.requestBody)
+                        appendLine(formatted)
+                    } catch (e: Exception) {
+                        // If not valid JSON, show as plain text
+                        appendLine(requestLog.requestBody)
+                    }
+                }
                 
                 // Add response data if available
                 if (!requestLog.responseData.isNullOrBlank()) {
@@ -228,13 +275,49 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
         private fun showFormattedJsonDialog(requestLog: RequestLog) {
             val context = itemView.context
             
-            // Create a TextView for displaying formatted JSON
+            // Build content with proper spannable formatting
+            val spannableBuilder = android.text.SpannableStringBuilder()
+            
+            // Add header information
+            spannableBuilder.append("${requestLog.method} ${requestLog.path}\n")
+            val durationSeconds = requestLog.responseTime / 1000.0
+            spannableBuilder.append("${requestLog.timestamp} | Status: ${requestLog.statusCode} | ${String.format("%.2fs", durationSeconds)}\n")
+            spannableBuilder.append("Client: ${requestLog.clientIp}\n\n")
+            
+            // Add request body if available
+            if (!requestLog.requestBody.isNullOrBlank()) {
+                spannableBuilder.append("REQUEST BODY:\n")
+                try {
+                    val formattedRequestBody = ResponseFormatter.getInstance().formatJsonAsSpannable(requestLog.requestBody)
+                    spannableBuilder.append(formattedRequestBody)
+                    spannableBuilder.append("\n\n")
+                } catch (e: Exception) {
+                    spannableBuilder.append("${requestLog.requestBody}\n\n")
+                }
+            }
+            
+            // Add response data
+            spannableBuilder.append("RESPONSE:\n")
+            if (!requestLog.responseData.isNullOrBlank()) {
+                try {
+                    val formattedResponse = ResponseFormatter.getInstance().formatJsonAsSpannable(requestLog.responseData)
+                    spannableBuilder.append(formattedResponse)
+                } catch (e: Exception) {
+                    spannableBuilder.append(requestLog.responseData ?: "")
+                }
+            } else {
+                spannableBuilder.append("No response data")
+            }
+            
+            // Create a TextView for displaying formatted content
             val textView = TextView(context).apply {
-                text = ResponseFormatter.getInstance().formatJsonAsSpannable(requestLog.responseData ?: "")
+                text = spannableBuilder
                 setPadding(16, 16, 16, 16)
                 textSize = 12f
                 typeface = android.graphics.Typeface.MONOSPACE
                 setTextIsSelectable(true)
+                // Enable text selection and movement methods for better interaction
+                movementMethod = android.text.method.LinkMovementMethod.getInstance()
             }
             
             // Create a ScrollView to contain the TextView
@@ -249,16 +332,17 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
             val title = buildString {
                 append("Request Log Details - ${requestLog.path}")
                 appendLine()
-                append("${requestLog.timestamp} | ${requestLog.method} | ${requestLog.statusCode} | ${requestLog.responseTime}ms")
+                val durationSeconds = requestLog.responseTime / 1000.0
+                append("${requestLog.timestamp} | ${requestLog.method} | ${requestLog.statusCode} | ${String.format("%.2fs", durationSeconds)}")
             }
             
             AlertDialog.Builder(context)
-                .setTitle(title)
+                .setTitle("Request Details")
                 .setView(scrollView)
                 .setPositiveButton("OK", null)
-                .setNegativeButton("Copy JSON") { _, _ ->
+                .setNegativeButton("Copy All") { _, _ ->
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("JSON Response", requestLog.responseData)
+                    val clip = ClipData.newPlainText("Request Details", spannableBuilder.toString())
                     clipboard.setPrimaryClip(clip)
                 }
                 .create()
@@ -268,10 +352,15 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
 
     class RequestLogDiffCallback : DiffUtil.ItemCallback<RequestLog>() {
         override fun areItemsTheSame(oldItem: RequestLog, newItem: RequestLog): Boolean {
-            return oldItem.timestamp == newItem.timestamp && oldItem.path == newItem.path
+            return oldItem.requestId == newItem.requestId
         }
 
         override fun areContentsTheSame(oldItem: RequestLog, newItem: RequestLog): Boolean {
+            // For ongoing requests, never consider content as the same to force updates
+            if (oldItem.isOngoing || newItem.isOngoing) {
+                return false
+            }
+            // For completed requests, compare all fields
             return oldItem == newItem
         }
     }

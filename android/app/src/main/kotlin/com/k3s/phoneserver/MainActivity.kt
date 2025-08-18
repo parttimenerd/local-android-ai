@@ -146,6 +146,10 @@ class MainActivity : AppCompatActivity() {
     }
     
     private var selectedImageUri: Uri? = null
+    
+    // Timer for updating ongoing request durations
+    private var durationUpdateHandler: android.os.Handler? = null
+    private var durationUpdateRunnable: Runnable? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -433,6 +437,33 @@ class MainActivity : AppCompatActivity() {
                 findViewById<androidx.recyclerview.widget.RecyclerView>(R.id.recyclerViewLogs).scrollToPosition(0)
             }
         }
+        
+        // Start the duration update timer
+        startDurationUpdateTimer()
+    }
+    
+    private fun startDurationUpdateTimer() {
+        // Stop any existing timer
+        stopDurationUpdateTimer()
+        
+        // Timer to refresh ongoing request durations
+        durationUpdateHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        durationUpdateRunnable = object : Runnable {
+            override fun run() {
+                RequestLogger.refreshOngoingDurations()
+                android.util.Log.d("MainActivity", "Duration update timer tick")
+                durationUpdateHandler?.postDelayed(this, 1000) // Update every 1 second for better visibility
+            }
+        }
+        durationUpdateHandler?.post(durationUpdateRunnable!!)
+        android.util.Log.d("MainActivity", "Started duration update timer")
+    }
+    
+    private fun stopDurationUpdateTimer() {
+        durationUpdateRunnable?.let { runnable ->
+            durationUpdateHandler?.removeCallbacks(runnable)
+        }
+        android.util.Log.d("MainActivity", "Stopped duration update timer")
     }
 
     private fun checkServerStatus() {
@@ -475,6 +506,12 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        
+        // Stop the duration update timer
+        stopDurationUpdateTimer()
+        durationUpdateHandler = null
+        durationUpdateRunnable = null
+        
         Timber.d("MainActivity onDestroy - server persistence depends on user preference")
         // Note: We do NOT automatically stop the server when the activity is destroyed
         // The user must explicitly stop the server, or it runs until device reboot
@@ -816,34 +853,10 @@ class MainActivity : AppCompatActivity() {
                 showApiResponse("Testing $endpoint... ⏳")
                 val result = apiTester.testEndpoint(endpoint, parameters)
                 
-                // Log the demo request to request log
-                RequestLogger.logRequest(
-                    method = "GET",
-                    path = endpoint,
-                    clientIp = "127.0.0.1",
-                    statusCode = result.statusCode,
-                    responseTime = result.responseTime,
-                    userAgent = "Demo API Test",
-                    responseData = result.response,
-                    responseType = if (result.contentType.contains("json", ignoreCase = true)) "json" else "text"
-                )
-                
                 showApiResult(result)
             } catch (e: Exception) {
                 Timber.e(e, "Error testing API endpoint $endpoint")
                 showApiResponse("Error testing $endpoint: ${e.message}")
-                
-                // Log failed demo request
-                RequestLogger.logRequest(
-                    method = "GET",
-                    path = endpoint,
-                    clientIp = "127.0.0.1",
-                    statusCode = 500,
-                    responseTime = 0L,
-                    userAgent = "Demo API Test",
-                    responseData = """{"error": "${e.message}"}""",
-                    responseType = "json"
-                )
             }
         }
     }
@@ -891,18 +904,6 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Timber.e(e, "Error testing object detection endpoint")
                 showApiResponse("❌ Error testing object detection ($side): ${e.message}")
-                
-                // Log failed demo request
-                RequestLogger.logRequest(
-                    method = "POST",
-                    path = "/ai/object_detection",
-                    clientIp = "127.0.0.1",
-                    statusCode = 500,
-                    responseTime = 0L,
-                    userAgent = "Demo API Test (Object Detection)",
-                    responseData = """{"error": "${e.message}"}""",
-                    responseType = "json"
-                )
             }
         }
     }
@@ -1120,17 +1121,6 @@ class MainActivity : AppCompatActivity() {
             lifecycleScope.launch {
                 val result = apiTester.testEndpoint("/ai/models")
                 runOnUiThread {
-                    // Log the demo AI models request
-                    RequestLogger.logRequest(
-                        method = "GET",
-                        path = "/ai/models",
-                        clientIp = "127.0.0.1",
-                        statusCode = result.statusCode,
-                        responseTime = result.responseTime,
-                        userAgent = "Demo API Test",
-                        responseData = result.response,
-                        responseType = if (result.contentType.contains("json", ignoreCase = true)) "json" else "text"
-                    )
                     showApiResult(result)
                 }
             }
@@ -1402,34 +1392,10 @@ class MainActivity : AppCompatActivity() {
                 
                 // Log the demo AI text request
                 runOnUiThread {
-                    RequestLogger.logRequest(
-                        method = "POST",
-                        path = "/ai/text",
-                        clientIp = "127.0.0.1",
-                        statusCode = result.statusCode,
-                        responseTime = result.responseTime,
-                        userAgent = "Demo AI Test",
-                        responseData = result.response,
-                        responseType = "json"
-                    )
                     showAITestResultInDialog(jsonBody, result, textResults)
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    // Log failed demo AI request
-                    RequestLogger.logRequest(
-                        method = "POST",
-                        path = "/ai/text",
-                        clientIp = "127.0.0.1",
-                        statusCode = 500,
-                        responseTime = 0L,
-                        userAgent = "Demo AI Test",
-                        responseData = """{"error": "${e.message}"}""",
-                        responseType = "json"
-                    )
-                    textResults.text = "Error: ${e.message}"
-                    Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                
             }
         }
     }
@@ -1550,32 +1516,10 @@ class MainActivity : AppCompatActivity() {
                 
                 val result = apiTester.testPostEndpoint("/ai/text", jsonBody)
                 runOnUiThread {
-                    // Log the demo AI text request
-                    RequestLogger.logRequest(
-                        method = "POST",
-                        path = "/ai/text",
-                        clientIp = "127.0.0.1",
-                        statusCode = result.statusCode,
-                        responseTime = result.responseTime,
-                        userAgent = "Demo AI Test",
-                        responseData = result.response,
-                        responseType = "json"
-                    )
                     showAITestResult(jsonBody, result)
                 }
             } catch (e: Exception) {
                 runOnUiThread {
-                    // Log failed demo AI request
-                    RequestLogger.logRequest(
-                        method = "POST",
-                        path = "/ai/text",
-                        clientIp = "127.0.0.1",
-                        statusCode = 500,
-                        responseTime = 0L,
-                        userAgent = "Demo AI Test",
-                        responseData = """{"error": "${e.message}"}""",
-                        responseType = "json"
-                    )
                     Toast.makeText(this@MainActivity, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                 }
             }

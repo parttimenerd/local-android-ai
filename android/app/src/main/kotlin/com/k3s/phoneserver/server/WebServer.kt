@@ -69,7 +69,59 @@ class WebServer(private val context: Context) {
     }
 
     private fun Application.configureServer() {
-        // Request logging middleware
+        // Request logging middleware - automatically logs all incoming requests except /ai/text
+        intercept(ApplicationCallPipeline.Monitoring) {
+            val startTime = System.currentTimeMillis()
+            val uri = call.request.uri
+            val method = call.request.httpMethod.value
+            val clientIp = call.request.local.remoteHost
+            val userAgent = call.request.headers["User-Agent"]
+            
+            // Skip automatic logging for /ai/text - it handles its own logging
+            val skipAutoLogging = uri == "/ai/text" && method == "POST"
+            
+            try {
+                proceed()
+                
+                if (!skipAutoLogging) {
+                    // Log successful response for non-AI-text endpoints
+                    val responseTime = System.currentTimeMillis() - startTime
+                    val statusCode = call.response.status()?.value ?: 200
+                    
+                    RequestLogger.logRequest(
+                        method = method,
+                        path = uri,
+                        clientIp = clientIp,
+                        statusCode = statusCode,
+                        responseTime = responseTime,
+                        userAgent = userAgent,
+                        responseData = null, // Don't duplicate response data for general middleware
+                        responseType = "auto"
+                    )
+                }
+                
+            } catch (e: Exception) {
+                if (!skipAutoLogging) {
+                    // Log error response for non-AI-text endpoints
+                    val responseTime = System.currentTimeMillis() - startTime
+                    val statusCode = call.response.status()?.value ?: 500
+                    
+                    RequestLogger.logRequest(
+                        method = method,
+                        path = uri,
+                        clientIp = clientIp,
+                        statusCode = statusCode,
+                        responseTime = responseTime,
+                        userAgent = userAgent,
+                        responseData = "Error: ${e.message}",
+                        responseType = "error"
+                    )
+                }
+                
+                throw e
+            }
+        }
+        
         install(ContentNegotiation) {
             gson {
                 setPrettyPrinting()
@@ -395,53 +447,121 @@ class WebServer(private val context: Context) {
                 
                 // Text generation endpoint
                 post("/text") {
+                    val startTime = System.currentTimeMillis()
+                    val clientIp = call.request.local.remoteHost
+                    val userAgent = call.request.headers["User-Agent"]
+                    
+                    // Capture raw request body first
+                    val requestBodyText = call.receiveText()
+                    
+                    // Log initial request immediately (without duration and response)
+                    val requestId = RequestLogger.logRequest(
+                        method = "POST",
+                        path = "/ai/text",
+                        clientIp = clientIp,
+                        statusCode = 0, // Will be updated
+                        responseTime = 0L, // Will be updated
+                        userAgent = userAgent,
+                        responseData = "Processing...", // Will be updated
+                        responseType = "ai_text_pending",
+                        requestBody = requestBodyText
+                    )
+                    
                     try {
                         // Check if app has storage permissions for model access
                         if (!permissionManager.hasStoragePermissions(this@WebServer.context)) {
-                            call.respond(
-                                HttpStatusCode.Forbidden,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
-                                    error = "Storage permissions required for AI model access",
-                                    code = "STORAGE_PERMISSION_DENIED",
-                                    details = "The app needs storage permissions to access AI models. Please grant storage permissions in app settings and ensure models are available."
-                                )
+                            val responseTime = System.currentTimeMillis() - startTime
+                            val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                                error = "Storage permissions required for AI model access",
+                                code = "STORAGE_PERMISSION_DENIED",
+                                details = "The app needs storage permissions to access AI models. Please grant storage permissions in app settings and ensure models are available."
                             )
+                            
+                            // Update log with error result
+                            RequestLogger.updateRequest(
+                                requestId = requestId,
+                                statusCode = 403,
+                                responseTime = responseTime,
+                                responseData = com.google.gson.Gson().toJson(errorResponse),
+                                responseType = "ai_text_error"
+                            )
+                            
+                            call.respond(HttpStatusCode.Forbidden, errorResponse)
                             return@post
                         }
                         
-                        val request = call.receive<com.k3s.phoneserver.ai.AITextRequest>()
+                        // Parse the request from the captured text
+                        val request = com.google.gson.Gson().fromJson(requestBodyText, com.k3s.phoneserver.ai.AITextRequest::class.java)
                         val response = aiService.handleTextRequest(request)
+                        val responseTime = System.currentTimeMillis() - startTime
+                        
+                        // Update log with successful result
+                        RequestLogger.updateRequest(
+                            requestId = requestId,
+                            statusCode = 200,
+                            responseTime = responseTime,
+                            responseData = com.google.gson.Gson().toJson(response),
+                            responseType = "ai_text_success"
+                        )
+                        
                         call.respond(response)
                     } catch (e: com.k3s.phoneserver.ai.ModelNotDownloadedException) {
                         Timber.w(e, "AI model not available")
-                        call.respond(
-                            HttpStatusCode.NotFound,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
-                                error = "AI model not available",
-                                code = "MODEL_NOT_AVAILABLE",
-                                details = e.message
-                            )
+                        val responseTime = System.currentTimeMillis() - startTime
+                        val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                            error = "AI model not available",
+                            code = "MODEL_NOT_AVAILABLE",
+                            details = e.message
                         )
+                        
+                        // Update log with error result
+                        RequestLogger.updateRequest(
+                            requestId = requestId,
+                            statusCode = 404,
+                            responseTime = responseTime,
+                            responseData = com.google.gson.Gson().toJson(errorResponse),
+                            responseType = "ai_text_error"
+                        )
+                        
+                        call.respond(HttpStatusCode.NotFound, errorResponse)
                     } catch (e: com.k3s.phoneserver.ai.AIServiceException) {
                         Timber.w(e, "AI service error")
-                        call.respond(
-                            HttpStatusCode.BadRequest,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
-                                error = "AI service error",
-                                code = "AI_SERVICE_ERROR",
-                                details = e.message
-                            )
+                        val responseTime = System.currentTimeMillis() - startTime
+                        val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                            error = "AI service error",
+                            code = "AI_SERVICE_ERROR",
+                            details = e.message
                         )
+                        
+                        // Update log with error result
+                        RequestLogger.updateRequest(
+                            requestId = requestId,
+                            statusCode = 400,
+                            responseTime = responseTime,
+                            responseData = com.google.gson.Gson().toJson(errorResponse),
+                            responseType = "ai_text_error"
+                        )
+                        
+                        call.respond(HttpStatusCode.BadRequest, errorResponse)
                     } catch (e: Exception) {
                         Timber.e(e, "AI text generation error")
-                        call.respond(
-                            HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
-                                error = "AI text generation failed",
-                                code = "AI_ERROR",
-                                details = e.message
-                            )
+                        val responseTime = System.currentTimeMillis() - startTime
+                        val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                            error = "AI text generation failed",
+                            code = "AI_ERROR",
+                            details = e.message
                         )
+                        
+                        // Update log with error result
+                        RequestLogger.updateRequest(
+                            requestId = requestId,
+                            statusCode = 500,
+                            responseTime = responseTime,
+                            responseData = com.google.gson.Gson().toJson(errorResponse),
+                            responseType = "ai_text_error"
+                        )
+                        
+                        call.respond(HttpStatusCode.InternalServerError, errorResponse)
                     }
                 }
                 

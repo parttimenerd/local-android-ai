@@ -852,4 +852,5 @@ now
 - [ ] location label updating
 - [ ] dashboard.sh
 - [ ] status.sh
-- [ ] sample appö- [ ] with second phone
+- [ ] sample app
+- [ ] with second phone
