@@ -958,12 +958,12 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                 hostname = os.uname().nodename
                 funnel_domain = self.get_funnel_domain()
                 
-                # Replace localhost with actual funnel domain and modify for TLS
+                # Replace localhost with actual funnel domain and use forwarder port
                 import yaml
                 config = yaml.safe_load(kubeconfig_content)
                 
-                # Update cluster server URL
-                config['clusters'][0]['cluster']['server'] = f"https://{funnel_domain}:6443"
+                # Update cluster server URL to use forwarder port (6883) by default
+                config['clusters'][0]['cluster']['server'] = f"https://{funnel_domain}:6883"
                 
                 # Add insecure-skip-tls-verify to handle certificate domain mismatch
                 config['clusters'][0]['cluster']['insecure-skip-tls-verify'] = True
@@ -1036,6 +1036,123 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                 logging.error(f"Error serving forwarder kubeconfig to {client_ip}: {e}")
                 self.send_error_response(500, f"Server error: {str(e)}")
         
+        elif parsed_path.path == "/kubeconfig-direct":
+            # Serve kubeconfig using direct port (6443) - for local/VPN access
+            # Check authentication
+            if "key" not in query_params:
+                logging.warning(f"Missing key parameter from {client_ip}")
+                self.send_error_response(400, "Missing key parameter")
+                return
+                
+            if query_params["key"][0] != SECRET_KEY:
+                logging.warning(f"Invalid key from {client_ip}: {query_params['key'][0][:8]}...")
+                self.send_error_response(403, "Invalid authentication key")
+                return
+            
+            # Serve kubeconfig with direct port
+            try:
+                with open(KUBECONFIG_PATH, 'r') as f:
+                    kubeconfig_content = f.read()
+                
+                # Get the actual funnel domain dynamically
+                hostname = os.uname().nodename
+                funnel_domain = self.get_funnel_domain()
+                
+                # Replace localhost with actual funnel domain and use direct port
+                import yaml
+                config = yaml.safe_load(kubeconfig_content)
+                
+                # Update cluster server URL to use direct port (6443)
+                config['clusters'][0]['cluster']['server'] = f"https://{funnel_domain}:6443"
+                
+                # Add insecure-skip-tls-verify to handle certificate domain mismatch
+                config['clusters'][0]['cluster']['insecure-skip-tls-verify'] = True
+                
+                # Remove certificate-authority-data since we're skipping TLS verify
+                if 'certificate-authority-data' in config['clusters'][0]['cluster']:
+                    del config['clusters'][0]['cluster']['certificate-authority-data']
+                
+                kubeconfig_content = yaml.dump(config)
+                
+                logging.info(f"Served direct kubeconfig to {client_ip} (size: {len(kubeconfig_content)} bytes)")
+                self.send_response(200)
+                self.send_header('Content-type', 'application/x-yaml')
+                self.send_header('Content-Disposition', f'attachment; filename="{hostname}-direct-kubeconfig.yaml"')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+                self.wfile.write(kubeconfig_content.encode())
+                
+            except Exception as e:
+                logging.error(f"Error serving direct kubeconfig to {client_ip}: {e}")
+                self.send_error_response(500, f"Server error: {str(e)}")
+        
+        elif parsed_path.path == "/kubeconfig-proxy":
+            # Serve kubeconfig that uses path-based API access via our proxy
+            # Check authentication
+            if "key" not in query_params:
+                logging.warning(f"Missing key parameter from {client_ip}")
+                self.send_error_response(400, "Missing key parameter")
+                return
+                
+            if query_params["key"][0] != SECRET_KEY:
+                logging.warning(f"Invalid key from {client_ip}: {query_params['key'][0][:8]}...")
+                self.send_error_response(403, "Invalid authentication key")
+                return
+            
+            # Generate special kubeconfig that routes through our /k8s-api/ proxy
+            try:
+                hostname = os.uname().nodename
+                funnel_domain = self.get_funnel_domain()
+                
+                # Load the original kubeconfig to get cert data
+                with open(KUBECONFIG_PATH, 'r') as f:
+                    kubeconfig_content = f.read()
+                
+                import yaml
+                config = yaml.safe_load(kubeconfig_content)
+                
+                # Update cluster server URL to use our path-based proxy via port 443
+                config['clusters'][0]['cluster']['server'] = f"https://{funnel_domain}/k8s-api"
+                
+                # Add insecure-skip-tls-verify to handle certificate domain mismatch
+                config['clusters'][0]['cluster']['insecure-skip-tls-verify'] = True
+                
+                # Remove certificate-authority-data since we're skipping TLS verify
+                if 'certificate-authority-data' in config['clusters'][0]['cluster']:
+                    del config['clusters'][0]['cluster']['certificate-authority-data']
+                
+                # Add custom headers for authentication to our proxy
+                # Note: This won't work with standard kubectl, but shows the concept
+                config['clusters'][0]['cluster']['proxy-url'] = f"https://{funnel_domain}/k8s-api/"
+                
+                kubeconfig_content = yaml.dump(config)
+                
+                # Add instructions as comment
+                instructions = f"""# K3s Path-Based Proxy Kubeconfig for {hostname}
+# 
+# This kubeconfig uses path-based API access through port 443.
+# API requests go through: https://{funnel_domain}/k8s-api/
+#
+# Note: This approach requires custom client implementation since
+# kubectl doesn't natively support path-based API routing.
+# 
+# For standard kubectl, use /kubeconfig-forwarder instead.
+#
+"""
+                kubeconfig_content = instructions + kubeconfig_content
+                
+                logging.info(f"Served path-proxy kubeconfig to {client_ip} (size: {len(kubeconfig_content)} bytes)")
+                self.send_response(200)
+                self.send_header('Content-type', 'application/x-yaml')
+                self.send_header('Content-Disposition', f'attachment; filename="{hostname}-path-proxy-kubeconfig.yaml"')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+                self.wfile.write(kubeconfig_content.encode())
+                
+            except Exception as e:
+                logging.error(f"Error serving path-proxy kubeconfig to {client_ip}: {e}")
+                self.send_error_response(500, f"Server error: {str(e)}")
+        
         elif parsed_path.path == "/status":
             # Status endpoint (no auth required)
             logging.info(f"Status check from {client_ip}")
@@ -1047,8 +1164,11 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                 "port": PORT,
                 "timestamp": datetime.now().isoformat(),
                 "endpoints": {
-                    "/kubeconfig": "GET kubeconfig (requires ?key=SECRET)",
-                    "/kubeconfig-forwarder": "GET kubeconfig for port forwarder 6883 (requires ?key=SECRET)",
+                    "/kubeconfig": "GET kubeconfig via forwarder (recommended, requires ?key=SECRET)",
+                    "/kubeconfig-forwarder": "GET kubeconfig via forwarder port 6883 (requires ?key=SECRET)",
+                    "/kubeconfig-direct": "GET kubeconfig via direct port 6443 (requires ?key=SECRET)",
+                    "/kubeconfig-proxy": "GET kubeconfig for kubectl proxy via path-based API (requires ?key=SECRET)",
+                    "/k8s-api/*": "GET/POST K3s API proxy via port 443 (requires ?key=SECRET)",
                     "/status": "GET server status",
                     "/proxy/*": "GET/POST authenticated kubectl proxy (requires ?key=SECRET)",
                     "/location": "GET device location (requires ?key=SECRET)",
@@ -1058,6 +1178,14 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                     "/ports/close": "POST close funnel port (requires ?key=SECRET&port=PORT)"
                 }
             })
+        
+        elif parsed_path.path.startswith("/k8s-api/"):
+            # K3s API proxy endpoint (requires auth) - works via port 443
+            if not self.check_auth(query_params, client_ip):
+                return
+            
+            # Proxy requests to K3s API via localhost
+            self.proxy_k8s_api_request(parsed_path.path, query_params, client_ip)
         
         elif parsed_path.path.startswith("/proxy/"):
             # Authenticated kubectl proxy endpoint
@@ -1227,6 +1355,83 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             logging.error(f"K8s proxy error for {client_ip}: {e}")
             self.send_error_response(500, f"K8s proxy error: {str(e)}")
+    
+    def proxy_k8s_api_request(self, path, query_params, client_ip):
+        """Proxy K3s API requests through path-based routing"""
+        try:
+            # Remove /k8s-api prefix and preserve the rest of the path
+            k8s_path = path[8:]  # Remove "/k8s-api"
+            if not k8s_path:
+                k8s_path = "/api/v1"
+            
+            # Construct K3s API URL - use localhost:6884 (forwarder) instead of 6443 directly
+            k8s_url = f"https://localhost:6884{k8s_path}"
+            
+            # Add query parameters if any (excluding the auth key)
+            filtered_params = {k: v for k, v in query_params.items() if k != "key"}
+            if filtered_params:
+                query_string = "&".join([f"{k}={v[0]}" for k, v in filtered_params.items()])
+                k8s_url += f"?{query_string}"
+            
+            logging.info(f"Proxying K3s API request from {client_ip}: {k8s_url}")
+            
+            # Load kubeconfig to get client cert and key
+            import yaml
+            with open(KUBECONFIG_PATH, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract client certificate and key
+            import base64
+            import tempfile
+            
+            cert_data = config['users'][0]['user']['client-certificate-data']
+            key_data = config['users'][0]['user']['client-key-data']
+            
+            # Write cert and key to temporary files
+            cert_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.crt')
+            key_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key')
+            
+            cert_file.write(base64.b64decode(cert_data).decode('utf-8'))
+            key_file.write(base64.b64decode(key_data).decode('utf-8'))
+            cert_file.close()
+            key_file.close()
+            
+            # Make request with client certificate
+            import subprocess
+            curl_cmd = [
+                'curl', '-s', '-k',  # -k to skip TLS verification
+                '--cert', cert_file.name,
+                '--key', key_file.name,
+                '--max-time', '30',
+                k8s_url
+            ]
+            
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
+            
+            # Clean up temp files
+            import os
+            os.unlink(cert_file.name)
+            os.unlink(key_file.name)
+            
+            if result.returncode == 0:
+                content = result.stdout.encode()
+                content_type = 'application/json'  # K8s API returns JSON
+                
+                self.send_response(200)
+                self.send_header('Content-type', content_type)
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Access-Control-Allow-Origin', '*')  # CORS for web apps
+                self.end_headers()
+                self.wfile.write(content)
+                
+                logging.info(f"K3s API proxy successful for {client_ip}")
+            else:
+                logging.error(f"K3s API error: {result.stderr}")
+                self.send_error_response(500, f"K3s API error: {result.stderr}")
+                
+        except Exception as e:
+            logging.error(f"K3s proxy error for {client_ip}: {e}")
+            self.send_error_response(500, f"K3s proxy error: {str(e)}")
     
     def do_POST(self):
         """Handle POST requests for port management"""
