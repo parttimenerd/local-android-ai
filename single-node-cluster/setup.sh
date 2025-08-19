@@ -570,16 +570,17 @@ setup_tailscale_local() {
 setup_k3s_funnel() {
     log_verbose "Setting up funnel for K3s API..."
     
-    # First, try the standard HTTPS-to-HTTPS proxying
-    if sudo tailscale funnel --https=6443 --bg https://localhost:6443 2>/dev/null; then
-        log_verbose "✅ Funnel enabled for K3s API (port 6443)"
+    # Use HTTP-to-HTTPS proxying to avoid 502 Bad Gateway errors
+    # This proxies HTTPS external traffic to HTTP backend (K3s handles TLS termination)
+    if sudo tailscale funnel --https=6443 --bg http://localhost:6443 2>/dev/null; then
+        log_verbose "✅ Funnel enabled for K3s API (port 6443) using HTTP backend"
     else
-        log_warn "HTTPS-to-HTTPS funnel failed, trying TCP mode..."
-        # Reset the 6443 funnel and try TCP mode
+        log_warn "HTTP-to-HTTPS funnel failed, trying HTTPS-to-HTTPS..."
+        # Reset the 6443 funnel and try HTTPS mode as fallback
         sudo tailscale funnel --https=6443 off 2>/dev/null || true
         
-        if sudo tailscale funnel --tcp=6443 localhost:6443 2>/dev/null; then
-            log_verbose "✅ Funnel enabled for K3s API using TCP mode (port 6443)"
+        if sudo tailscale funnel --https=6443 --bg https://localhost:6443 2>/dev/null; then
+            log_verbose "✅ Funnel enabled for K3s API using HTTPS backend (port 6443)"
         else
             log_warn "Failed to enable funnel for K3s API in any mode"
         fi
