@@ -573,6 +573,7 @@ setup_k3s_funnel() {
     # Use HTTP-to-HTTPS proxying to avoid 502 Bad Gateway errors
     # This proxies HTTPS external traffic to HTTP backend (K3s handles TLS termination)
     if sudo tailscale funnel --https=6443 --bg http://localhost:6443 2>/dev/null; then
+        sudo tailscale funnel --https=6443 off
         log_verbose "✅ Funnel enabled for K3s API (port 6443) using HTTP backend"
     else
         log_warn "HTTP-to-HTTPS funnel failed, trying HTTPS-to-HTTPS..."
@@ -584,6 +585,15 @@ setup_k3s_funnel() {
         else
             log_warn "Failed to enable funnel for K3s API in any mode"
         fi
+    fi
+    
+    # Setup funnel for K3s API forwarder (port 6883 → 6443)
+    log_verbose "Setting up funnel for K3s API forwarder..."
+    if sudo tailscale funnel --https=6883 --bg https://localhost:6883 2>/dev/null; then
+        log_verbose "✅ Funnel enabled for K3s API forwarder (port 6883)"
+        log "📡 K3s API accessible via forwarder: https://${HOSTNAME}.tailxxxx.ts.net:6883"
+    else
+        log_warn "Failed to enable funnel for K3s API forwarder, trying to continue..."
     fi
     
     # Setup funnel for NodePort services (port 30080)
@@ -990,6 +1000,56 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                 logging.error(f"Error serving kubeconfig to {client_ip}: {e}")
                 self.send_error_response(500, f"Server error: {str(e)}")
         
+        elif parsed_path.path == "/kubeconfig-forwarder":
+            # Serve kubeconfig using port forwarder (6883 instead of 6443)
+            # Check authentication
+            if "key" not in query_params:
+                logging.warning(f"Missing key parameter from {client_ip}")
+                self.send_error_response(400, "Missing key parameter")
+                return
+                
+            if query_params["key"][0] != SECRET_KEY:
+                logging.warning(f"Invalid key from {client_ip}: {query_params['key'][0][:8]}...")
+                self.send_error_response(403, "Invalid authentication key")
+                return
+            
+            # Serve kubeconfig with forwarder port
+            try:
+                with open(KUBECONFIG_PATH, 'r') as f:
+                    kubeconfig_content = f.read()
+                
+                # Get the actual funnel domain dynamically
+                hostname = os.uname().nodename
+                funnel_domain = self.get_funnel_domain()
+                
+                # Replace localhost with actual funnel domain and use forwarder port
+                import yaml
+                config = yaml.safe_load(kubeconfig_content)
+                
+                # Update cluster server URL to use forwarder port (6883)
+                config['clusters'][0]['cluster']['server'] = f"https://{funnel_domain}:6883"
+                
+                # Add insecure-skip-tls-verify to handle certificate domain mismatch
+                config['clusters'][0]['cluster']['insecure-skip-tls-verify'] = True
+                
+                # Remove certificate-authority-data since we're skipping TLS verify
+                if 'certificate-authority-data' in config['clusters'][0]['cluster']:
+                    del config['clusters'][0]['cluster']['certificate-authority-data']
+                
+                kubeconfig_content = yaml.dump(config)
+                
+                logging.info(f"Served forwarder kubeconfig to {client_ip} (size: {len(kubeconfig_content)} bytes)")
+                self.send_response(200)
+                self.send_header('Content-type', 'application/x-yaml')
+                self.send_header('Content-Disposition', f'attachment; filename="{hostname}-forwarder-kubeconfig.yaml"')
+                self.send_header('Cache-Control', 'no-cache')
+                self.end_headers()
+                self.wfile.write(kubeconfig_content.encode())
+                
+            except Exception as e:
+                logging.error(f"Error serving forwarder kubeconfig to {client_ip}: {e}")
+                self.send_error_response(500, f"Server error: {str(e)}")
+        
         elif parsed_path.path == "/status":
             # Status endpoint (no auth required)
             logging.info(f"Status check from {client_ip}")
@@ -1002,7 +1062,9 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                 "timestamp": datetime.now().isoformat(),
                 "endpoints": {
                     "/kubeconfig": "GET kubeconfig (requires ?key=SECRET)",
+                    "/kubeconfig-forwarder": "GET kubeconfig for port forwarder 6883 (requires ?key=SECRET)",
                     "/status": "GET server status",
+                    "/proxy/*": "GET/POST authenticated kubectl proxy (requires ?key=SECRET)",
                     "/location": "GET device location (requires ?key=SECRET)",
                     "/orientation": "GET device orientation (requires ?key=SECRET)",
                     "/ports": "GET available funnel ports (requires ?key=SECRET)",
@@ -1010,6 +1072,14 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
                     "/ports/close": "POST close funnel port (requires ?key=SECRET&port=PORT)"
                 }
             })
+        
+        elif parsed_path.path.startswith("/proxy/"):
+            # Authenticated kubectl proxy endpoint
+            if not self.check_auth(query_params, client_ip):
+                return
+            
+            # Proxy requests to K3s API
+            self.proxy_k8s_request(parsed_path.path, query_params, client_ip)
         
         elif parsed_path.path == "/location":
             # Location endpoint (requires auth)
@@ -1094,6 +1164,83 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
         except Exception as e:
             logging.error(f"HTTPBin proxy error for {client_ip}: {e}")
             self.send_error_response(500, f"HTTPBin proxy error: {str(e)}")
+    
+    def proxy_k8s_request(self, path, query_params, client_ip):
+        """Proxy authenticated requests to K3s API"""
+        try:
+            # Remove /proxy prefix and preserve the rest of the path
+            k8s_path = path[7:]  # Remove "/proxy/"
+            if not k8s_path:
+                k8s_path = "/api/v1"
+            
+            # Construct K3s API URL
+            k8s_url = f"https://localhost:6443{k8s_path}"
+            
+            # Add query parameters if any (excluding the auth key)
+            filtered_params = {k: v for k, v in query_params.items() if k != "key"}
+            if filtered_params:
+                query_string = "&".join([f"{k}={v[0]}" for k, v in filtered_params.items()])
+                k8s_url += f"?{query_string}"
+            
+            logging.info(f"Proxying K8s request from {client_ip}: {k8s_url}")
+            
+            # Load kubeconfig to get client cert and key
+            import yaml
+            with open(KUBECONFIG_PATH, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            # Extract client certificate and key
+            import base64
+            import tempfile
+            
+            cert_data = config['users'][0]['user']['client-certificate-data']
+            key_data = config['users'][0]['user']['client-key-data']
+            
+            # Write cert and key to temporary files
+            cert_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.crt')
+            key_file = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key')
+            
+            cert_file.write(base64.b64decode(cert_data).decode('utf-8'))
+            key_file.write(base64.b64decode(key_data).decode('utf-8'))
+            cert_file.close()
+            key_file.close()
+            
+            # Make request with client certificate
+            import subprocess
+            curl_cmd = [
+                'curl', '-s', '-k',  # -k to skip TLS verification
+                '--cert', cert_file.name,
+                '--key', key_file.name,
+                '--max-time', '30',
+                k8s_url
+            ]
+            
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=30)
+            
+            # Clean up temp files
+            import os
+            os.unlink(cert_file.name)
+            os.unlink(key_file.name)
+            
+            if result.returncode == 0:
+                content = result.stdout.encode()
+                content_type = 'application/json'  # K8s API returns JSON
+                
+                self.send_response(200)
+                self.send_header('Content-type', content_type)
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Access-Control-Allow-Origin', '*')  # CORS for web apps
+                self.end_headers()
+                self.wfile.write(content)
+                
+                logging.info(f"K8s proxy successful for {client_ip}")
+            else:
+                logging.error(f"K8s API error: {result.stderr}")
+                self.send_error_response(500, f"K8s API error: {result.stderr}")
+                
+        except Exception as e:
+            logging.error(f"K8s proxy error for {client_ip}: {e}")
+            self.send_error_response(500, f"K8s proxy error: {str(e)}")
     
     def do_POST(self):
         """Handle POST requests for port management"""
@@ -1436,6 +1583,55 @@ EOF
     log_verbose "Log file: /var/log/kubeconfig-server.log"
 }
 
+# Setup K3s API port forwarder for external access
+setup_k3s_api_forwarder() {
+    log_step "Setting up K3s API port forwarder (6883 → 6443)..."
+
+    # Install socat if not present
+    if ! command -v socat &> /dev/null; then
+        log "Installing socat for port forwarding..."
+        sudo apt-get update
+        sudo apt-get install -y socat
+    fi
+
+    # Create systemd service for K3s API forwarding
+    log "Creating K3s API port forwarder service..."
+    sudo tee /etc/systemd/system/k3s-api-forwarder.service > /dev/null << EOF
+[Unit]
+Description=K3s API Port Forwarder (6883 → 6443)
+After=network.target k3s.service
+Requires=k3s.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat TCP-LISTEN:6883,fork,reuseaddr TCP:localhost:6443
+Restart=always
+RestartSec=5
+User=nobody
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Start and enable the forwarding service
+    sudo systemctl daemon-reload
+    sudo systemctl enable k3s-api-forwarder.service
+    sudo systemctl start k3s-api-forwarder.service
+
+    # Verify service started correctly
+    if ! sudo systemctl is-active k3s-api-forwarder.service >/dev/null 2>&1; then
+        log_error "K3s API forwarder failed to start"
+        log "Check logs with: sudo journalctl -u k3s-api-forwarder -f"
+        return 1
+    fi
+
+    log "✅ K3s API port forwarder setup completed"
+    log "External K3s API access: port 6883 → 6443"
+    log_verbose "Service logs: sudo journalctl -u k3s-api-forwarder -f"
+}
+
 # Test funnel connectivity and kubectl access
 test_funnel_connectivity() {
     local funnel_domain="$1"
@@ -1555,6 +1751,9 @@ main() {
     fi
     
     setup_kubeconfig_server
+    
+    # Set up K3s API port forwarder for external access without proxy
+    setup_k3s_api_forwarder
 
     log_step "Setup Complete!"
     echo
@@ -1610,7 +1809,9 @@ main() {
         
         if [ -n "$funnel_domain" ] && [ "$funnel_domain" != "#" ]; then
             log "🌐 K3s API accessible: https://$funnel_domain:6443"
+            log "� K3s API via forwarder: https://$funnel_domain:6883 (no proxy needed)"
             log "📄 Kubeconfig: https://$funnel_domain/kubeconfig?key=${SECRET_KEY}"
+            log "�📄 Kubeconfig (forwarder): https://$funnel_domain/kubeconfig-forwarder?key=${SECRET_KEY}"
             log "🚢 NodePort services: https://$funnel_domain:30080"
             if [ "$ANDROID_FORWARDING" = true ]; then
                 log "📱 Android app via funnel: https://$funnel_domain:8005"
@@ -1623,6 +1824,13 @@ main() {
             echo
             log "🧪 Test cluster access:"
             log "   curl -s \"https://$funnel_domain/kubeconfig?key=${SECRET_KEY}\" -o /tmp/kubeconfig.yaml && kubectl --kubeconfig=/tmp/kubeconfig.yaml get nodes"
+            
+            # Add forwarder usage examples
+            echo
+            log "🚀 Direct kubectl access (no proxy needed):"
+            log "   curl -s \"https://$funnel_domain/kubeconfig-forwarder?key=${SECRET_KEY}\" -o ~/.kube/phone-forwarder.yaml"
+            log "   kubectl --kubeconfig=~/.kube/phone-forwarder.yaml get nodes"
+            log "   kubectl --kubeconfig=~/.kube/phone-forwarder.yaml get pods"
             
             # Add HTTPBin deployment example
             echo
@@ -1673,6 +1881,12 @@ main() {
             echo
             log "🧪 Test cluster access:"
             log "   curl -s \"https://$funnel_domain/kubeconfig?key=${SECRET_KEY}\" -o /tmp/kubeconfig.yaml && kubectl --kubeconfig=/tmp/kubeconfig.yaml get nodes"
+            
+            # Add HTTPBin deployment example
+            echo
+            log "🐳 Deploy HTTPBin for testing:"
+            log "   ./httpbin.sh deploy -u https://$funnel_domain/kubeconfig -k ${SECRET_KEY}"
+            log "   ./httpbin.sh test -u https://$funnel_domain/kubeconfig -k ${SECRET_KEY}"
         else
             log "🌐 K3s API accessible: https://${HOSTNAME}.tailxxxx.ts.net:6443"
             log "📄 Kubeconfig: https://${HOSTNAME}.tailxxxx.ts.net/kubeconfig?key=${SECRET_KEY}"
@@ -1681,6 +1895,12 @@ main() {
                 log "📱 Android app via funnel: https://${HOSTNAME}.tailxxxx.ts.net:8005"
             fi
             log_warn "Could not detect exact funnel domain. Check with: tailscale funnel status"
+            
+            # Add HTTPBin deployment example for fallback case
+            echo
+            log "🐳 Deploy HTTPBin for testing (replace with actual domain):"
+            log "   ./httpbin.sh deploy -u https://${HOSTNAME}.tailxxxx.ts.net/kubeconfig -k ${SECRET_KEY}"
+            log "   ./httpbin.sh test -u https://${HOSTNAME}.tailxxxx.ts.net/kubeconfig -k ${SECRET_KEY}"
         fi
     fi
     
@@ -1711,3 +1931,4 @@ main() {
 
 parse_args "$@"
 main
+sudo tailscale funnel --https=6443 off
