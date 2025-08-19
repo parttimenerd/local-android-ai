@@ -627,13 +627,41 @@ except:
     # Install certificates and curl for Debian systems
     if command -v apt-get &> /dev/null; then
         log_verbose "Updating certificates for Debian/Ubuntu..."
-        sudo apt-get update -qq
-        # Install essential packages, skip gnupg if it fails
-        sudo apt-get install -y ca-certificates curl wget || {
+        
+        # Wait for dpkg lock to be released
+        local lock_retries=0
+        while [ $lock_retries -lt 30 ]; do
+            if sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; then
+                log_verbose "Waiting for dpkg lock to be released... (attempt $((lock_retries + 1))/30)"
+                sleep 2
+                lock_retries=$((lock_retries + 1))
+            else
+                break
+            fi
+        done
+        
+        if [ $lock_retries -eq 30 ]; then
+            log_warn "dpkg lock timeout, trying to continue anyway..."
+        fi
+        
+        # Try to update and install packages with retries
+        local apt_retries=0
+        while [ $apt_retries -lt 3 ]; do
+            if sudo apt-get update -qq 2>/dev/null; then
+                break
+            else
+                log_verbose "apt-get update failed, retrying... (attempt $((apt_retries + 1))/3)"
+                sleep 5
+                apt_retries=$((apt_retries + 1))
+            fi
+        done
+        
+        # Install essential packages, skip if they fail
+        sudo apt-get install -y ca-certificates curl wget 2>/dev/null || {
             log_warn "Failed to install some packages, trying individual installation..."
-            sudo apt-get install -y ca-certificates || true
-            sudo apt-get install -y curl || true
-            sudo apt-get install -y wget || true
+            sudo apt-get install -y ca-certificates 2>/dev/null || true
+            sudo apt-get install -y curl 2>/dev/null || true
+            sudo apt-get install -y wget 2>/dev/null || true
         }
     fi
     
