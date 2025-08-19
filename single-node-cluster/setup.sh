@@ -274,6 +274,26 @@ parse_args() {
     fi
 }
 
+# Detect if running on Android/Termux
+is_android() {
+    # Check for Android-specific environment
+    [ -n "$ANDROID_ROOT" ] || [ -n "$ANDROID_DATA" ] || [ -d "/system/bin" ] || [ "$(whoami)" = "droid" ]
+}
+
+# Get appropriate user:group for chown operations
+get_user_group() {
+    local user
+    user=$(whoami)
+    
+    if is_android; then
+        # On Android/Termux, just use the user without group
+        echo "$user"
+    else
+        # On regular Linux, use user:group format
+        echo "$user:$user"
+    fi
+}
+
 # Check if running with sufficient privileges
 check_privileges() {
     if [ "$EUID" -eq 0 ]; then
@@ -607,7 +627,7 @@ install_k3s() {
     # Make kubectl available for regular user
     mkdir -p ~/.kube
     sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-    sudo chown "$(whoami):$(whoami)" ~/.kube/config
+    sudo chown "$(get_user_group)" ~/.kube/config
 
     # Set KUBECONFIG environment variable
     echo 'export KUBECONFIG=~/.kube/config' >> ~/.bashrc
@@ -655,7 +675,7 @@ check_k3s_running() {
         log "Setting up kubeconfig for current user..."
         mkdir -p ~/.kube
         sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-        sudo chown "$(whoami):$(whoami)" ~/.kube/config
+        sudo chown "$(get_user_group)" ~/.kube/config
     fi
 
     # Get cluster info
