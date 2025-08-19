@@ -893,7 +893,7 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
         logging.info(f"{self.client_address[0]} - {format % args}")
     
     def get_funnel_domain(self):
-        """Get the actual funnel domain from tailscale status"""
+        """Get the actual funnel domain from tailscale status, prioritizing port 443"""
         import subprocess
         import re
         
@@ -902,22 +902,33 @@ class KubeconfigHandler(http.server.SimpleHTTPRequestHandler):
             result = subprocess.run(['tailscale', 'funnel', 'status'], 
                                   capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
-                # Look for the main domain (shortest URL without port) first
+                # Look for the main domain (port 443, no port specified) first
                 lines = result.stdout.split('\n')
                 for line in lines:
-                    # Look for main domain entry without port
-                    match = re.search(r'https://([a-zA-Z0-9.-]+\.ts\.net)[^:]', line)
+                    # Look for main domain entry without port (this is port 443)
+                    match = re.search(r'https://([a-zA-Z0-9.-]+\.ts\.net)\s', line)
                     if match:
                         domain = match.group(1)
-                        logging.info(f"Detected main funnel domain: {domain}")
+                        logging.info(f"Detected main funnel domain (port 443): {domain}")
                         return domain
                 
-                # Fallback: look for any funnel domain and strip port
+                # Fallback: look for any funnel domain but exclude known non-443 ports
+                for line in lines:
+                    if ':30080' in line or ':6883' in line:
+                        continue
+                    match = re.search(r'https://([a-zA-Z0-9.-]+\.ts\.net)', line)
+                    if match:
+                        domain = match.group(1)
+                        logging.info(f"Detected funnel domain (fallback, excluding ports): {domain}")
+                        return domain
+                
+                # Last fallback: any domain, strip port
                 for line in lines:
                     match = re.search(r'https://([a-zA-Z0-9.-]+\.ts\.net)', line)
                     if match:
                         domain = match.group(1)
-                        logging.info(f"Detected funnel domain (fallback): {domain}")
+                        logging.info(f"Detected funnel domain (last fallback): {domain}")
+                        return domain
                         return domain
         except Exception as e:
             logging.warning(f"Failed to detect funnel domain: {e}")
@@ -1965,16 +1976,21 @@ main() {
         log_verbose "Detecting funnel URL..."
         
         # Try multiple methods to get funnel domain
-        # Look for the main domain (shortest URL without port) first
-        if funnel_full_url=$(tailscale funnel status 2>/dev/null | grep -E "https://[^[:space:]]+\.ts\.net[^:]" | head -1); then
-            # Extract domain from the main domain entry (without port)
-            funnel_domain=$(echo "$funnel_full_url" | sed -E 's/.*https:\/\/([^[:space:]]+\.ts\.net).*/\1/' | sed 's/(.*$//')
+        # Look for the main domain (without port) first - this is the 443 port entry
+        if funnel_full_url=$(tailscale funnel status 2>/dev/null | grep -E "https://[^[:space:]]+\.ts\.net[[:space:]]" | head -1); then
+            # Extract domain from the main domain entry (without port) - this should be the port 443 entry
+            funnel_domain=$(echo "$funnel_full_url" | sed -E 's/.*https:\/\/([^[:space:]]+\.ts\.net).*/\1/')
             log_verbose "Found main domain entry: $funnel_full_url"
             log_verbose "Extracted main domain: $funnel_domain"
+        elif funnel_full_url=$(tailscale funnel status 2>/dev/null | grep -E "https://[^[:space:]]+" | grep -v ":30080" | grep -v ":6883" | head -1); then
+            # Fallback: look for any entry but exclude known non-443 ports
+            funnel_domain=$(echo "$funnel_full_url" | sed -E 's/.*https:\/\/([^[:space:]]+).*/\1/' | sed 's/:.*$//')
+            log_verbose "Fallback funnel entry (excluding ports): $funnel_full_url"
+            log_verbose "Extracted domain (port removed): $funnel_domain"
         elif funnel_full_url=$(tailscale funnel status 2>/dev/null | grep -E "https://[^[:space:]]+" | head -1); then
-            # Fallback: extract domain from any funnel entry and remove port if present
-            funnel_domain=$(echo "$funnel_full_url" | sed -E 's/.*https:\/\/([^[:space:]]+).*/\1/' | sed 's/:.*$//' | sed 's/(.*$//')
-            log_verbose "Fallback funnel entry: $funnel_full_url"
+            # Last fallback: extract domain from any funnel entry and remove port if present
+            funnel_domain=$(echo "$funnel_full_url" | sed -E 's/.*https:\/\/([^[:space:]]+).*/\1/' | sed 's/:.*$//')
+            log_verbose "Last fallback funnel entry: $funnel_full_url"
             log_verbose "Extracted domain (port removed): $funnel_domain"
         fi
         
