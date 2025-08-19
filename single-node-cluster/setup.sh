@@ -569,10 +569,20 @@ setup_tailscale_local() {
 # Setup funnel for K3s API after K3s is running (to avoid port conflicts)
 setup_k3s_funnel() {
     log_verbose "Setting up funnel for K3s API..."
+    
+    # First, try the standard HTTPS-to-HTTPS proxying
     if sudo tailscale funnel --https=6443 --bg https://localhost:6443 2>/dev/null; then
         log_verbose "✅ Funnel enabled for K3s API (port 6443)"
     else
-        log_warn "Failed to enable funnel for K3s API, trying to continue..."
+        log_warn "HTTPS-to-HTTPS funnel failed, trying TCP mode..."
+        # Reset the 6443 funnel and try TCP mode
+        sudo tailscale funnel --https=6443 off 2>/dev/null || true
+        
+        if sudo tailscale funnel --tcp=6443 localhost:6443 2>/dev/null; then
+            log_verbose "✅ Funnel enabled for K3s API using TCP mode (port 6443)"
+        else
+            log_warn "Failed to enable funnel for K3s API in any mode"
+        fi
     fi
     
     # Setup funnel for NodePort services (port 30080)
@@ -601,12 +611,26 @@ install_k3s() {
 
     # Install K3s server (single-node)
     log "Installing K3s server..."
+    
+    # Get Tailscale hostname for TLS SAN
+    local tailscale_hostname=$(tailscale status --json 2>/dev/null | python3 -c "
+import json, sys
+try:
+    status = json.load(sys.stdin)
+    print(status['Self']['DNSName'].rstrip('.'))
+except:
+    print('${HOSTNAME}.tailxxxx.ts.net')
+" 2>/dev/null || echo "${HOSTNAME}.tailxxxx.ts.net")
+    
+    log_verbose "Adding TLS SAN for Tailscale domain: $tailscale_hostname"
+    
     curl -sfL https://get.k3s.io | sh -s - server \
         --node-name="$HOSTNAME" \
         --node-label="device-type=phone" \
         --node-label="cluster-mode=single-node" \
         --disable=traefik \
-        --write-kubeconfig-mode=644
+        --write-kubeconfig-mode=644 \
+        --tls-san="$tailscale_hostname"
 
     # Wait for K3s to be ready
     log_verbose "Waiting for K3s to be ready..."
@@ -1612,7 +1636,12 @@ main() {
     log "   • Tailscale funnel status: tailscale funnel status"
     echo
     log "Next steps:"
-    log "1. Use the deploy script to install applications"
+    log "1. Deploy HTTPBin for testing:"
+    if [ -n "$funnel_domain" ] && [ "$funnel_domain" != "#" ]; then
+        log "   curl -sSL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/single-node-cluster/httpbin.sh | bash -s -- --host \"$funnel_domain\" --key \"${SECRET_KEY}\""
+    else
+        log "   curl -sSL https://raw.githubusercontent.com/parttimenerd/k3s-on-phone/main/single-node-cluster/httpbin.sh | bash -s -- --host \"${HOSTNAME}.tailxxxx.ts.net\" --key \"${SECRET_KEY}\""
+    fi
     log "2. Access your cluster remotely using the kubeconfig URL"
     log "3. Monitor cluster status via Tailscale funnel"
     
