@@ -624,13 +624,41 @@ except:
     
     log_verbose "Adding TLS SAN for Tailscale domain: $tailscale_hostname"
     
-    curl -sfL https://get.k3s.io | sh -s - server \
+    # Install certificates and curl for Debian systems
+    if command -v apt-get &> /dev/null; then
+        log_verbose "Updating certificates for Debian/Ubuntu..."
+        sudo apt-get update -qq
+        # Install essential packages, skip gnupg if it fails
+        sudo apt-get install -y ca-certificates curl wget || {
+            log_warn "Failed to install some packages, trying individual installation..."
+            sudo apt-get install -y ca-certificates || true
+            sudo apt-get install -y curl || true
+            sudo apt-get install -y wget || true
+        }
+    fi
+    
+    # Use wget as fallback if curl has certificate issues
+    log_verbose "Downloading K3s installer..."
+    if ! curl -sfL https://get.k3s.io -o /tmp/k3s-install.sh 2>/dev/null; then
+        log_verbose "curl failed, trying wget..."
+        if ! wget -q https://get.k3s.io -O /tmp/k3s-install.sh 2>/dev/null; then
+            log_verbose "wget failed, trying curl with insecure flag..."
+            curl -sfLk https://get.k3s.io -o /tmp/k3s-install.sh
+        fi
+    fi
+    
+    # Make installer executable and run it
+    chmod +x /tmp/k3s-install.sh
+    sudo /tmp/k3s-install.sh server \
         --node-name="$HOSTNAME" \
         --node-label="device-type=phone" \
         --node-label="cluster-mode=single-node" \
         --disable=traefik \
         --write-kubeconfig-mode=644 \
         --tls-san="$tailscale_hostname"
+    
+    # Clean up installer
+    rm -f /tmp/k3s-install.sh
 
     # Wait for K3s to be ready
     log_verbose "Waiting for K3s to be ready..."
