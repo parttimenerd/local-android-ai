@@ -568,29 +568,15 @@ setup_tailscale_local() {
 
 # Setup funnel for K3s API after K3s is running (to avoid port conflicts)
 setup_k3s_funnel() {
-    log_verbose "Setting up funnel for K3s API..."
+    log_verbose "Setting up funnel for K3s API via forwarder..."
     
-    # Use HTTP-to-HTTPS proxying to avoid 502 Bad Gateway errors
-    # This proxies HTTPS external traffic to HTTP backend (K3s handles TLS termination)
-    if sudo tailscale funnel --https=6443 --bg http://localhost:6443 2>/dev/null; then
-        sudo tailscale funnel --https=6443 off
-        log_verbose "✅ Funnel enabled for K3s API (port 6443) using HTTP backend"
-    else
-        log_warn "HTTP-to-HTTPS funnel failed, trying HTTPS-to-HTTPS..."
-        # Reset the 6443 funnel and try HTTPS mode as fallback
-        sudo tailscale funnel --https=6443 off 2>/dev/null || true
-        
-        if sudo tailscale funnel --https=6443 --bg https://localhost:6443 2>/dev/null; then
-            log_verbose "✅ Funnel enabled for K3s API using HTTPS backend (port 6443)"
-        else
-            log_warn "Failed to enable funnel for K3s API in any mode"
-        fi
-    fi
+    # Note: We no longer set up direct funnel for port 6443 to avoid conflicts
+    # Instead, we only use the forwarder approach: 6883 → 6884 → 6443
     
-    # Setup funnel for K3s API forwarder (port 6883 → 6443)
+    # Setup funnel for K3s API forwarder (port 6883 → 6884 → 6443)
     log_verbose "Setting up funnel for K3s API forwarder..."
-    if sudo tailscale funnel --https=6883 --bg https://localhost:6883 2>/dev/null; then
-        log_verbose "✅ Funnel enabled for K3s API forwarder (port 6883)"
+    if sudo tailscale funnel --https=6883 --bg https://localhost:6884 2>/dev/null; then
+        log_verbose "✅ Funnel enabled for K3s API forwarder (port 6883 → 6884 → 6443)"
         log "📡 K3s API accessible via forwarder: https://${HOSTNAME}.tailxxxx.ts.net:6883"
     else
         log_warn "Failed to enable funnel for K3s API forwarder, trying to continue..."
@@ -1585,7 +1571,7 @@ EOF
 
 # Setup K3s API port forwarder for external access
 setup_k3s_api_forwarder() {
-    log_step "Setting up K3s API port forwarder (6883 → 6443)..."
+    log_step "Setting up K3s API port forwarder (6884 → 6443)..."
 
     # Install socat if not present
     if ! command -v socat &> /dev/null; then
@@ -1594,17 +1580,20 @@ setup_k3s_api_forwarder() {
         sudo apt-get install -y socat
     fi
 
+    # Stop any existing forwarder service
+    sudo systemctl stop k3s-api-forwarder.service 2>/dev/null || true
+
     # Create systemd service for K3s API forwarding
     log "Creating K3s API port forwarder service..."
     sudo tee /etc/systemd/system/k3s-api-forwarder.service > /dev/null << EOF
 [Unit]
-Description=K3s API Port Forwarder (6883 → 6443)
+Description=K3s API Port Forwarder (6884 → 6443)
 After=network.target k3s.service
 Requires=k3s.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/socat TCP-LISTEN:6883,fork,reuseaddr TCP:localhost:6443
+ExecStart=/usr/bin/socat TCP-LISTEN:6884,fork,reuseaddr TCP:localhost:6443
 Restart=always
 RestartSec=5
 User=nobody
@@ -1628,7 +1617,7 @@ EOF
     fi
 
     log "✅ K3s API port forwarder setup completed"
-    log "External K3s API access: port 6883 → 6443"
+    log "Internal K3s API access: port 6884 → 6443"
     log_verbose "Service logs: sudo journalctl -u k3s-api-forwarder -f"
 }
 
