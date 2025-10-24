@@ -7,6 +7,10 @@ with an Android terminal.
 **This is highly experimental, so use it with care and I'm not an Android Developer, so, 
 full disclosure, Google Gemini helped with the UI part.**
 
+## Download
+
+Download it from the [Releases](https://github.com/parttimenerd/local-a ndroid-ai/releases) page.
+
 ## Features
 
 ### AI Inference
@@ -126,5 +130,4 @@ The `/status` endpoint provides comprehensive debug information including:
 - Feature availability and configuration
 
 ## License
-
 Apache 2.0
