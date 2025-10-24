@@ -83,24 +83,24 @@ jobs:
     - name: Rename APK files with descriptive names
       run: |
         cd app/build/outputs/apk
-        cp debug/app-debug.apk debug/AI-Phone-Debug-${{ github.run_number }}.apk
-        cp release/app-release-unsigned.apk release/AI-Phone-Release-${{ github.run_number }}.apk
+        cp debug/app-debug.apk debug/AI-Phone-Debug.apk
+        cp release/app-release-unsigned.apk release/AI-Phone-Release.apk
         echo "Renamed APK files:"
-        ls -la debug/AI-Phone-Debug-${{ github.run_number }}.apk
-        ls -la release/AI-Phone-Release-${{ github.run_number }}.apk
+        ls -la debug/AI-Phone-Debug.apk
+        ls -la release/AI-Phone-Release.apk
         
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AI-Phone-Debug-${{ github.run_number }}
-        path: app/build/outputs/apk/debug/AI-Phone-Debug-${{ github.run_number }}.apk
+        name: AI-Phone-Debug
+        path: app/build/outputs/apk/debug/AI-Phone-Debug.apk
         retention-days: 30
         
     - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: AI-Phone-Release-${{ github.run_number }}
-        path: app/build/outputs/apk/release/AI-Phone-Release-${{ github.run_number }}.apk
+        name: AI-Phone-Release
+        path: app/build/outputs/apk/release/AI-Phone-Release.apk
         retention-days: 30
         
     - name: Get current date
@@ -111,7 +111,7 @@ jobs:
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: android-snapshot-${{ github.run_number }}-${{ github.sha }}
+        tag_name: android-snapshot-${{ github.sha }}
         name: Android Snapshot Build ${{ github.run_number }}
         body: |
           ## 📱 Android APK Snapshot Build
@@ -156,8 +156,8 @@ jobs:
           ---
           *This is an automated snapshot build. For stable releases, check the main releases page.*
         files: |
-          app/build/outputs/apk/debug/AI-Phone-Debug-${{ github.run_number }}.apk
-          app/build/outputs/apk/release/AI-Phone-Release-${{ github.run_number }}.apk
+          app/build/outputs/apk/debug/AI-Phone-Debug.apk
+          app/build/outputs/apk/release/AI-Phone-Release.apk
         draft: false
         prerelease: true
         fail_on_unmatched_files: true
@@ -188,8 +188,8 @@ jobs:
         echo "## 📱 Android Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📦 APK Artifacts Available:" >> $GITHUB_STEP_SUMMARY
-        echo "- **Debug APK**: AI-Phone-Debug-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Release APK**: AI-Phone-Release-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Debug APK**: AI-Phone-Debug" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release APK**: AI-Phone-Release" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📥 Download Options:" >> $GITHUB_STEP_SUMMARY
         echo "1. **GitHub Actions Artifacts**: Download from the 'Artifacts' section above" >> $GITHUB_STEP_SUMMARY
