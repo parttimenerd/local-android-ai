@@ -159,7 +159,7 @@ class WebServer(private val context: Context) {
                 call.respond(mapOf(
                     "status" to "running",
                     "timestamp" to System.currentTimeMillis(),
-                    "server" to "K3s Phone Server",
+                    "server" to "AI Phone Server",
                     "version" to "1.0.0-ai-enabled",
                     "features" to mapOf(
                         "location" to hasLocation,
@@ -194,7 +194,7 @@ class WebServer(private val context: Context) {
                 val hasCamera = permissionManager.hasCameraPermissions(this@WebServer.context)
                 
                 call.respond(mapOf(
-                    "server" to "K3s Phone Server",
+                    "server" to "AI Phone Server",
                     "version" to "1.0.0-simplified",
                     "capabilities" to mapOf(
                         "location" to mapOf(
@@ -1100,7 +1100,7 @@ class WebServer(private val context: Context) {
             // 6. Any required permissions or authentication
             get("/help") {
                 call.respond(mapOf(
-                    "server" to "K3s Phone Server API Documentation",
+                    "server" to "AI Phone Server API Documentation",
                     "version" to "1.0.0-ai-enabled",
                     "base_url" to "http://localhost:8005",
                     "endpoints" to mapOf(
@@ -1112,7 +1112,7 @@ class WebServer(private val context: Context) {
                             "response" to mapOf(
                                 "status" to "running",
                                 "timestamp" to 1692720000000,
-                                "server" to "K3s Phone Server",
+                                "server" to "AI Phone Server",
                                 "version" to "1.0.0-ai-enabled",
                                 "features" to mapOf(
                                     "location" to true,
@@ -1151,7 +1151,7 @@ class WebServer(private val context: Context) {
                             "description" to "Dynamic API discovery with detailed capability information",
                             "permissions" to "None required",
                             "response" to mapOf(
-                                "server" to "K3s Phone Server",
+                                "server" to "AI Phone Server",
                                 "capabilities" to mapOf(
                                     "location" to mapOf(
                                         "available" to true,
@@ -1570,7 +1570,7 @@ class WebServer(private val context: Context) {
             // Simple root endpoint
             get("/") {
                 call.respond(mapOf(
-                    "server" to "K3s Phone Server",
+                    "server" to "AI Phone Server",
                     "version" to "1.0.0-ai-enabled",
                     "message" to "Interactive API testing available in the Android app",
                     "documentation" to "Visit /help for complete API documentation",

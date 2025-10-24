@@ -15,5 +15,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "K3s Phone Server"
+rootProject.name = "AI Phone Server"
 include ':app'

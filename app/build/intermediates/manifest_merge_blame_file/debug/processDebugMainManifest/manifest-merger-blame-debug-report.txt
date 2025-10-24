@@ -10,41 +10,41 @@
 10
 11    <!-- Internet permission for web server -->
 12    <uses-permission android:name="android.permission.INTERNET" />
-12-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:6:5-67
-12-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:6:22-64
+12-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:6:5-67
+12-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:6:22-64
 13    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-13-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:7:5-79
-13-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:7:22-76
+13-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:7:5-79
+13-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:7:22-76
 14
 15    <!-- Storage permissions for persistent AI model storage -->
 16    <uses-permission
-16-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:10:5-11:38
+16-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:10:5-11:38
 17        android:name="android.permission.READ_EXTERNAL_STORAGE"
-17-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:10:22-77
+17-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:10:22-77
 18        android:maxSdkVersion="32" />
-18-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:11:9-35
+18-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:11:9-35
 19    <uses-permission
-19-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:12:5-13:38
+19-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:12:5-13:38
 20        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-20-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:12:22-78
+20-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:12:22-78
 21        android:maxSdkVersion="28" />
-21-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:13:9-35
+21-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:13:9-35
 22
 23    <!-- Modern storage permissions for Android 13+ -->
 24    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-24-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:16:5-76
-24-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:16:22-73
+24-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:16:5-76
+24-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:16:22-73
 25    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-25-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:17:5-75
-25-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:17:22-72
+25-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:17:5-75
+25-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:17:22-72
 26    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
-26-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:18:5-75
-26-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:18:22-72
+26-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:18:5-75
+26-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:18:22-72
 27
 28    <!-- Request legacy external storage for easier file access on older Android versions -->
 29    <uses-permission android:name="android.permission.REQUEST_LEGACY_EXTERNAL_STORAGE" />
-29-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:21:5-90
-29-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:21:22-87
+29-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:21:5-90
+29-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:21:22-87
 30
 31    <!-- Note: Using app-specific storage and SAF (Storage Access Framework) for file access -->
 32    <!-- This avoids the need for MANAGE_EXTERNAL_STORAGE which requires special approval -->
@@ -52,49 +52,49 @@
 34
 35    <!-- Query packages for browser launching (OAuth) -->
 36    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
-36-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:27:5-28:53
-36-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:27:22-74
+36-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:27:5-28:53
+36-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:27:22-74
 37
 38    <!-- Location permissions -->
 39    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-39-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:31:5-79
-39-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:31:22-76
+39-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:31:5-79
+39-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:31:22-76
 40    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-40-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:32:5-81
-40-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:32:22-78
+40-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:32:5-81
+40-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:32:22-78
 41    <!-- Background location access for when app is not visible (Android 10+) -->
 42    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-42-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:34:5-85
-42-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:34:22-82
+42-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:34:5-85
+42-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:34:22-82
 43
 44    <!-- Camera permissions -->
 45    <uses-permission android:name="android.permission.CAMERA" />
-45-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:37:5-65
-45-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:37:22-62
+45-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:37:5-65
+45-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:37:22-62
 46
 47    <!-- Wake lock to keep server running -->
 48    <uses-permission android:name="android.permission.WAKE_LOCK" />
-48-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:40:5-68
-48-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:40:22-65
+48-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:40:5-68
+48-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:40:22-65
 49
 50    <!-- Foreground service -->
 51    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-51-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:43:5-77
-51-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:43:22-74
+51-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:43:5-77
+51-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:43:22-74
 52    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-52-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:44:5-89
-52-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:44:22-86
+52-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:44:5-89
+52-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:44:22-86
 53    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-53-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:45:5-86
-53-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:45:22-83
+53-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:45:5-86
+53-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:45:22-83
 54
 55    <!-- Allow app to run in background -->
 56    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-56-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:48:5-95
-56-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:48:22-92
+56-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:48:5-95
+56-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:48:22-92
 57    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-57-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:49:5-81
-57-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:49:22-78
+57-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:49:5-81
+57-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:49:22-78
 58
 59    <permission
 59-->[androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
@@ -108,141 +108,141 @@
 63-->[androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
 64
 65    <application
-65-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:51:5-124:19
+65-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:51:5-124:19
 66        android:name="com.k3s.phoneserver.PhoneServerApplication"
-66-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:52:9-47
+66-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:52:9-47
 67        android:allowBackup="true"
-67-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:53:9-35
+67-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:53:9-35
 68        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
 68-->[androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:28:18-86
 69        android:dataExtractionRules="@xml/data_extraction_rules"
-69-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:54:9-65
+69-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:54:9-65
 70        android:debuggable="true"
 71        android:extractNativeLibs="true"
-71-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:65:9-41
+71-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:65:9-41
 72        android:fullBackupContent="@xml/backup_rules"
-72-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:55:9-54
+72-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:55:9-54
 73        android:hardwareAccelerated="true"
-73-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:63:9-43
+73-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:63:9-43
 74        android:icon="@mipmap/ic_launcher"
-74-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:56:9-43
+74-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:56:9-43
 75        android:label="@string/app_name"
-75-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:57:9-41
+75-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:57:9-41
 76        android:largeHeap="true"
-76-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:62:9-33
+76-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:62:9-33
 77        android:networkSecurityConfig="@xml/network_security_config"
-77-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:58:9-69
+77-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:58:9-69
 78        android:requestLegacyExternalStorage="true"
-78-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:67:9-52
+78-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:67:9-52
 79        android:roundIcon="@mipmap/ic_launcher_round"
-79-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:59:9-54
+79-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:59:9-54
 80        android:supportsRtl="true"
-80-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:60:9-35
+80-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:60:9-35
 81        android:theme="@style/Theme.K3sPhoneServer"
-81-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:61:9-52
+81-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:61:9-52
 82        android:usesCleartextTraffic="true"
-82-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:66:9-44
+82-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:66:9-44
 83        android:vmSafeMode="false" >
-83-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:64:9-35
+83-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:64:9-35
 84        <activity
-84-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:70:9-78:20
+84-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:70:9-78:20
 85            android:name="com.k3s.phoneserver.MainActivity"
-85-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:71:13-41
+85-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:71:13-41
 86            android:exported="true"
-86-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:72:13-36
+86-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:72:13-36
 87            android:theme="@style/Theme.K3sPhoneServer" >
-87-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:73:13-56
+87-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:73:13-56
 88            <intent-filter>
-88-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:74:13-77:29
+88-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:74:13-77:29
 89                <action android:name="android.intent.action.MAIN" />
-89-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:75:17-69
-89-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:75:25-66
+89-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:75:17-69
+89-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:75:25-66
 90
 91                <category android:name="android.intent.category.LAUNCHER" />
-91-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:76:17-77
-91-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:76:27-74
+91-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:76:17-77
+91-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:76:27-74
 92            </intent-filter>
 93        </activity>
 94        <activity
-94-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:80:9-84:58
+94-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:80:9-84:58
 95            android:name="com.k3s.phoneserver.AIModelManagerActivity"
-95-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:81:13-51
+95-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:81:13-51
 96            android:exported="false"
-96-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:82:13-37
+96-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:82:13-37
 97            android:parentActivityName="com.k3s.phoneserver.MainActivity"
-97-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:84:13-55
+97-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:84:13-55
 98            android:theme="@style/Theme.K3sPhoneServer" />
-98-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:83:13-56
+98-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:83:13-56
 99        <activity
-99-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:86:9-91:50
+99-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:86:9-91:50
 100            android:name="com.k3s.phoneserver.AITestActivity"
-100-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:87:13-43
+100-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:87:13-43
 101            android:exported="false"
-101-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:88:13-37
+101-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:88:13-37
 102            android:label="AI Text Generation"
-102-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:91:13-47
+102-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:91:13-47
 103            android:parentActivityName="com.k3s.phoneserver.MainActivity"
-103-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:90:13-55
+103-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:90:13-55
 104            android:theme="@style/Theme.K3sPhoneServer" />
-104-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:89:13-56
+104-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:89:13-56
 105        <activity
-105-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:93:9-99:47
+105-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:93:9-99:47
 106            android:name="com.k3s.phoneserver.services.DisplayActivity"
-106-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:94:13-53
+106-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:94:13-53
 107            android:excludeFromRecents="true"
-107-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:97:13-46
+107-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:97:13-46
 108            android:exported="false"
-108-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:95:13-37
+108-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:95:13-37
 109            android:launchMode="singleTask"
-109-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:99:13-44
+109-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:99:13-44
 110            android:taskAffinity=""
-110-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:98:13-36
+110-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:98:13-36
 111            android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
-111-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:96:13-71
+111-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:96:13-71
 112
 113        <service
-113-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:101:9-109:19
+113-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:101:9-109:19
 114            android:name="com.k3s.phoneserver.server.WebServerService"
-114-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:102:13-52
+114-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:102:13-52
 115            android:enabled="true"
-115-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:103:13-35
+115-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:103:13-35
 116            android:exported="false"
-116-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:104:13-37
+116-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:104:13-37
 117            android:foregroundServiceType="specialUse|location" >
-117-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:105:13-64
+117-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:105:13-64
 118            <property
-118-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:106:13-108:104
+118-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:106:13-108:104
 119                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-119-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:107:17-76
+119-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:107:17-76
 120                android:value="Web server for K3s phone integration with background location access" />
-120-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:108:17-101
+120-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:108:17-101
 121        </service>
 122
 123        <!-- Boot receiver to auto-start server -->
 124        <receiver
-124-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:112:9-122:20
+124-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:112:9-122:20
 125            android:name="com.k3s.phoneserver.BootReceiver"
-125-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:113:13-41
+125-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:113:13-41
 126            android:enabled="true"
-126-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:114:13-35
+126-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:114:13-35
 127            android:exported="true" >
-127-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:115:13-36
+127-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:115:13-36
 128            <intent-filter android:priority="1000" >
-128-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:116:13-121:29
-128-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:116:28-51
+128-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:116:13-121:29
+128-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:116:28-51
 129                <action android:name="android.intent.action.BOOT_COMPLETED" />
-129-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:117:17-79
-129-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:117:25-76
+129-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:117:17-79
+129-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:117:25-76
 130                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-130-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:118:17-84
-130-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:118:25-81
+130-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:118:17-84
+130-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:118:25-81
 131                <action android:name="android.intent.action.PACKAGE_REPLACED" />
-131-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:119:17-81
-131-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:119:25-78
+131-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:119:17-81
+131-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:119:25-78
 132
 133                <data android:scheme="package" />
-133-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:120:17-50
-133-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:120:23-47
+133-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:120:17-50
+133-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:120:23-47
 134            </intent-filter>
 135        </receiver>
 136
@@ -455,8 +455,8 @@
 244            <intent-filter>
 244-->[androidx.work:work-runtime:2.9.0] /home/i560383/.gradle/caches/8.10.2/transforms/1e18ef7005874f9c61ae72a777e28488/transformed/work-runtime-2.9.0/AndroidManifest.xml:116:13-120:29
 245                <action android:name="android.intent.action.BOOT_COMPLETED" />
-245-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:117:17-79
-245-->/home/i560383/code/experiments/k3s-on-phone/android/app/src/main/AndroidManifest.xml:117:25-76
+245-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:117:17-79
+245-->/home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:117:25-76
 246                <action android:name="android.intent.action.TIME_SET" />
 246-->[androidx.work:work-runtime:2.9.0] /home/i560383/.gradle/caches/8.10.2/transforms/1e18ef7005874f9c61ae72a777e28488/transformed/work-runtime-2.9.0/AndroidManifest.xml:118:17-73
 246-->[androidx.work:work-runtime:2.9.0] /home/i560383/.gradle/caches/8.10.2/transforms/1e18ef7005874f9c61ae72a777e28488/transformed/work-runtime-2.9.0/AndroidManifest.xml:118:25-70

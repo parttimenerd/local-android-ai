@@ -22,7 +22,7 @@ class PhoneServerApplication : Application(), DefaultLifecycleObserver {
             Timber.plant(Timber.DebugTree())
         }
         
-        Timber.d("K3s Phone Server Application started")
+        Timber.d("AI Phone Server Application started")
         
         // Register lifecycle observer to track app state
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)

@@ -1,6 +1,11 @@
-# K3s Phone Server - Android AI App
+# AI Phone Server
 
-Android application with MediaPipe AI inference, object detection, and device sensors for K3s cluster integration.
+A simple Android app that serves local AI models via an AI with 
+MediaPipe AI inference, object detection, and device sensors for easy integration
+with an Android terminal.
+
+**This is highly experimental, so use it with care and I'm not an Android Developer, so, 
+full disclosure, Google Gemini helped with the UI part.**
 
 ## Features
 
@@ -16,12 +21,11 @@ Android application with MediaPipe AI inference, object detection, and device se
 - **Sensors**: Compass orientation (azimuth, pitch, roll)
 - **Permissions**: Runtime request handling
 
-### REST API (Port 8005)
+## API Endpoints (Port 8005)
+
 - JSON responses with CORS support
 - Error handling with HTTP status codes
 - Built-in documentation at `/help`
-
-## API Endpoints
 
 ### AI Services
 ```http
@@ -62,29 +66,6 @@ GET /help           # API documentation
 ```
 
 ⚠️ **Camera Privacy Notice**: Camera capture requires the Android app to be visible due to Android OS privacy restrictions. This ensures users are aware when the camera is being accessed. Location and other endpoints work in the background.
-
-## Technical Details
-
-### AI Models
-- **Gemma 3n E2B IT**: 2B parameters, instruction-tuned
-- **DeepSeek-R1 Distill**: 1.5B reasoning model with thinking capability
-- **Llama 3.2**: 1B/3B instruction models
-- **TinyLlama**: 1.1B chat model
-- **Backend Support**: CPU, GPU, NNAPI backends
-- **Memory Requirements**: 1-4GB depending on model
-
-### MediaPipe Integration
-- **Object Detection**: EfficientDet Lite 2 with 80 COCO classes
-- **LLM Inference**: Native MediaPipe LLM with streaming support
-- **Performance**: Real-time token generation with metrics
-- **Cancellation**: Coroutine-based with proper cleanup
-
-### Development
-- **Kotlin**: Android-native implementation
-- **Coroutines**: Async operations with proper cancellation
-- **Camera2 API**: Advanced camera features
-- **Permissions**: Location, camera runtime requests
-- **Error Handling**: Comprehensive exception management
 
 ## Build & Install
 

@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Build script for K3s Phone Server Android App
+# Build script for AI Phone Server Android App
 set -e
 
-echo "Building K3s Phone Server Android App..."
+echo "Building AI Phone Server Android App..."
 
 # Check if we're in the android directory
 if [ ! -f "build.gradle" ]; then

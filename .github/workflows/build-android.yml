@@ -4,13 +4,13 @@ on:
   push:
     branches: [ main ]
     paths: 
-      - 'android/**'
+      - '**'
       - '.github/workflows/build-android.yml'
       - '.github/workflows/*.yml'
   pull_request:
     branches: [ main ]
     paths: 
-      - 'android/**'
+      - '**'
       - '.github/workflows/build-android.yml'
       - '.github/workflows/*.yml'
   workflow_dispatch:
@@ -60,14 +60,12 @@ jobs:
       
     - name: Build debug APK
       run: |
-        cd android
         gradle assembleDebug
       env:
         GRADLE_OPTS: "--enable-native-access=ALL-UNNAMED"
         
     - name: Build release APK
       run: |
-        cd android
         gradle assembleRelease
       env:
         GRADLE_OPTS: "--enable-native-access=ALL-UNNAMED"
@@ -75,16 +73,16 @@ jobs:
     - name: Verify APK files exist
       run: |
         echo "Checking for APK files..."
-        ls -la android/app/build/outputs/apk/debug/
-        ls -la android/app/build/outputs/apk/release/
+        ls -la app/build/outputs/apk/debug/
+        ls -la app/build/outputs/apk/release/
         echo "Debug APK:"
-        file android/app/build/outputs/apk/debug/app-debug.apk
+        file app/build/outputs/apk/debug/app-debug.apk
         echo "Release APK:"
-        file android/app/build/outputs/apk/release/app-release-unsigned.apk
+        file app/build/outputs/apk/release/app-release-unsigned.apk
         
     - name: Rename APK files with descriptive names
       run: |
-        cd android/app/build/outputs/apk
+        cd app/build/outputs/apk
         cp debug/app-debug.apk debug/K3s-Phone-Debug-${{ github.run_number }}.apk
         cp release/app-release-unsigned.apk release/K3s-Phone-Release-${{ github.run_number }}.apk
         echo "Renamed APK files:"
@@ -95,14 +93,14 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: K3s-Phone-Debug-${{ github.run_number }}
-        path: android/app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        path: app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
         retention-days: 30
         
     - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: K3s-Phone-Release-${{ github.run_number }}
-        path: android/app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
+        path: app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
         retention-days: 30
         
     - name: Get current date
@@ -158,8 +156,8 @@ jobs:
           ---
           *This is an automated snapshot build. For stable releases, check the main releases page.*
         files: |
-          android/app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
-          android/app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
+          app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+          app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
         draft: false
         prerelease: true
         fail_on_unmatched_files: true

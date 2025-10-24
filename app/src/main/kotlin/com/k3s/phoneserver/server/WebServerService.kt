@@ -124,7 +124,7 @@ class WebServerService : Service() {
         )
         
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("K3s Phone Server")
+            .setContentTitle("AI Phone Server")
             .setContentText("Server running persistently on port 8005 - Always available")
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
@@ -183,7 +183,7 @@ class WebServerService : Service() {
             "Web Server Service",
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Notification for K3s Phone Server web service"
+            description = "Notification for AI Phone Server web service"
         }
         
         val notificationManager = getSystemService(NotificationManager::class.java)

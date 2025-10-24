@@ -30,9 +30,9 @@ class BootReceiver : BroadcastReceiver() {
                 try {
                     val serviceIntent = Intent(context, WebServerService::class.java)
                     ContextCompat.startForegroundService(context, serviceIntent)
-                    Timber.i("K3s Phone Server auto-started on boot/update")
+                    Timber.i("AI Phone Server auto-started on boot/update")
                 } catch (e: Exception) {
-                    Timber.e(e, "Failed to auto-start K3s Phone Server on boot")
+                    Timber.e(e, "Failed to auto-start AI Phone Server on boot")
                 }
                 
                 // Log permission status for debugging

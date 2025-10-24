@@ -4,7 +4,7 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference.Backend
 
 /**
  * Supported AI models for LLM inference.
- * Based on MediaPipe LLM inference with specific models for the K3s Phone Server.
+ * Based on MediaPipe LLM inference with specific models for the AI Phone Server.
  */
 enum class AIModel(
     val modelName: String,

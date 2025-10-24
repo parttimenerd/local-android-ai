@@ -372,7 +372,7 @@ class MainActivity : AppCompatActivity() {
                     clientIp = "localhost",
                     statusCode = 200,
                     responseTime = 0L,
-                    userAgent = "K3s Phone Server Auto-Start",
+                    userAgent = "AI Phone Server Auto-Start",
                     responseData = """{"status": "auto-started", "timestamp": ${System.currentTimeMillis()}, "port": 8005, "permissions": {"camera": $hasCamera, "location": $hasLocation}}""",
                     responseType = "json"
                 )
@@ -382,9 +382,9 @@ class MainActivity : AppCompatActivity() {
                 if (!hasLocation) optionalFeatures.add("location")
                 
                 val message = if (optionalFeatures.isEmpty()) {
-                    "K3s Phone Server auto-started with all features"
+                    "AI Phone Server auto-started with all features"
                 } else {
-                    "K3s Phone Server auto-started (${optionalFeatures.joinToString(", ")} features disabled)"
+                    "AI Phone Server auto-started (${optionalFeatures.joinToString(", ")} features disabled)"
                 }
                 
                 Toast.makeText(this, message, Toast.LENGTH_LONG).show()
@@ -560,7 +560,7 @@ class MainActivity : AppCompatActivity() {
         if (shouldShowRationale || !permissionsChecked) {
             AlertDialog.Builder(this)
                 .setTitle("Location Permission")
-                .setMessage("K3s Phone Server can provide device location information through its API. This enables location-based features for connected applications.\n\nFor background operation when the app is not visible, additional background location access will be requested separately.\n\nLocation access is optional - the server will work without it, but location endpoints will be disabled.")
+                .setMessage("AI Phone Server can provide device location information through its API. This enables location-based features for connected applications.\n\nFor background operation when the app is not visible, additional background location access will be requested separately.\n\nLocation access is optional - the server will work without it, but location endpoints will be disabled.")
                 .setPositiveButton("Grant Permission") { _, _ ->
                     onProceed()
                 }
@@ -644,7 +644,7 @@ class MainActivity : AppCompatActivity() {
     private fun showCameraPermissionDialog(onProceed: () -> Unit) {
         AlertDialog.Builder(this)
             .setTitle("Camera Permission")
-            .setMessage("K3s Phone Server can provide camera capture functionality through its API. This allows remote applications to take photos through your device.\n\nCamera access is optional - the server will work without it, but camera endpoints will be disabled.")
+            .setMessage("AI Phone Server can provide camera capture functionality through its API. This allows remote applications to take photos through your device.\n\nCamera access is optional - the server will work without it, but camera endpoints will be disabled.")
             .setPositiveButton("Grant Permission") { _, _ ->
                 onProceed()
             }
@@ -667,7 +667,7 @@ class MainActivity : AppCompatActivity() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             AlertDialog.Builder(this)
                 .setTitle("Background Location Access")
-                .setMessage("To provide location data when the app is not visible, background location access is required.\n\nThis allows the K3s Phone Server to work properly even when the app is in the background.\n\nIn the next dialog, please select 'Allow all the time' for full functionality.")
+                .setMessage("To provide location data when the app is not visible, background location access is required.\n\nThis allows the AI Phone Server to work properly even when the app is in the background.\n\nIn the next dialog, please select 'Allow all the time' for full functionality.")
                 .setPositiveButton("Continue") { _, _ ->
                     try {
                         backgroundLocationLauncher.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
@@ -711,12 +711,12 @@ class MainActivity : AppCompatActivity() {
             clientIp = "localhost",
             statusCode = 200,
             responseTime = 0L,
-            userAgent = "K3s Phone Server",
+            userAgent = "AI Phone Server",
             responseData = """{"status": "started", "timestamp": ${System.currentTimeMillis()}, "port": 8005}""",
             responseType = "json"
         )
         
-        Toast.makeText(this, "K3s Phone Server started on port 8005", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "AI Phone Server started on port 8005", Toast.LENGTH_SHORT).show()
     }
 
     private fun stopWebServer() {
@@ -733,12 +733,12 @@ class MainActivity : AppCompatActivity() {
             clientIp = "localhost",
             statusCode = 200,
             responseTime = 0L,
-            userAgent = "K3s Phone Server",
+            userAgent = "AI Phone Server",
             responseData = """{"status": "stopped", "timestamp": ${System.currentTimeMillis()}}""",
             responseType = "json"
         )
         
-        Toast.makeText(this, "K3s Phone Server stopped", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "AI Phone Server stopped", Toast.LENGTH_SHORT).show()
     }
 
     // Removed saveAutoStartPreference method - now handled by AppPermissionManager.setAutoStartEnabled()
@@ -749,10 +749,10 @@ class MainActivity : AppCompatActivity() {
             val actionButton = findViewById<Button>(R.id.buttonStartServer)
             
             if (isServerRunning) {
-                statusText.text = "K3s Phone Server is running"
+                statusText.text = "AI Phone Server is running"
                 actionButton.text = "Stop Server :8005"
             } else {
-                statusText.text = "K3s Phone Server is stopped"
+                statusText.text = "AI Phone Server is stopped"
                 actionButton.text = "Start Server :8005"
             }
         }
