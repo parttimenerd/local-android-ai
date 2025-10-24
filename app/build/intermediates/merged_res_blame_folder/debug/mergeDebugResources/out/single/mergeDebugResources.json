@@ -1,0 +1,142 @@
+[
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/xml_backup_rules.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/xml/backup_rules.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_activity_main.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/activity_main.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_badge_background_red.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/badge_background_red.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-xxhdpi_ic_launcher.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-xxhdpi/ic_launcher.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_ic_notification.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/ic_notification.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-xhdpi_ic_launcher.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-xhdpi/ic_launcher.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_activity_ai_test.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/activity_ai_test.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_indicator_error.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_indicator_error.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-hdpi_ic_launcher.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-hdpi/ic_launcher.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_indicator_not_available.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_indicator_not_available.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_background.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_background.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-xhdpi_ic_launcher_round.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-xhdpi/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_indicator_available.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_indicator_available.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/xml_data_extraction_rules.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/xml/data_extraction_rules.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_activity_ai_model_manager.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/activity_ai_model_manager.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_dialog_ai_test.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/dialog_ai_test.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_item_ai_model.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/item_ai_model.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_background_missing.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_background_missing.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_badge_background_green.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/badge_background_green.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_button_with_badge.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/button_with_badge.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/xml_network_security_config.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/xml/network_security_config.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-hdpi_ic_launcher_round.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-hdpi/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-anydpi-v26_ic_launcher_round.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_background_available.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_background_available.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-mdpi_ic_launcher_round.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-mdpi/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-xxxhdpi_ic_launcher.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-xxxhdpi/ic_launcher.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_status_indicator_downloading.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/status_indicator_downloading.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-xxxhdpi_ic_launcher_round.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-xxxhdpi/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_ic_launcher_foreground.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/ic_launcher_foreground.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/layout_item_request_log.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/layout/item_request_log.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-xxhdpi_ic_launcher_round.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-xxhdpi/ic_launcher_round.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/mipmap-mdpi_ic_launcher.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/mipmap-mdpi/ic_launcher.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_ic_launcher_background.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/ic_launcher_background.xml"
+    },
+    {
+        "merged": "com.k3s.phoneserver.app-debug-54:/drawable_badge_background.xml.flat",
+        "source": "com.k3s.phoneserver.app-main-56:/drawable/badge_background.xml"
+    }
+]

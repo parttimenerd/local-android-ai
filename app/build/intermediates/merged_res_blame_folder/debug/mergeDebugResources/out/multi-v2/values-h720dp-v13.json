@@ -1,0 +1,19 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.k3s.phoneserver.app-mergeDebugResources-52:/values-h720dp-v13/values-h720dp-v13.xml",
+            "map": [
+                {
+                    "source": "/home/i560383/.gradle/caches/8.10.2/transforms/83ea798211547d51a05625219bec0c51/transformed/appcompat-1.6.1/res/values-h720dp-v13/values-h720dp-v13.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endColumns": "66",
+                        "endOffsets": "117"
+                    }
+                }
+            ]
+        }
+    ]
+}
