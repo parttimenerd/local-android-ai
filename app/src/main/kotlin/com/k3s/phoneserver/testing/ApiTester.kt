@@ -55,7 +55,7 @@ class ApiTester {
                 connection.connectTimeout = 30000 // 30 seconds to connect
                 connection.readTimeout = 300000 // 5 minutes for AI requests
                 connection.setRequestProperty("Accept", "application/json")
-                connection.setRequestProperty("User-Agent", "K3s-Phone-ApiTester/1.0")
+                connection.setRequestProperty("User-Agent", "AI-Phone-ApiTester/1.0")
                 
                 val responseCode = connection.responseCode
                 val responseTime = System.currentTimeMillis() - startTime
@@ -124,7 +124,7 @@ class ApiTester {
                 connection.readTimeout = 600000 // 10 minutes for AI processing
                 connection.setRequestProperty("Content-Type", "application/json")
                 connection.setRequestProperty("Accept", "application/json")
-                connection.setRequestProperty("User-Agent", "K3s-Phone-ApiTester/1.0")
+                connection.setRequestProperty("User-Agent", "AI-Phone-ApiTester/1.0")
                 connection.doOutput = true
                 
                 Timber.d("Sending request...")

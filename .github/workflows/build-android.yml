@@ -83,24 +83,24 @@ jobs:
     - name: Rename APK files with descriptive names
       run: |
         cd app/build/outputs/apk
-        cp debug/app-debug.apk debug/K3s-Phone-Debug-${{ github.run_number }}.apk
-        cp release/app-release-unsigned.apk release/K3s-Phone-Release-${{ github.run_number }}.apk
+        cp debug/app-debug.apk debug/AI-Phone-Debug-${{ github.run_number }}.apk
+        cp release/app-release-unsigned.apk release/AI-Phone-Release-${{ github.run_number }}.apk
         echo "Renamed APK files:"
-        ls -la debug/K3s-Phone-Debug-${{ github.run_number }}.apk
-        ls -la release/K3s-Phone-Release-${{ github.run_number }}.apk
+        ls -la debug/AI-Phone-Debug-${{ github.run_number }}.apk
+        ls -la release/AI-Phone-Release-${{ github.run_number }}.apk
         
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: K3s-Phone-Debug-${{ github.run_number }}
-        path: app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
+        name: AI-Phone-Debug-${{ github.run_number }}
+        path: app/build/outputs/apk/debug/AI-Phone-Debug-${{ github.run_number }}.apk
         retention-days: 30
         
     - name: Upload Release APK Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: K3s-Phone-Release-${{ github.run_number }}
-        path: app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
+        name: AI-Phone-Release-${{ github.run_number }}
+        path: app/build/outputs/apk/release/AI-Phone-Release-${{ github.run_number }}.apk
         retention-days: 30
         
     - name: Get current date
@@ -156,8 +156,8 @@ jobs:
           ---
           *This is an automated snapshot build. For stable releases, check the main releases page.*
         files: |
-          app/build/outputs/apk/debug/K3s-Phone-Debug-${{ github.run_number }}.apk
-          app/build/outputs/apk/release/K3s-Phone-Release-${{ github.run_number }}.apk
+          app/build/outputs/apk/debug/AI-Phone-Debug-${{ github.run_number }}.apk
+          app/build/outputs/apk/release/AI-Phone-Release-${{ github.run_number }}.apk
         draft: false
         prerelease: true
         fail_on_unmatched_files: true
@@ -188,8 +188,8 @@ jobs:
         echo "## 📱 Android Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📦 APK Artifacts Available:" >> $GITHUB_STEP_SUMMARY
-        echo "- **Debug APK**: K3s-Phone-Debug-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Release APK**: K3s-Phone-Release-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Debug APK**: AI-Phone-Debug-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release APK**: AI-Phone-Release-${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📥 Download Options:" >> $GITHUB_STEP_SUMMARY
         echo "1. **GitHub Actions Artifacts**: Download from the 'Artifacts' section above" >> $GITHUB_STEP_SUMMARY
