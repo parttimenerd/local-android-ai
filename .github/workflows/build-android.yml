@@ -64,43 +64,25 @@ jobs:
       env:
         GRADLE_OPTS: "--enable-native-access=ALL-UNNAMED"
         
-    - name: Build release APK
-      run: |
-        gradle assembleRelease
-      env:
-        GRADLE_OPTS: "--enable-native-access=ALL-UNNAMED"
-        
     - name: Verify APK files exist
       run: |
         echo "Checking for APK files..."
         ls -la app/build/outputs/apk/debug/
-        ls -la app/build/outputs/apk/release/
         echo "Debug APK:"
         file app/build/outputs/apk/debug/app-debug.apk
-        echo "Release APK:"
-        file app/build/outputs/apk/release/app-release-unsigned.apk
         
     - name: Rename APK files with descriptive names
       run: |
         cd app/build/outputs/apk
         cp debug/app-debug.apk debug/AI-Phone-Debug.apk
-        cp release/app-release-unsigned.apk release/AI-Phone-Release.apk
         echo "Renamed APK files:"
         ls -la debug/AI-Phone-Debug.apk
-        ls -la release/AI-Phone-Release.apk
         
     - name: Upload Debug APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: AI-Phone-Debug
         path: app/build/outputs/apk/debug/AI-Phone-Debug.apk
-        retention-days: 30
-        
-    - name: Upload Release APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: AI-Phone-Release
-        path: app/build/outputs/apk/release/AI-Phone-Release.apk
         retention-days: 30
         
     - name: Get current date
@@ -124,29 +106,25 @@ jobs:
           - Build Time: ${{ steps.date.outputs.date }}
           
           **Direct APK Downloads:**
-          - 🐛 **Debug APK**: Development build with debugging enabled
-          - 🚀 **Release APK**: Production build (unsigned, optimized)
-          
+          - **Debug APK**: Development build with debugging enabled     
+    
           ## Features
           - REST API server on port 8005
-          - GPS location and orientation sensors (background support on Android 10+)
           - MediaPipe LLM inference (Gemma, DeepSeek-R1, Llama 3.2, TinyLlama)
           - Object detection with EfficientDet Lite 2
           - Camera capture with front/rear support (app must be visible per Android privacy requirements)
           - Model management with download and testing
           - Performance metrics (tokens/second)
-          - Streaming text generation with cancellation
           
           ## Installation
           1. Download the APK file directly from assets below
           2. Enable "Install from unknown sources" in Android Settings → Security
           3. Install the APK file
-          4. Grant permissions (location, camera, storage) when prompted
+          4. Grant permissions (camera, storage) when prompted
           5. Verify app shows "Server running on port 8005"
           
           ## API Endpoints
           - `GET /status` - Server status and capabilities
-          - `GET /location` - GPS coordinates with accuracy
           - `GET /orientation` - Device compass data
           - `POST /ai/text` - LLM text generation
           - `POST /ai/object_detection` - MediaPipe object detection
@@ -154,10 +132,9 @@ jobs:
           - `GET /capture` - Camera capture with zoom
           
           ---
-          *This is an automated snapshot build. For stable releases, check the main releases page.*
+          *This is an automated snapshot build.*
         files: |
           app/build/outputs/apk/debug/AI-Phone-Debug.apk
-          app/build/outputs/apk/release/AI-Phone-Release.apk
         draft: false
         prerelease: true
         fail_on_unmatched_files: true
@@ -185,11 +162,10 @@ jobs:
         
     - name: Build Summary
       run: |
-        echo "## 📱 Android Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "## Android Build Completed Successfully!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 📦 APK Artifacts Available:" >> $GITHUB_STEP_SUMMARY
+        echo "### APK Artifacts Available:" >> $GITHUB_STEP_SUMMARY
         echo "- **Debug APK**: AI-Phone-Debug" >> $GITHUB_STEP_SUMMARY
-        echo "- **Release APK**: AI-Phone-Release" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### 📥 Download Options:" >> $GITHUB_STEP_SUMMARY
         echo "1. **GitHub Actions Artifacts**: Download from the 'Artifacts' section above" >> $GITHUB_STEP_SUMMARY
@@ -197,8 +173,7 @@ jobs:
           echo "2. **Snapshot Release**: Available at [Releases](https://github.com/${{ github.repository }}/releases)" >> $GITHUB_STEP_SUMMARY
         fi
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### 🚀 Features:" >> $GITHUB_STEP_SUMMARY
+        echo "### Features:" >> $GITHUB_STEP_SUMMARY
         echo "- REST API server on port 8005" >> $GITHUB_STEP_SUMMARY
-        echo "- GPS location (background support on Android 10+)" >> $GITHUB_STEP_SUMMARY
         echo "- Camera capture (app visibility required)" >> $GITHUB_STEP_SUMMARY
         echo "- MediaPipe LLM inference and object detection" >> $GITHUB_STEP_SUMMARY
