@@ -42,9 +42,9 @@ jobs:
       
     - name: Install Gradle
       run: |
-        wget https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
-        unzip -q gradle-8.10.2-bin.zip
-        sudo mv gradle-8.10.2 /opt/gradle
+        wget https://services.gradle.org/distributions/gradle-8.13-bin.zip
+        unzip -q gradle-8.13-bin.zip
+        sudo mv gradle-8.13 /opt/gradle
         sudo ln -sf /opt/gradle/bin/gradle /usr/local/bin/gradle
         gradle --version
         
