@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.manager
+package me.bechberger.phoneserver.manager
 
 import android.Manifest
 import android.content.Context

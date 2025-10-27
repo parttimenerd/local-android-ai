@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.ai
+package me.bechberger.phoneserver.ai
 
 import android.content.Context
 import android.content.SharedPreferences

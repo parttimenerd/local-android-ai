@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.logging
+package me.bechberger.phoneserver.logging
 
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData

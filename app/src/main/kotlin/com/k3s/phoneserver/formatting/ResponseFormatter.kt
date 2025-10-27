@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.formatting
+package me.bechberger.phoneserver.formatting
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -8,7 +8,7 @@ import android.graphics.Matrix
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.util.Base64
-import com.k3s.phoneserver.testing.ApiTestResult
+import me.bechberger.phoneserver.testing.ApiTestResult
 import org.json.JSONObject
 
 class ResponseFormatter private constructor() {

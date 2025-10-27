@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.lifecycle
+package me.bechberger.phoneserver.lifecycle
 
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner

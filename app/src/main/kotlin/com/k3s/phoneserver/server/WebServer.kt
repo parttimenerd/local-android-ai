@@ -1,21 +1,21 @@
-package com.k3s.phoneserver.server
+package me.bechberger.phoneserver.server
 
 import android.content.Context
 import android.graphics.Bitmap
 import android.util.Base64
-import com.k3s.phoneserver.lifecycle.SimpleLifecycleOwner
-import com.k3s.phoneserver.logging.RequestLogger
-import com.k3s.phoneserver.manager.AppPermissionManager
-import com.k3s.phoneserver.services.CameraService
-import com.k3s.phoneserver.services.DisplayService
-import com.k3s.phoneserver.services.SharedCameraService
-import com.k3s.phoneserver.services.LocationService
-import com.k3s.phoneserver.services.OrientationService
-import com.k3s.phoneserver.ai.AIService
-import com.k3s.phoneserver.ai.AIModel
-import com.k3s.phoneserver.ai.ModelDetector
-import com.k3s.phoneserver.ai.ModelDownloadRequest
-import com.k3s.phoneserver.ai.ModelDownloadResponse
+import me.bechberger.phoneserver.lifecycle.SimpleLifecycleOwner
+import me.bechberger.phoneserver.logging.RequestLogger
+import me.bechberger.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.services.CameraService
+import me.bechberger.phoneserver.services.DisplayService
+import me.bechberger.phoneserver.services.SharedCameraService
+import me.bechberger.phoneserver.services.LocationService
+import me.bechberger.phoneserver.services.OrientationService
+import me.bechberger.phoneserver.ai.AIService
+import me.bechberger.phoneserver.ai.AIModel
+import me.bechberger.phoneserver.ai.ModelDetector
+import me.bechberger.phoneserver.ai.ModelDownloadRequest
+import me.bechberger.phoneserver.ai.ModelDownloadResponse
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.serialization.gson.*
@@ -43,7 +43,7 @@ class WebServer(private val context: Context) {
     private val displayService = DisplayService(context)
     private val permissionManager = AppPermissionManager.getInstance()
     private val aiService = AIService(context)
-    private val objectDetectionService = com.k3s.phoneserver.ai.ObjectDetectionService(context)
+    private val objectDetectionService = me.bechberger.phoneserver.ai.ObjectDetectionService(context)
 
     suspend fun start(port: Int) {
         withContext(Dispatchers.IO) {
@@ -339,11 +339,11 @@ class WebServer(private val context: Context) {
                     val zoomParam = call.request.queryParameters["zoom"]?.toFloatOrNull()
                     val imageScalingParam = call.request.queryParameters["imageScaling"]?.let { scalingName ->
                         try {
-                            com.k3s.phoneserver.ai.ImageScaling.valueOf(scalingName.uppercase())
+                            me.bechberger.phoneserver.ai.ImageScaling.valueOf(scalingName.uppercase())
                         } catch (e: IllegalArgumentException) {
-                            com.k3s.phoneserver.ai.ImageScaling.DEFAULT
+                            me.bechberger.phoneserver.ai.ImageScaling.DEFAULT
                         }
-                    } ?: com.k3s.phoneserver.ai.ImageScaling.DEFAULT
+                    } ?: me.bechberger.phoneserver.ai.ImageScaling.DEFAULT
                     
                     // Use shared camera service - camera operations must run on main thread
                     val cameraResult = withContext(Dispatchers.Main) {
@@ -376,11 +376,11 @@ class WebServer(private val context: Context) {
                     // Apply ImageScaling for output quality and size
                     val outputBitmap = scaleImageForOutput(bitmap, imageScalingParam)
                     val quality = when (imageScalingParam) {
-                        com.k3s.phoneserver.ai.ImageScaling.SMALL -> 70
-                        com.k3s.phoneserver.ai.ImageScaling.MEDIUM -> 85
-                        com.k3s.phoneserver.ai.ImageScaling.LARGE -> 90
-                        com.k3s.phoneserver.ai.ImageScaling.ULTRA -> 95
-                        com.k3s.phoneserver.ai.ImageScaling.NONE -> 95
+                        me.bechberger.phoneserver.ai.ImageScaling.SMALL -> 70
+                        me.bechberger.phoneserver.ai.ImageScaling.MEDIUM -> 85
+                        me.bechberger.phoneserver.ai.ImageScaling.LARGE -> 90
+                        me.bechberger.phoneserver.ai.ImageScaling.ULTRA -> 95
+                        me.bechberger.phoneserver.ai.ImageScaling.NONE -> 95
                     }
                     
                     // Convert bitmap to base64
@@ -480,7 +480,7 @@ class WebServer(private val context: Context) {
                         // Check if app has storage permissions for model access
                         if (!permissionManager.hasStoragePermissions(this@WebServer.context)) {
                             val responseTime = System.currentTimeMillis() - startTime
-                            val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                            val errorResponse = me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Storage permissions required for AI model access",
                                 code = "STORAGE_PERMISSION_DENIED",
                                 details = "The app needs storage permissions to access AI models. Please grant storage permissions in app settings and ensure models are available."
@@ -500,7 +500,7 @@ class WebServer(private val context: Context) {
                         }
                         
                         // Parse the request from the captured text
-                        val request = com.google.gson.Gson().fromJson(requestBodyText, com.k3s.phoneserver.ai.AITextRequest::class.java)
+                        val request = com.google.gson.Gson().fromJson(requestBodyText, me.bechberger.phoneserver.ai.AITextRequest::class.java)
                         val response = aiService.handleTextRequest(request)
                         val responseTime = System.currentTimeMillis() - startTime
                         
@@ -514,10 +514,10 @@ class WebServer(private val context: Context) {
                         )
                         
                         call.respond(response)
-                    } catch (e: com.k3s.phoneserver.ai.ModelNotDownloadedException) {
+                    } catch (e: me.bechberger.phoneserver.ai.ModelNotDownloadedException) {
                         Timber.w(e, "AI model not available")
                         val responseTime = System.currentTimeMillis() - startTime
-                        val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                        val errorResponse = me.bechberger.phoneserver.ai.AIErrorResponse(
                             error = "AI model not available",
                             code = "MODEL_NOT_AVAILABLE",
                             details = e.message
@@ -533,10 +533,10 @@ class WebServer(private val context: Context) {
                         )
                         
                         call.respond(HttpStatusCode.NotFound, errorResponse)
-                    } catch (e: com.k3s.phoneserver.ai.AIServiceException) {
+                    } catch (e: me.bechberger.phoneserver.ai.AIServiceException) {
                         Timber.w(e, "AI service error")
                         val responseTime = System.currentTimeMillis() - startTime
-                        val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                        val errorResponse = me.bechberger.phoneserver.ai.AIErrorResponse(
                             error = "AI service error",
                             code = "AI_SERVICE_ERROR",
                             details = e.message
@@ -555,7 +555,7 @@ class WebServer(private val context: Context) {
                     } catch (e: Exception) {
                         Timber.e(e, "AI text generation error")
                         val responseTime = System.currentTimeMillis() - startTime
-                        val errorResponse = com.k3s.phoneserver.ai.AIErrorResponse(
+                        val errorResponse = me.bechberger.phoneserver.ai.AIErrorResponse(
                             error = "AI text generation failed",
                             code = "AI_ERROR",
                             details = e.message
@@ -624,7 +624,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to get AI models")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Failed to get models",
                                 code = "AI_ERROR",
                                 details = e.message
@@ -640,7 +640,7 @@ class WebServer(private val context: Context) {
                         if (!permissionManager.hasEnhancedStoragePermissions(this@WebServer.context)) {
                             call.respond(
                                 HttpStatusCode.Forbidden,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Storage permissions required",
                                     code = "STORAGE_PERMISSION_DENIED",
                                     details = "The app needs storage permissions to download and access AI models. Please grant storage permissions in app settings."
@@ -655,7 +655,7 @@ class WebServer(private val context: Context) {
                         if (model == null) {
                             call.respond(
                                 HttpStatusCode.BadRequest,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Unknown model",
                                     code = "INVALID_MODEL",
                                     details = "Model '${request.modelName}' not found"
@@ -667,7 +667,7 @@ class WebServer(private val context: Context) {
                         if (model.needsAuth) {
                             call.respond(
                                 HttpStatusCode.BadRequest,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Model requires authentication",
                                     code = "AUTH_REQUIRED",
                                     details = "Model '${model.modelName}' requires manual download from ${model.url}"
@@ -706,7 +706,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to download model")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Failed to download model",
                                 code = "DOWNLOAD_ERROR",
                                 details = e.message
@@ -724,7 +724,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to get model status")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Failed to get model status",
                                 code = "STATUS_ERROR",
                                 details = e.message
@@ -738,7 +738,7 @@ class WebServer(private val context: Context) {
                     try {
                         val modelName = call.parameters["modelName"] ?: return@get call.respond(
                             HttpStatusCode.BadRequest,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Model name required",
                                 code = "MISSING_PARAMETER",
                                 details = "Model name parameter is required"
@@ -749,7 +749,7 @@ class WebServer(private val context: Context) {
                         if (model == null) {
                             call.respond(
                                 HttpStatusCode.NotFound,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Model not found",
                                     code = "MODEL_NOT_FOUND",
                                     details = "Model '$modelName' is not supported"
@@ -762,7 +762,7 @@ class WebServer(private val context: Context) {
                         if (persistenceInfo == null) {
                             call.respond(
                                 HttpStatusCode.NotFound,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Model not downloaded",
                                     code = "MODEL_NOT_DOWNLOADED",
                                     details = "Model '$modelName' has not been downloaded"
@@ -776,7 +776,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to get model persistence info")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Failed to get model info",
                                 code = "INFO_ERROR",
                                 details = e.message
@@ -805,7 +805,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to generate diagnostics")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Failed to generate diagnostics",
                                 code = "DIAGNOSTICS_ERROR",
                                 details = e.message
@@ -827,7 +827,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to cleanup models")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Cleanup failed",
                                 code = "CLEANUP_ERROR",
                                 details = e.message
@@ -841,7 +841,7 @@ class WebServer(private val context: Context) {
                     try {
                         val modelName = call.parameters["modelName"] ?: return@delete call.respond(
                             HttpStatusCode.BadRequest,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Model name required",
                                 code = "MISSING_PARAMETER",
                                 details = "Model name parameter is required"
@@ -852,7 +852,7 @@ class WebServer(private val context: Context) {
                         if (model == null) {
                             call.respond(
                                 HttpStatusCode.NotFound,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Model not found",
                                     code = "MODEL_NOT_FOUND",
                                     details = "Model '$modelName' is not supported"
@@ -871,7 +871,7 @@ class WebServer(private val context: Context) {
                         } else {
                             call.respond(
                                 HttpStatusCode.InternalServerError,
-                                com.k3s.phoneserver.ai.AIErrorResponse(
+                                me.bechberger.phoneserver.ai.AIErrorResponse(
                                     error = "Failed to remove model",
                                     code = "REMOVAL_ERROR",
                                     details = "Model removal failed"
@@ -882,7 +882,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to remove model")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Model removal failed",
                                 code = "REMOVAL_ERROR",
                                 details = e.message
@@ -907,7 +907,7 @@ class WebServer(private val context: Context) {
                         Timber.e(e, "Failed to get model loading status")
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.AIErrorResponse(
+                            me.bechberger.phoneserver.ai.AIErrorResponse(
                                 error = "Failed to get loading status",
                                 code = "STATUS_ERROR",
                                 details = e.message
@@ -923,13 +923,13 @@ class WebServer(private val context: Context) {
                         if (!permissionManager.hasCameraPermissions(this@WebServer.context)) {
                             call.respond(
                                 HttpStatusCode.Forbidden,
-                                com.k3s.phoneserver.ai.ObjectDetectionResponse(
+                                me.bechberger.phoneserver.ai.ObjectDetectionResponse(
                                     success = false,
                                     objects = emptyList(),
                                     inferenceTime = 0,
                                     captureTime = 0,
                                     threshold = 0.5f,
-                                    imageMetadata = com.k3s.phoneserver.ai.ImageMetadata(
+                                    imageMetadata = me.bechberger.phoneserver.ai.ImageMetadata(
                                         width = 0,
                                         height = 0,
                                         camera = "rear",
@@ -943,10 +943,10 @@ class WebServer(private val context: Context) {
 
                         // Parse request parameters from JSON body or use defaults
                         val requestBody = try {
-                            call.receiveNullable<com.k3s.phoneserver.ai.ObjectDetectionRequest>()
+                            call.receiveNullable<me.bechberger.phoneserver.ai.ObjectDetectionRequest>()
                         } catch (e: Exception) {
                             null
-                        } ?: com.k3s.phoneserver.ai.ObjectDetectionRequest()
+                        } ?: me.bechberger.phoneserver.ai.ObjectDetectionRequest()
 
                         // Camera operations must be performed on the main thread with lifecycle
                         // Create SimpleLifecycleOwner on main thread (required by Android)
@@ -1005,13 +1005,13 @@ class WebServer(private val context: Context) {
                         
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            com.k3s.phoneserver.ai.ObjectDetectionResponse(
+                            me.bechberger.phoneserver.ai.ObjectDetectionResponse(
                                 success = false,
                                 objects = emptyList(),
                                 inferenceTime = 0,
                                 captureTime = System.currentTimeMillis() - startTime,
                                 threshold = 0.5f,
-                                imageMetadata = com.k3s.phoneserver.ai.ImageMetadata(
+                                imageMetadata = me.bechberger.phoneserver.ai.ImageMetadata(
                                     width = 0,
                                     height = 0,
                                     camera = "rear",
@@ -1406,10 +1406,10 @@ class WebServer(private val context: Context) {
                                 "totalDownloadSize" to 4294967296,
                                 "formattedTotalSize" to "4.0 GB",
                                 "lastLoadedModel" to "gemma-2b-it-cpu",
-                                "modelsDirectory" to "/storage/emulated/0/Download/k3s_ai_models",
+                                "modelsDirectory" to "/storage/emulated/0/Download/local_ai_models",
                                 "availableModels" to listOf(
                                     mapOf(
-                                        "downloadPath" to "/storage/emulated/0/Download/k3s_ai_models/gemma-2b-it-cpu.bin",
+                                        "downloadPath" to "/storage/emulated/0/Download/local_ai_models/gemma-2b-it-cpu.bin",
                                         "fileSize" to 2147483648,
                                         "formattedSize" to "2.0 GB",
                                         "downloadTimestamp" to 1692720000000,
@@ -1436,7 +1436,7 @@ class WebServer(private val context: Context) {
                                 "modelName" to "Model identifier (e.g., 'gemma-2b-it-cpu')"
                             ),
                             "response_success" to mapOf(
-                                "downloadPath" to "/storage/emulated/0/Download/k3s_ai_models/gemma-2b-it-cpu.bin",
+                                "downloadPath" to "/storage/emulated/0/Download/local_ai_models/gemma-2b-it-cpu.bin",
                                 "fileSize" to 2147483648,
                                 "formattedSize" to "2.0 GB",
                                 "downloadTimestamp" to 1692720000000,
@@ -1593,8 +1593,8 @@ class WebServer(private val context: Context) {
      * @param imageScaling The scaling settings to apply
      * @return Scaled bitmap for output
      */
-    private fun scaleImageForOutput(bitmap: Bitmap, imageScaling: com.k3s.phoneserver.ai.ImageScaling): Bitmap {
-        if (imageScaling == com.k3s.phoneserver.ai.ImageScaling.NONE) {
+    private fun scaleImageForOutput(bitmap: Bitmap, imageScaling: me.bechberger.phoneserver.ai.ImageScaling): Bitmap {
+        if (imageScaling == me.bechberger.phoneserver.ai.ImageScaling.NONE) {
             return bitmap
         }
         

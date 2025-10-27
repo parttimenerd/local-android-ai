@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.k3s.phoneserver"
+    package="me.bechberger.phoneserver"
     android:versionCode="1"
     android:versionName="1.0" >
 
@@ -57,13 +57,13 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <permission
-        android:name="com.k3s.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+        android:name="me.bechberger.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
         android:protectionLevel="signature" />
 
-    <uses-permission android:name="com.k3s.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+    <uses-permission android:name="me.bechberger.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
 
     <application
-        android:name="com.k3s.phoneserver.PhoneServerApplication"
+        android:name="me.bechberger.phoneserver.PhoneServerApplication"
         android:allowBackup="true"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -78,13 +78,14 @@
         android:requestLegacyExternalStorage="true"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.K3sPhoneServer"
+        android:testOnly="true"
+        android:theme="@style/Theme.LocalAIPhoneServer"
         android:usesCleartextTraffic="true"
         android:vmSafeMode="false" >
         <activity
-            android:name="com.k3s.phoneserver.MainActivity"
+            android:name="me.bechberger.phoneserver.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.K3sPhoneServer" >
+            android:theme="@style/Theme.LocalAIPhoneServer" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -92,18 +93,18 @@
             </intent-filter>
         </activity>
         <activity
-            android:name="com.k3s.phoneserver.AIModelManagerActivity"
+            android:name="me.bechberger.phoneserver.AIModelManagerActivity"
             android:exported="false"
-            android:parentActivityName="com.k3s.phoneserver.MainActivity"
-            android:theme="@style/Theme.K3sPhoneServer" />
+            android:parentActivityName="me.bechberger.phoneserver.MainActivity"
+            android:theme="@style/Theme.LocalAIPhoneServer" />
         <activity
-            android:name="com.k3s.phoneserver.AITestActivity"
+            android:name="me.bechberger.phoneserver.AITestActivity"
             android:exported="false"
             android:label="AI Text Generation"
-            android:parentActivityName="com.k3s.phoneserver.MainActivity"
-            android:theme="@style/Theme.K3sPhoneServer" />
+            android:parentActivityName="me.bechberger.phoneserver.MainActivity"
+            android:theme="@style/Theme.LocalAIPhoneServer" />
         <activity
-            android:name="com.k3s.phoneserver.services.DisplayActivity"
+            android:name="me.bechberger.phoneserver.services.DisplayActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTask"
@@ -111,18 +112,18 @@
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
 
         <service
-            android:name="com.k3s.phoneserver.server.WebServerService"
+            android:name="me.bechberger.phoneserver.server.WebServerService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse|location" >
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Web server for K3s phone integration with background location access" />
+                android:value="Web server with background location access" />
         </service>
 
         <!-- Boot receiver to auto-start server -->
         <receiver
-            android:name="com.k3s.phoneserver.BootReceiver"
+            android:name="me.bechberger.phoneserver.BootReceiver"
             android:enabled="true"
             android:exported="true" >
             <intent-filter android:priority="1000" >
@@ -159,7 +160,7 @@
 
         <provider
             android:name="androidx.startup.InitializationProvider"
-            android:authorities="com.k3s.phoneserver.androidx-startup"
+            android:authorities="me.bechberger.phoneserver.androidx-startup"
             android:exported="false" >
             <meta-data
                 android:name="androidx.emoji2.text.EmojiCompatInitializer"

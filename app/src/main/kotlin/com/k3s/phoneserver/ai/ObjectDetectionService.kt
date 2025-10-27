@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.ai
+package me.bechberger.phoneserver.ai
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -11,7 +11,7 @@ import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetector
 import com.google.mediapipe.tasks.vision.objectdetector.ObjectDetectorResult
-import com.k3s.phoneserver.services.SharedCameraService
+import me.bechberger.phoneserver.services.SharedCameraService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber

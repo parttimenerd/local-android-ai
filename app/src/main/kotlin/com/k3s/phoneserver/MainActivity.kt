@@ -1,4 +1,4 @@
-package com.k3s.phoneserver
+package me.bechberger.phoneserver
 
 import android.Manifest
 import android.app.AlertDialog
@@ -24,14 +24,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.k3s.phoneserver.adapter.RequestLogAdapter
-import com.k3s.phoneserver.formatting.ResponseFormatter
-import com.k3s.phoneserver.logging.RequestLogger
-import com.k3s.phoneserver.manager.AppPermissionManager
-import com.k3s.phoneserver.server.WebServerService
-import com.k3s.phoneserver.testing.ApiTester
-import com.k3s.phoneserver.testing.ApiTestResult
-import com.k3s.phoneserver.ai.AIService
+import me.bechberger.phoneserver.adapter.RequestLogAdapter
+import me.bechberger.phoneserver.formatting.ResponseFormatter
+import me.bechberger.phoneserver.logging.RequestLogger
+import me.bechberger.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.server.WebServerService
+import me.bechberger.phoneserver.testing.ApiTester
+import me.bechberger.phoneserver.testing.ApiTestResult
+import me.bechberger.phoneserver.ai.AIService
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -165,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize AI model system (migrate references and scan for local models)
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val (migratedCount, scannedCount) = com.k3s.phoneserver.ai.ModelDetector.initializeModelSystem(this@MainActivity)
+                val (migratedCount, scannedCount) = me.bechberger.phoneserver.ai.ModelDetector.initializeModelSystem(this@MainActivity)
                 if (migratedCount > 0 || scannedCount > 0) {
                     Timber.i("Model system initialized: $migratedCount migrated, $scannedCount new references created")
                 }
@@ -212,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         
         // Add prototype footer link
         findViewById<TextView>(R.id.prototypeFooter).setOnClickListener {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/parttimenerd/k3s-on-phone"))
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/parttimenerd/local-android-ai"))
             try {
                 startActivity(intent)
             } catch (e: Exception) {
@@ -309,7 +309,7 @@ class MainActivity : AppCompatActivity() {
                 Timber.d("Attempting location access 10 seconds after startup to trigger permission request")
                 lifecycleScope.launch {
                     try {
-                        val locationService = com.k3s.phoneserver.services.LocationService(this@MainActivity)
+                        val locationService = me.bechberger.phoneserver.services.LocationService(this@MainActivity)
                         val location = locationService.getCurrentLocation()
                         if (location != null) {
                             Timber.i("Successfully obtained location: ${location.latitude}, ${location.longitude}")
@@ -400,7 +400,7 @@ class MainActivity : AppCompatActivity() {
             if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
                 AlertDialog.Builder(this)
                     .setTitle("Background Operation")
-                    .setMessage("To keep the K3s server running reliably in the background, please allow this app to ignore battery optimizations.")
+                    .setMessage("To keep the local AI server running reliably in the background, please allow this app to ignore battery optimizations.")
                     .setPositiveButton("Settings") { _, _ ->
                         val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                         intent.data = Uri.parse("package:$packageName")
@@ -473,7 +473,7 @@ class MainActivity : AppCompatActivity() {
         
         if (isServerRunning && !wasRunning) {
             Timber.d("Server detected as running - app returning to foreground")
-            Toast.makeText(this, "K3s Server :8005 is running in background", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Local AI Server :8005 is running in background", Toast.LENGTH_SHORT).show()
         }
         
         updateUI()
@@ -1153,7 +1153,7 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val availableModels = withContext(Dispatchers.IO) {
-                    com.k3s.phoneserver.ai.ModelDetector.getAvailableModels(this@MainActivity)
+                    me.bechberger.phoneserver.ai.ModelDetector.getAvailableModels(this@MainActivity)
                 }
                 
                 runOnUiThread {
@@ -1191,7 +1191,7 @@ class MainActivity : AppCompatActivity() {
         // Set up model selection with only available models
         lifecycleScope.launch {
             val availableModels = withContext(Dispatchers.IO) {
-                com.k3s.phoneserver.ai.ModelDetector.getAvailableModels(this@MainActivity)
+                me.bechberger.phoneserver.ai.ModelDetector.getAvailableModels(this@MainActivity)
             }
             
             if (availableModels.isEmpty()) {

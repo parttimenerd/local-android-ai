@@ -407,7 +407,7 @@
                 android:focusable="true"
                 android:gravity="center"
                 android:padding="12dp"
-                android:text="Prototype for the k3s-on-phone project - github.com/parttimenerd/k3s-on-phone"
+                android:text="Experimental local AI server - github.com/parttimenerd/local-android-ai"
                 android:textColor="#0066cc"
                 android:textSize="11sp"
                 android:textStyle="italic" />

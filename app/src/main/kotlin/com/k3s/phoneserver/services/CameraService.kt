@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.services
+package me.bechberger.phoneserver.services
 
 import android.annotation.SuppressLint
 import android.content.Context
@@ -16,7 +16,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.exifinterface.media.ExifInterface
 import androidx.lifecycle.LifecycleOwner
-import com.k3s.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.manager.AppPermissionManager
 import timber.log.Timber
 import java.io.File
 import java.util.Collections

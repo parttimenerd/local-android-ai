@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.testing
+package me.bechberger.phoneserver.testing
 
 data class ApiTestResult(
     val endpoint: String,

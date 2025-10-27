@@ -1,10 +1,10 @@
-package com.k3s.phoneserver.services
+package me.bechberger.phoneserver.services
 
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.SystemClock
 import androidx.lifecycle.LifecycleOwner
-import com.k3s.phoneserver.ai.ImageMetadata
+import me.bechberger.phoneserver.ai.ImageMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber

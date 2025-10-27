@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.k3s.phoneserver.app-mergeDebugResources-52:/values-en-rCA/values-en-rCA.xml",
+            "outputFile": "me.bechberger.phoneserver.app-mergeDebugResources-52:/values-en-rCA/values-en-rCA.xml",
             "map": [
                 {
                     "source": "/home/i560383/.gradle/caches/8.10.2/transforms/83ea798211547d51a05625219bec0c51/transformed/appcompat-1.6.1/res/values-en-rCA/values-en-rCA.xml",

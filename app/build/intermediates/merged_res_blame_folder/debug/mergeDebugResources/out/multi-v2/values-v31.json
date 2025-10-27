@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.k3s.phoneserver.app-mergeDebugResources-52:/values-v31/values-v31.xml",
+            "outputFile": "me.bechberger.phoneserver.app-mergeDebugResources-52:/values-v31/values-v31.xml",
             "map": [
                 {
                     "source": "/home/i560383/.gradle/caches/8.10.2/transforms/1d535a9c2e891210a2a1182778673386/transformed/material-1.11.0/res/values-v31/values-v31.xml",

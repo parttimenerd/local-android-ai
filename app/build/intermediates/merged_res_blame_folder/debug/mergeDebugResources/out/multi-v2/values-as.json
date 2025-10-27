@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.k3s.phoneserver.app-mergeDebugResources-52:/values-as/values-as.xml",
+            "outputFile": "me.bechberger.phoneserver.app-mergeDebugResources-52:/values-as/values-as.xml",
             "map": [
                 {
                     "source": "/home/i560383/.gradle/caches/8.10.2/transforms/ab6538beb9b459c43ea4ce3a6cee27b9/transformed/jetified-play-services-basement-18.1.0/res/values-as/values.xml",

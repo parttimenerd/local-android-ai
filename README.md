@@ -81,7 +81,7 @@ GET /help           # API documentation
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # Monitor logs
-adb logcat -s "K3sPhoneServer" "*AI*" "*Camera*" "*Location*"
+adb logcat -s "LocalAIPhoneServer" "*AI*" "*Camera*" "*Location*"
 ```
 
 ## Integration

@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.services
+package me.bechberger.phoneserver.services
 
 import android.app.Activity
 import android.os.Bundle
@@ -10,7 +10,7 @@ import android.widget.TextView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import com.k3s.phoneserver.R
+import me.bechberger.phoneserver.R
 import timber.log.Timber
 
 /**

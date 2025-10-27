@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.services
+package me.bechberger.phoneserver.services
 
 import android.content.Context
 import android.content.pm.PackageManager
@@ -7,7 +7,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import androidx.core.content.ContextCompat
-import com.k3s.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.manager.AppPermissionManager
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import kotlin.coroutines.resume

@@ -1,8 +1,8 @@
-package com.k3s.phoneserver.services
+package me.bechberger.phoneserver.services
 
 import android.content.Context
 import android.location.Location
-import com.k3s.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.manager.AppPermissionManager
 import timber.log.Timber
 
 /**

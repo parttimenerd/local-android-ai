@@ -1,4 +1,4 @@
-package com.k3s.phoneserver
+package me.bechberger.phoneserver
 
 import android.os.Bundle
 import android.view.View
@@ -9,10 +9,10 @@ import android.graphics.Matrix
 import android.util.Base64
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
-import com.k3s.phoneserver.ai.ModelDetector
-import com.k3s.phoneserver.logging.RequestLogger
-import com.k3s.phoneserver.testing.ApiTester
-import com.k3s.phoneserver.testing.ApiTestResult
+import me.bechberger.phoneserver.ai.ModelDetector
+import me.bechberger.phoneserver.logging.RequestLogger
+import me.bechberger.phoneserver.testing.ApiTester
+import me.bechberger.phoneserver.testing.ApiTestResult
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
@@ -554,7 +554,7 @@ class AITestActivity : AppCompatActivity() {
             appendLine("### 📥 Raw API Response")
             appendLine("```json")
             // Use ResponseFormatter for pretty-printed JSON with syntax highlighting
-            val formatter = com.k3s.phoneserver.formatting.ResponseFormatter.getInstance()
+            val formatter = me.bechberger.phoneserver.formatting.ResponseFormatter.getInstance()
             appendLine(formatter.formatJsonWithHighlighting(result.response))
             appendLine("```")
         }

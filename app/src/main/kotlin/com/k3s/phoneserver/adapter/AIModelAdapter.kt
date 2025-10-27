@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.adapter
+package me.bechberger.phoneserver.adapter
 
 import android.app.AlertDialog
 import android.content.Context
@@ -19,11 +19,11 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.recyclerview.widget.RecyclerView
-import com.k3s.phoneserver.R
-import com.k3s.phoneserver.ai.AIModel
-import com.k3s.phoneserver.ai.AIService
-import com.k3s.phoneserver.ai.ModelDetector
-import com.k3s.phoneserver.ai.ModelFileInfo
+import me.bechberger.phoneserver.R
+import me.bechberger.phoneserver.ai.AIModel
+import me.bechberger.phoneserver.ai.AIService
+import me.bechberger.phoneserver.ai.ModelDetector
+import me.bechberger.phoneserver.ai.ModelFileInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

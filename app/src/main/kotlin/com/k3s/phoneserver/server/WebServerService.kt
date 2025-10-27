@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.server
+package me.bechberger.phoneserver.server
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,8 +8,8 @@ import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.k3s.phoneserver.MainActivity
-import com.k3s.phoneserver.R
+import me.bechberger.phoneserver.MainActivity
+import me.bechberger.phoneserver.R
 import kotlinx.coroutines.*
 import timber.log.Timber
 
@@ -21,7 +21,7 @@ class WebServerService : Service() {
     companion object {
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_ID = "WebServerChannel"
-        const val ACTION_STOP_SERVER = "com.k3s.phoneserver.STOP_SERVER"
+        const val ACTION_STOP_SERVER = "me.bechberger.phoneserver.STOP_SERVER"
         
         @Volatile
         private var _isRunning = false

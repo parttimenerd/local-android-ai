@@ -4,7 +4,7 @@
     "type": "MERGED_MANIFESTS",
     "kind": "Directory"
   },
-  "applicationId": "com.k3s.phoneserver",
+  "applicationId": "me.bechberger.phoneserver",
   "variantName": "debug",
   "elements": [
     {

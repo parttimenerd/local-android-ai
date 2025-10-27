@@ -274,19 +274,19 @@ MERGED from [com.google.android.odml:image:1.0.0-beta1] /home/i560383/.gradle/ca
 	android:allowBackup
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:53:9-35
 	android:theme
-		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:61:9-52
+		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:61:9-56
 	android:dataExtractionRules
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:54:9-65
 	android:usesCleartextTraffic
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:66:9-44
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:52:9-47
-activity#com.k3s.phoneserver.MainActivity
+activity#me.bechberger.phoneserver.MainActivity
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:70:9-78:20
 	android:exported
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:72:13-36
 	android:theme
-		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:73:13-56
+		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:73:13-60
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:71:13-41
 intent-filter#action:name:android.intent.action.MAIN+category:name:android.intent.category.LAUNCHER
@@ -299,17 +299,17 @@ category#android.intent.category.LAUNCHER
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:76:17-77
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:76:27-74
-activity#com.k3s.phoneserver.AIModelManagerActivity
+activity#me.bechberger.phoneserver.AIModelManagerActivity
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:80:9-84:58
 	android:parentActivityName
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:84:13-55
 	android:exported
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:82:13-37
 	android:theme
-		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:83:13-56
+		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:83:13-60
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:81:13-51
-activity#com.k3s.phoneserver.AITestActivity
+activity#me.bechberger.phoneserver.AITestActivity
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:86:9-91:50
 	android:parentActivityName
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:90:13-55
@@ -318,10 +318,10 @@ ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidM
 	android:exported
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:88:13-37
 	android:theme
-		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:89:13-56
+		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:89:13-60
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:87:13-43
-activity#com.k3s.phoneserver.services.DisplayActivity
+activity#me.bechberger.phoneserver.services.DisplayActivity
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:93:9-99:47
 	android:excludeFromRecents
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:97:13-46
@@ -335,7 +335,7 @@ ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidM
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:98:13-36
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:94:13-53
-service#com.k3s.phoneserver.server.WebServerService
+service#me.bechberger.phoneserver.server.WebServerService
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:101:9-109:19
 	android:enabled
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:103:13-35
@@ -346,12 +346,12 @@ ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidM
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:102:13-52
 property#android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE
-ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:106:13-108:104
+ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:106:13-108:78
 	android:value
-		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:108:17-101
+		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:108:17-75
 	android:name
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:107:17-76
-receiver#com.k3s.phoneserver.BootReceiver
+receiver#me.bechberger.phoneserver.BootReceiver
 ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:112:9-122:20
 	android:enabled
 		ADDED from /home/i560383/code/experiments/android_local_ai/app/src/main/AndroidManifest.xml:114:13-35
@@ -831,7 +831,7 @@ ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/trans
 		ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
 	android:name
 		ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:23:9-81
-permission#com.k3s.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+permission#me.bechberger.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:22:5-24:47
 	android:protectionLevel
 		ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:24:9-44
@@ -841,7 +841,7 @@ uses-permission#${applicationId}.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
 	android:name
 		ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:26:22-94
-uses-permission#com.k3s.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+uses-permission#me.bechberger.phoneserver.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
 ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:26:5-97
 	android:name
 		ADDED from [androidx.core:core:1.12.0] /home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/AndroidManifest.xml:26:22-94

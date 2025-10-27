@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.services
+package me.bechberger.phoneserver.services
 
 import android.content.Context
 import android.content.Intent

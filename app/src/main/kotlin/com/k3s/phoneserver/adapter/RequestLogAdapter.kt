@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.adapter
+package me.bechberger.phoneserver.adapter
 
 import android.app.AlertDialog
 import android.content.ClipData
@@ -14,9 +14,9 @@ import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import com.k3s.phoneserver.R
-import com.k3s.phoneserver.logging.RequestLog
-import com.k3s.phoneserver.formatting.ResponseFormatter
+import me.bechberger.phoneserver.R
+import me.bechberger.phoneserver.logging.RequestLog
+import me.bechberger.phoneserver.formatting.ResponseFormatter
 
 class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogViewHolder>(RequestLogDiffCallback()) {
 
@@ -52,7 +52,7 @@ class RequestLogAdapter : ListAdapter<RequestLog, RequestLogAdapter.RequestLogVi
                 textStatusCode.setTextColor(Color.parseColor("#2196F3")) // Blue for ongoing
                 
                 // Show live duration for ongoing requests
-                val currentDuration = com.k3s.phoneserver.logging.RequestLogger.getCurrentDuration(requestLog)
+                val currentDuration = me.bechberger.phoneserver.logging.RequestLogger.getCurrentDuration(requestLog)
                 val durationSeconds = currentDuration / 1000.0
                 textResponseTime.text = String.format("%.2fs", durationSeconds)
                 textResponseTime.setTextColor(Color.parseColor("#2196F3")) // Blue for ongoing

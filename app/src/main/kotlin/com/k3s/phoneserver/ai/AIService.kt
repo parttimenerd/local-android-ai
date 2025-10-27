@@ -1,12 +1,12 @@
-package com.k3s.phoneserver.ai
+package me.bechberger.phoneserver.ai
 
 import android.content.Context
 import android.graphics.Bitmap
 import android.os.Environment
 import android.util.Base64
-import com.k3s.phoneserver.services.CameraService
-import com.k3s.phoneserver.services.SharedCameraService
-import com.k3s.phoneserver.lifecycle.SimpleLifecycleOwner
+import me.bechberger.phoneserver.services.CameraService
+import me.bechberger.phoneserver.services.SharedCameraService
+import me.bechberger.phoneserver.lifecycle.SimpleLifecycleOwner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -817,7 +817,7 @@ class AIService(private val context: Context) {
                 // Use a dedicated external directory for downloads that's not tied to our app
                 val downloadDir = if (Environment.getExternalStorageState() == Environment.MEDIA_MOUNTED) {
                     val publicDownloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                    File(publicDownloads, "k3s_ai_models")
+                    File(publicDownloads, "local_ai_models")
                 } else {
                     // Fallback to app external files
                     File(context.getExternalFilesDir(null), "downloaded_models")

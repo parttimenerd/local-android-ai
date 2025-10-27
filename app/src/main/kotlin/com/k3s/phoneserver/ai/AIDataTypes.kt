@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.ai
+package me.bechberger.phoneserver.ai
 
 /**
  * Request payload for /ai/text endpoint

@@ -1,4 +1,4 @@
-package com.k3s.phoneserver
+package me.bechberger.phoneserver
 
 import android.app.Application
 import android.content.Intent
@@ -6,8 +6,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
-import com.k3s.phoneserver.manager.AppPermissionManager
-import com.k3s.phoneserver.server.WebServerService
+import me.bechberger.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.server.WebServerService
 import timber.log.Timber
 
 class PhoneServerApplication : Application(), DefaultLifecycleObserver {

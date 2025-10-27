@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.ai
+package me.bechberger.phoneserver.ai
 
 import android.content.Context
 import android.os.Environment
@@ -34,7 +34,7 @@ data class ModelFileInfo(
 object ModelDetector {
     
     private const val TAG = "ModelDetector"
-    private const val MODELS_REFS_DIR = "k3s_ai_model_refs"
+    private const val MODELS_REFS_DIR = "local_ai_model_refs"
     private const val FAILED_MODELS_PREF = "failed_models"
     
     // Track models that have failed testing
@@ -771,7 +771,7 @@ object ModelDetector {
                     File(externalStorage, "Downloads"),
                     File(externalStorage, "Models"),
                     File(externalStorage, "AI"),
-                    File(externalStorage, "k3s-models")
+                    File(externalStorage, "local-ai-models")
                 )
                 scanLocations.addAll(externalDirs)
                 
@@ -1191,7 +1191,7 @@ object ModelDetector {
         
         // Permission status
         diagnostics.appendLine("\n🔐 Permission Status:")
-        val appPermissionManager = com.k3s.phoneserver.manager.AppPermissionManager.getInstance()
+        val appPermissionManager = me.bechberger.phoneserver.manager.AppPermissionManager.getInstance()
         diagnostics.appendLine("   Storage Permissions: ${appPermissionManager.hasStoragePermissions(context)}")
         diagnostics.appendLine("   Enhanced Storage: ${appPermissionManager.hasEnhancedStoragePermissions(context)}")
         

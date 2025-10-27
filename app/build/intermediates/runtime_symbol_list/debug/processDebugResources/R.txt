@@ -4661,7 +4661,7 @@ int style Theme_Design_Light 0x7f100225
 int style Theme_Design_Light_BottomSheetDialog 0x7f100226
 int style Theme_Design_Light_NoActionBar 0x7f100227
 int style Theme_Design_NoActionBar 0x7f100228
-int style Theme_K3sPhoneServer 0x7f100229
+int style Theme_LocalAIPhoneServer 0x7f100229
 int style Theme_Material3_Dark 0x7f10022a
 int style Theme_Material3_Dark_BottomSheetDialog 0x7f10022b
 int style Theme_Material3_Dark_Dialog 0x7f10022c

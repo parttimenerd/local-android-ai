@@ -4,7 +4,7 @@
     "type": "LINKED_RESOURCES_BINARY_FORMAT",
     "kind": "Directory"
   },
-  "applicationId": "com.k3s.phoneserver",
+  "applicationId": "me.bechberger.phoneserver",
   "variantName": "debug",
   "elements": [
     {

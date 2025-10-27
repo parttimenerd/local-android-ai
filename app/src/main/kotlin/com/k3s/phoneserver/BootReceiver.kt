@@ -1,11 +1,11 @@
-package com.k3s.phoneserver
+package me.bechberger.phoneserver
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
-import com.k3s.phoneserver.manager.AppPermissionManager
-import com.k3s.phoneserver.server.WebServerService
+import me.bechberger.phoneserver.manager.AppPermissionManager
+import me.bechberger.phoneserver.server.WebServerService
 import timber.log.Timber
 
 /**
@@ -24,7 +24,7 @@ class BootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,
             Intent.ACTION_PACKAGE_REPLACED -> {
-                Timber.i("System boot/update detected - attempting to auto-start K3s server")
+                Timber.i("System boot/update detected - attempting to auto-start the local AI server")
                 
                 // Always try to start the service for maximum persistence
                 try {

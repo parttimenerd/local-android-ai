@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace 'com.k3s.phoneserver'
+    namespace 'me.bechberger.phoneserver'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.k3s.phoneserver"
+        applicationId "me.bechberger.phoneserver"
         minSdk 30
         targetSdk 34
         versionCode 1

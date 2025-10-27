@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.k3s.phoneserver.app-mergeDebugResources-52:/values-pt-rBR/values-pt-rBR.xml",
+            "outputFile": "me.bechberger.phoneserver.app-mergeDebugResources-52:/values-pt-rBR/values-pt-rBR.xml",
             "map": [
                 {
                     "source": "/home/i560383/.gradle/caches/8.10.2/transforms/a18686f56200c2e476ba054c7a690ca0/transformed/core-1.12.0/res/values-pt-rBR/values-pt-rBR.xml",

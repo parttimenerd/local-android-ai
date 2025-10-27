@@ -1,4 +1,4 @@
-package com.k3s.phoneserver.testing
+package me.bechberger.phoneserver.testing
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

@@ -6449,7 +6449,7 @@
     <item name="windowActionBar">false</item>
     <item name="windowNoTitle">true</item>
   </style>
-    <style name="Theme.K3sPhoneServer" parent="Theme.Material3.DayNight">
+    <style name="Theme.LocalAIPhoneServer" parent="Theme.Material3.DayNight">
         
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>

@@ -95,7 +95,7 @@ layout item_request_log
 mipmap ic_launcher
 mipmap ic_launcher_round
 string app_name
-style Theme.K3sPhoneServer
+style Theme.LocalAIPhoneServer
 xml backup_rules
 xml data_extraction_rules
 xml network_security_config
