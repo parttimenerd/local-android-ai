@@ -20,7 +20,6 @@ Download it from the [Releases](https://github.com/parttimenerd/local-a ndroid-a
 - **Streaming**: Real-time token streaming with cancellation support
 
 ### Device Integration
-- **Location**: GPS with accuracy, altitude, bearing metadata
 - **Camera**: Front/rear with zoom, base64 encoding
 - **Sensors**: Compass orientation (azimuth, pitch, roll)
 - **Permissions**: Runtime request handling
@@ -62,14 +61,13 @@ POST /ai/models/test {"modelName": "model-name", "prompt": "text"}
 
 ### Device & System
 ```http
-GET /location       # GPS: lat, lng, alt, accuracy, bearing
 GET /orientation    # Compass: azimuth, pitch, roll, accuracy  
 GET /capture?side=rear&zoom=2.0  # Camera capture, base64 JPEG ⚠️ App must be visible
 GET /status         # Server status, features, permissions
 GET /help           # API documentation
 ```
 
-⚠️ **Camera Privacy Notice**: Camera capture requires the Android app to be visible due to Android OS privacy restrictions. This ensures users are aware when the camera is being accessed. Location and other endpoints work in the background.
+⚠️ **Camera Privacy Notice**: Camera capture requires the Android app to be visible due to Android OS privacy restrictions. This ensures users are aware when the camera is being accessed, the other endpoints work in the background.
 
 ## Build & Install
 
@@ -81,7 +79,7 @@ GET /help           # API documentation
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 # Monitor logs
-adb logcat -s "LocalAIPhoneServer" "*AI*" "*Camera*" "*Location*"
+adb logcat -s "LocalAIPhoneServer" "*AI*"
 ```
 
 ## Integration
@@ -104,7 +102,7 @@ GET /help
 - **Android Studio** Arctic Fox or newer
 - **Android SDK** API level 24+ (Android 7.0+)
 - **Device Requirements**: 3GB+ RAM for AI features
-- **Permissions**: Camera, Location, Internet
+- **Permissions**: Camera
 
 ### Building the App
 ```bash
@@ -128,6 +126,9 @@ The `/status` endpoint provides comprehensive debug information including:
 - Permission status for all features
 - Available device memory and requirements
 - Feature availability and configuration
+
+## TODO
+- Location isn't working
 
 ## License
 Apache 2.0

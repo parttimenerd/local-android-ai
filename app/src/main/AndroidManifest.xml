@@ -28,8 +28,8 @@
         tools:ignore="QueryAllPackagesPermission" />
     
     <!-- Location permissions -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!--<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />-->
     <!-- Background location access for when app is not visible (Android 10+) -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     
@@ -42,14 +42,15 @@
     <!-- Foreground service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!--<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />-->
     
     <!-- Allow app to run in background -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+
     <application
-        android:name=".PhoneServerApplication"
+        android:name="me.bechberger.phoneserver.PhoneServerApplication"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -62,13 +63,12 @@
         android:largeHeap="true"
         android:hardwareAccelerated="true"
         android:vmSafeMode="false"
-        android:extractNativeLibs="true"
         android:usesCleartextTraffic="true"
         android:requestLegacyExternalStorage="true"
         tools:targetApi="31">
         
         <activity
-            android:name=".MainActivity"
+            android:name="me.bechberger.phoneserver.MainActivity"
             android:exported="true"
             android:theme="@style/Theme.LocalAIPhoneServer">
             <intent-filter>
@@ -78,20 +78,20 @@
         </activity>
         
         <activity
-            android:name=".AIModelManagerActivity"
+            android:name="me.bechberger.phoneserver.AIModelManagerActivity"
             android:exported="false"
             android:theme="@style/Theme.LocalAIPhoneServer"
-            android:parentActivityName=".MainActivity" />
+            android:parentActivityName="me.bechberger.phoneserver.MainActivity" />
         
         <activity
-            android:name=".AITestActivity"
+            android:name="me.bechberger.phoneserver.AITestActivity"
             android:exported="false"
             android:theme="@style/Theme.LocalAIPhoneServer"
-            android:parentActivityName=".MainActivity"
+            android:parentActivityName="me.bechberger.phoneserver.MainActivity"
             android:label="AI Text Generation" />
         
         <activity
-            android:name=".services.DisplayActivity"
+            android:name="me.bechberger.phoneserver.services.DisplayActivity"
             android:exported="false"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
             android:excludeFromRecents="true"
@@ -99,10 +99,10 @@
             android:launchMode="singleTask" />
         
         <service
-            android:name=".server.WebServerService"
+            android:name="me.bechberger.phoneserver.server.WebServerService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="specialUse|location">
+            android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Web server with background location access" />
@@ -110,7 +110,7 @@
         
         <!-- Boot receiver to auto-start server -->
         <receiver
-            android:name=".BootReceiver"
+            android:name="me.bechberger.phoneserver.BootReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter android:priority="1000">
@@ -120,6 +120,7 @@
                 <data android:scheme="package" />
             </intent-filter>
         </receiver>
+
 
     </application>
 

@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<selector xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Green background for when there are models (state_selected = true) -->
-    <item android:state_selected="true" android:drawable="@drawable/badge_background_green" />
-    <!-- Red background for when there are no models (default) -->
-    <item android:drawable="@drawable/badge_background_red" />
-</selector>
