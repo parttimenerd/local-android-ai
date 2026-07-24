@@ -34,7 +34,7 @@ Download it from the [Releases](https://github.com/parttimenerd/local-a ndroid-a
 ```http
 POST /ai/text
 {
-  "prompt": "text",
+  "text": "prompt",
   "model": "gemma-3n-e2b-it", 
   "maxTokens": 150,
   "temperature": 0.7,
