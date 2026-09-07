@@ -1,0 +1,88 @@
+tag: experimental
+tagline: Android app that serves local AI models and device sensors over a REST API on port 8005.
+  Supports on-device LLM inference (Gemma, Llama, DeepSeek, TinyLlama via MediaPipe), object detection,
+  camera capture, and compass orientation — designed for integration with Android terminals or K3s nodes.
+tagline_short: Android app serving local LLM inference and device sensors over a REST API.
+when_to_use:
+- You want to run LLM inference or object detection on an Android device and access it from another app or script
+- You are running Android devices as K3s cluster nodes and need AI/sensor APIs for cluster applications
+when_not_to_use:
+- You need cloud-based AI inference — this runs fully on-device
+- Your device has less than 3 GB RAM (required for AI features)
+install:
+- label: Download APK
+  lang: bash
+  code: |
+    # Download from the Releases page and install:
+    adb install -r local-android-ai.apk
+- label: Build from source
+  lang: bash
+  code: |
+    git clone https://github.com/parttimenerd/local-android-ai
+    cd local-android-ai
+    ./gradlew assembleDebug
+    adb install -r app/build/outputs/apk/debug/app-debug.apk
+usage:
+- label: Query the API
+  lang: bash
+  code: |
+    # LLM inference (runs on-device, port 8005):
+    curl -X POST http://<phone-ip>:8005/ai/text \
+      -H "Content-Type: application/json" \
+      -d '{"text": "Hello!", "model": "GEMMA_3_1B_IT"}'
+how_to:
+- title: Run LLM inference
+  body: |
+    Use the enum name or display name as the `model` field. Available models:
+
+    | Model name | Identifier | Vision |
+    |---|---|---|
+    | Gemma 3n E2B IT | `GEMMA_3_1B_IT` | yes |
+    | DeepSeek-R1 Distill Qwen 1.5B | `DEEPSEEK_R1_DISTILL_QWEN_1_5B` | no |
+    | Llama 3.2 1B Instruct | `LLAMA_3_2_1B_INSTRUCT` | no |
+    | Llama 3.2 3B Instruct | `LLAMA_3_2_3B_INSTRUCT` | no |
+    | TinyLlama 1.1B Chat | `TINYLLAMA_1_1B_CHAT` | no |
+
+    Download a model first via the app UI or API, then query it:
+    ```bash
+    # Download a model
+    curl -X POST http://<phone-ip>:8005/ai/models/download \
+      -H "Content-Type: application/json" \
+      -d '{"modelName": "GEMMA_3_1B_IT"}'
+
+    # Run inference
+    curl -X POST http://<phone-ip>:8005/ai/text \
+      -H "Content-Type: application/json" \
+      -d '{"text": "Explain eBPF in one sentence", "model": "GEMMA_3_1B_IT", "maxTokens": 150}'
+    ```
+    Gemma 3n E2B IT supports image input — pass a base64-encoded image in the `image` field,
+    or use `captureConfig` to capture directly from the camera.
+
+- title: Run object detection
+  body: |
+    Uses MediaPipe EfficientDet Lite 2. The app must be visible for camera capture
+    (Android OS privacy restriction):
+    ```bash
+    curl -X POST http://<phone-ip>:8005/ai/object_detection \
+      -H "Content-Type: application/json" \
+      -d '{"side": "rear", "threshold": 0.6, "maxResults": 5, "returnImage": false}'
+    ```
+    Set `returnImage: true` to include a base64-encoded JPEG of the captured frame in the response.
+
+- title: Read device sensors
+  body: |
+    Get compass orientation (azimuth, pitch, roll) and camera snapshots:
+    ```bash
+    # Compass orientation
+    curl http://<phone-ip>:8005/orientation
+
+    # Camera snapshot (app must be in foreground)
+    curl "http://<phone-ip>:8005/capture?side=rear&zoom=2.0"
+
+    # Server status, permissions, memory usage
+    curl http://<phone-ip>:8005/status
+
+    # Full API docs
+    curl http://<phone-ip>:8005/help
+    ```
+note: Highly experimental. Camera capture requires the app to be visible due to Android OS privacy restrictions.
