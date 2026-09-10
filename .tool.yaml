@@ -3,6 +3,7 @@ tagline: Android app that serves local AI models and device sensors over a REST 
   Supports on-device LLM inference (Gemma, Llama, DeepSeek, TinyLlama via MediaPipe), object detection,
   camera capture, and compass orientation — designed for integration with Android terminals or K3s nodes.
 tagline_short: Android app serving local LLM inference and device sensors over a REST API.
+no_release: true
 when_to_use:
 - You want to run LLM inference or object detection on an Android device and access it from another app or script
 - You are running Android devices as K3s cluster nodes and need AI/sensor APIs for cluster applications
